@@ -1,0 +1,80 @@
+name: Build, Test, and Publish
+
+on:
+  workflow_call:
+    inputs:
+      publish:
+        type: boolean
+        required: false
+        default: false
+
+jobs:
+  check:
+    name: Run code checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Inspect Node.js
+        run: |
+          which node
+          node --version
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Spellcheck
+        run: pnpm run spellcheck
+
+      - name: Lint
+        run: pnpm run lint
+
+  build-test-publish:
+    name: Build, test, and publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24.13.0
+          cache: pnpm
+
+      - name: Inspect Node.js
+        run: |
+          which node
+          node --version
+
+      - name: Install dependencies
+        run: pnpm install
+
+      - name: Build
+        run: pnpm run build
+
+      - name: Run tests
+        run: pnpm run test
+
+      - if: inputs.publish
+        name: Set up NPM token
+        run: pnpm config set //registry.npmjs.org/:_authToken '${NPM_TOKEN}'
+
+      - if: inputs.publish
+        name: Publish package
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: pnpm run publish:lib

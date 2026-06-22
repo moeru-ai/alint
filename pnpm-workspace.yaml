@@ -1,0 +1,53 @@
+catalogMode: prefer
+minimumReleaseAge: 1
+
+shellEmulator: true
+trustPolicy: no-downgrade
+packages:
+  - packages/**
+  - '!**/dist/**'
+
+allowBuilds:
+  esbuild: true
+  simple-git-hooks: true
+
+overrides:
+  array-flatten: npm:@nolyfill/array-flatten@^1.0.44
+  axios: npm:feaxios@^0.0.23
+  is-core-module: npm:@nolyfill/is-core-module@^1.0.39
+  isarray: npm:@nolyfill/isarray@^1.0.44
+  onnxruntime-web: npm:onnxruntime-web@^1.27.0
+  safe-buffer: npm:@nolyfill/safe-buffer@^1.0.44
+  safer-buffer: npm:@nolyfill/safer-buffer@^1.0.44
+  side-channel: npm:@nolyfill/side-channel@^1.0.44
+  string.prototype.matchall: npm:@nolyfill/string.prototype.matchall@^1.0.44
+
+catalog:
+  '@antfu/eslint-config': ^9.0.0
+  '@arethetypeswrong/core': ^0.18.3
+  '@moeru/eslint-config': 0.1.0-beta.18
+  '@types/node': ^26.0.0
+  bumpp: ^11.1.0
+  cspell: ^9.6.0
+  eslint: ^10.5.0
+  eslint-plugin-oxlint: ^1.70.0
+  knip: ^6.17.1
+  nano-staged: ^1.0.2
+  oxc-minify: ^0.137.0
+  oxlint: ^1.70.0
+  publint: ^0.3.21
+  rollup: ^4.62.2
+  simple-git-hooks: ^2.13.1
+  taze: ^19.14.1
+  tsdown: ^0.22.3
+  tsx: ^4.22.4
+  turbo: ^2.9.18
+  typescript: ^6.0.3
+  unplugin-raw: ^0.7.0
+  unplugin-unused: ^0.5.7
+  vite: ^8.0.16
+
+catalogs:
+  vitest:
+    '@vitest/coverage-v8': ^4.1.9
+    vitest: ^4.1.9

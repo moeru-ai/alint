@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "skills": {
+    "pnpm": {
+      "source": "antfu/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pnpm/SKILL.md",
+      "computedHash": "318f9fca2441a3e06fedc336e195dd18be5dbe901064e4fa71b76b40b096ab3a"
+    },
+    "xsai": {
+      "source": "moeru-ai/xsai",
+      "sourceType": "github",
+      "skillPath": "skills/xsai/SKILL.md",
+      "computedHash": "ee21e53e1910346581b6429cbee458bd804830a0e13fa4211f28cb617a9c3db4"
+    }
+  }
+}
