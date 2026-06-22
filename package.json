@@ -1,7 +1,7 @@
 {
-  "name": "alint",
+  "name": "@alint/root",
   "type": "module",
-  "version": "1.0.0",
+  "private": true,
   "packageManager": "pnpm@11.8.0",
   "license": "MIT",
   "scripts": {
@@ -23,6 +23,7 @@
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:vitest",
     "bumpp": "catalog:",
+    "cac": "catalog:",
     "cspell": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-oxlint": "catalog:",

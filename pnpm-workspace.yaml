@@ -46,6 +46,7 @@ catalog:
   unplugin-raw: ^0.7.0
   unplugin-unused: ^0.5.7
   vite: ^8.0.16
+  cac: ^7.0.0
 
 catalogs:
   vitest:

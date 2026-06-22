@@ -21,6 +21,9 @@ catalogs:
     bumpp:
       specifier: ^11.1.0
       version: 11.1.0
+    cac:
+      specifier: ^7.0.0
+      version: 7.0.0
     cspell:
       specifier: ^9.6.0
       version: 9.8.0
@@ -116,6 +119,9 @@ importers:
       bumpp:
         specifier: 'catalog:'
         version: 11.1.0
+      cac:
+        specifier: 'catalog:'
+        version: 7.0.0
       cspell:
         specifier: 'catalog:'
         version: 9.8.0
