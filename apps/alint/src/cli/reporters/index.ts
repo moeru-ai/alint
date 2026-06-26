@@ -1,4 +1,4 @@
-import type { RunAlintResult } from '../../core/types'
+import type { RunResult } from '../../core/types'
 
 import { formatJson } from './json'
 import { formatStylish } from './stylish'
@@ -11,7 +11,7 @@ export type ReporterName = 'json' | 'stylish'
 
 export function formatDiagnostics(
   format: ReporterName,
-  result: RunAlintResult,
+  result: RunResult,
   options: FormatDiagnosticsOptions = {},
 ): string {
   if (format === 'json')

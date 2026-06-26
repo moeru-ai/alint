@@ -1,5 +1,5 @@
 {
-  "name": "alint",
+  "name": "@alint-js/cli",
   "type": "module",
   "version": "1.0.0",
   "exports": {

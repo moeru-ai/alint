@@ -1,5 +1,5 @@
 {
-  "name": "@alint/root",
+  "name": "@alint-js/root",
   "type": "module",
   "private": true,
   "packageManager": "pnpm@11.8.0",
@@ -17,19 +17,19 @@
     "knip": "knip"
   },
   "devDependencies": {
-    "@alint-js/plugin-example": "workspace:*",
     "@antfu/eslint-config": "catalog:",
     "@arethetypeswrong/core": "catalog:",
     "@moeru/eslint-config": "catalog:",
+    "@alint-js/plugin-example": "workspace:*",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:vitest",
-    "alint": "workspace:*",
     "bumpp": "catalog:",
     "cac": "catalog:",
     "cspell": "catalog:",
     "eslint": "catalog:",
     "eslint-plugin-oxlint": "catalog:",
     "knip": "catalog:",
+    "@alint-js/cli": "workspace:*",
     "nano-staged": "catalog:",
     "oxc-minify": "catalog:",
     "oxlint": "catalog:",

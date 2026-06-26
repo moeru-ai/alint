@@ -1,4 +1,4 @@
-import type { Diagnostic, RunAlintResult } from '../../core/types'
+import type { Diagnostic, RunResult } from '../../core/types'
 
 import { createColors } from 'tinyrainbow'
 
@@ -8,7 +8,7 @@ export interface StylishReporterOptions {
   color?: boolean
 }
 
-export function formatStylish(input: Diagnostic[] | RunAlintResult, options: StylishReporterOptions = {}): string {
+export function formatStylish(input: Diagnostic[] | RunResult, options: StylishReporterOptions = {}): string {
   const diagnostics = Array.isArray(input) ? input : input.diagnostics
   const totalTokens = Array.isArray(input) ? undefined : input.usage.totalTokens
 

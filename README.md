@@ -1,6 +1,6 @@
 # `alint`
 
-A(gent)lint is a [`eslint`](https://eslint.org/) inspired ~~static~~ agentic code analysis tool that uses LLMs to analyze bad smell code patterns with agents you implement in rules, and report diagnostics in a familiar format.
+Alint is a [`eslint`](https://eslint.org/) inspired ~~static~~ agentic code analysis tool for **vibe coded** code that needs another look. It uses LLMs to analyze bad smell code patterns with agents you implement in rules, and report diagnostics in a familiar format.
 
 While `alint` is inspired by `eslint`, but we expect that the concept that `alint` brought to the table will be a new paradigm for code analysis. It should not be limited to just JavaScript/TypeScript, you can easily extend this to other languages and even non-code artifacts.
 
@@ -9,8 +9,8 @@ While `alint` is inspired by `eslint`, but we expect that the concept that `alin
 ### Installation
 
 ```bash
-npm install -g alint
-pnpm install -g alint
+npm install -g @alint-js/cli
+pnpm install -g @alint-js/cli
 ```
 
 ### Configure your model
@@ -141,7 +141,7 @@ Similar to `eslint`,
 ```ts
 import yourPlugin from '@your-alint-config/your-rules'
 
-import { defineConfig } from 'alint'
+import { defineConfig } from '@alint-js/cli'
 
 export default defineConfig({
   plugins: [
@@ -175,7 +175,7 @@ However, be careful with the token cost, since `alint` is designed to be a code 
 
 ```ts
 // packages/your-rule/src/rules/review-load/rule.ts
-import { defineRule } from 'alint'
+import { defineRule } from '@alint-js/cli'
 
 const reviewLoad = defineRule({
   create: ctx => ({
@@ -203,7 +203,7 @@ And export it as a plugin:
 
 ```ts
 // packages/your-rule/src/plugin.ts
-import { definePlugin } from 'alint'
+import { definePlugin } from '@alint-js/cli'
 
 // If you want to use the package name as the scope, you can import the package.json and use it as the scope.
 // import * as packageJSON from '../package.json'

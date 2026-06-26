@@ -1,4 +1,4 @@
-import type { AlintProgressReporter } from '../../../core/types'
+import type { ProgressReporter } from '../../../core/types'
 
 import cliSpinners from 'cli-spinners'
 
@@ -8,7 +8,7 @@ import { createTtyProgressRenderer } from './tty'
 
 export interface CliProgressReporter {
   dispose: () => void
-  reporter: AlintProgressReporter
+  reporter: ProgressReporter
   write: (chunk: string) => void
 }
 
@@ -55,9 +55,9 @@ export function createCliProgressReporter(options: CliProgressReporterOptions): 
 }
 
 function createRenderingProgressReporter(
-  summary: AlintProgressReporter,
+  summary: ProgressReporter,
   renderer: { render: () => void, start: () => void },
-): AlintProgressReporter {
+): ProgressReporter {
   return {
     onDiagnostic: (payload) => {
       summary.onDiagnostic?.(payload)

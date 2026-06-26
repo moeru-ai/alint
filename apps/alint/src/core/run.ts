@@ -2,7 +2,7 @@ import type { Awaitable, EnabledRule, RuleContext, RuleHandlers } from '../dsl/t
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 import type { JsSourceUnits } from './source/js'
 import type { SourceFile } from './source/types'
-import type { AlintProgressPath, AlintProgressTargetKind, Diagnostic, InferenceUsageRecord, RunAlintOptions, RunAlintResult, RunAlintUsage } from './types'
+import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunOptions, RunResult, RunUsage } from './types'
 
 import process from 'node:process'
 
@@ -22,7 +22,7 @@ export interface AlintRunFailure {
   message: string
   ruleId?: string
   target?: {
-    kind: AlintProgressTargetKind
+    kind: ProgressTargetKind
     name?: string
   }
 }
@@ -34,14 +34,14 @@ interface ExecutionPlanEntry {
   ruleIndex: number
   ruleTotal: number
   targetIndex: number
-  targetKind: AlintProgressTargetKind
+  targetKind: ProgressTargetKind
   targetName?: string
   targetTotal: number
 }
 
 interface ExecutionTarget {
   executions: RuleTargetExecution[]
-  kind: AlintProgressTargetKind
+  kind: ProgressTargetKind
   name?: string
 }
 
@@ -66,7 +66,7 @@ interface RuleRuntime {
 interface RuleRuntimeState {
   activeFilePath?: string
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  progressPath?: AlintProgressPath
+  progressPath?: ProgressPath
 }
 
 interface RuleTargetExecution {
@@ -78,7 +78,7 @@ class AlintRuleExecutionError extends Error {
   readonly cause: unknown
   readonly failure: AlintRunFailure
 
-  constructor(error: unknown, path: AlintProgressPath) {
+  constructor(error: unknown, path: ProgressPath) {
     const message = toErrorMessage(error)
 
     super(message)
@@ -99,9 +99,9 @@ class AlintRuleExecutionError extends Error {
 export class AlintRunError extends Error {
   readonly cause: unknown
   readonly failure?: AlintRunFailure
-  readonly result: RunAlintResult
+  readonly result: RunResult
 
-  constructor(message: string, result: RunAlintResult, options: { cause?: unknown, failure?: AlintRunFailure } = {}) {
+  constructor(message: string, result: RunResult, options: { cause?: unknown, failure?: AlintRunFailure } = {}) {
     super(message)
     this.name = 'AlintRunError'
     this.cause = options.cause
@@ -110,7 +110,7 @@ export class AlintRunError extends Error {
   }
 }
 
-export async function runAlint(options: RunAlintOptions = {}): Promise<RunAlintResult> {
+export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? process.cwd()
   const config = options.config ?? await loadAlintConfig(cwd)
   const setupConfig = options.setupConfig ?? emptySetupConfig
@@ -361,7 +361,7 @@ function collectExecutionTargets(
   return targets
 }
 
-function createAlintRunError(error: unknown, result: RunAlintResult): AlintRunError {
+function createAlintRunError(error: unknown, result: RunResult): AlintRunError {
   if (error instanceof AlintRunError) {
     return error
   }
@@ -413,7 +413,7 @@ function createProgressPath(
   filePath: string,
   ruleId: string,
   entry: ExecutionPlanEntry,
-): AlintProgressPath {
+): ProgressPath {
   return {
     file: {
       index: entry.fileIndex,
@@ -471,7 +471,7 @@ function createUsageAccumulator() {
       totalTokens = addTokenCount(totalTokens, record.totalTokens)
       return record
     },
-    toJSON(): RunAlintUsage {
+    toJSON(): RunUsage {
       return {
         inputTokens,
         outputTokens,
@@ -501,7 +501,7 @@ async function executeFilePlan(
   filesTotal: number,
   clock: () => number,
   counters: ReturnType<typeof createRuleEndCounters>,
-  options: RunAlintOptions,
+  options: RunOptions,
 ): Promise<void> {
   const preparedFile = filePlan.preparedFile
   const fileStartedAt = clock()
@@ -605,10 +605,10 @@ async function executeFilePlan(
 
 async function executeProgressTarget(
   execution: RuleTargetExecution,
-  path: AlintProgressPath,
+  path: ProgressPath,
   clock: () => number,
   counters: ReturnType<typeof createRuleEndCounters>,
-  options: RunAlintOptions,
+  options: RunOptions,
 ): Promise<void> {
   const startedAt = clock()
 

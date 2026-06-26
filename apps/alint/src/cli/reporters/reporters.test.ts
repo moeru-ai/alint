@@ -1,4 +1,4 @@
-import type { Diagnostic, RunAlintResult } from '../../core/types'
+import type { Diagnostic, RunResult } from '../../core/types'
 
 import { describe, expect, it } from 'vitest'
 
@@ -41,7 +41,7 @@ function createDiagnostics(): Diagnostic[] {
   ]
 }
 
-function createResult(): RunAlintResult {
+function createResult(): RunResult {
   return {
     diagnostics: createDiagnostics(),
     usage: {

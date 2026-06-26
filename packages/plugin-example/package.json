@@ -19,8 +19,8 @@
   },
   "dependencies": {
     "@valibot/to-json-schema": "catalog:",
-    "alint": "workspace:*",
     "apeira": "catalog:",
+    "@alint-js/cli": "workspace:*",
     "valibot": "catalog:",
     "xsai": "catalog:"
   },

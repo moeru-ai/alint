@@ -13,7 +13,7 @@ catalogs:
       specifier: ^0.18.3
       version: 0.18.3
     '@moeru/eslint-config':
-      specifier: 0.1.0-beta.18
+      specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.18
     '@types/node':
       specifier: ^26.0.0
@@ -143,6 +143,9 @@ importers:
 
   .:
     devDependencies:
+      '@alint-js/cli':
+        specifier: workspace:*
+        version: link:apps/alint
       '@alint-js/plugin-example':
         specifier: workspace:*
         version: link:packages/plugin-example
@@ -161,9 +164,6 @@ importers:
       '@vitest/coverage-v8':
         specifier: catalog:vitest
         version: 4.1.9(@vitest/browser@4.1.9)(vitest@4.1.9)
-      alint:
-        specifier: workspace:*
-        version: link:apps/alint
       bumpp:
         specifier: 'catalog:'
         version: 11.1.0
@@ -276,12 +276,12 @@ importers:
 
   packages/plugin-example:
     dependencies:
+      '@alint-js/cli':
+        specifier: workspace:*
+        version: link:../../apps/alint
       '@valibot/to-json-schema':
         specifier: 'catalog:'
         version: 1.7.1(valibot@1.4.1(typescript@6.0.3))
-      alint:
-        specifier: workspace:*
-        version: link:../../apps/alint
       apeira:
         specifier: 'catalog:'
         version: 0.0.6(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod@4.4.3)

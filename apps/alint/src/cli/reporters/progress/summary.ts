@@ -1,14 +1,14 @@
 import type {
-  AlintDiagnosticProgressPayload,
-  AlintProgressFilePath,
-  AlintProgressReporter,
-  AlintRuleEndPayload,
-  AlintRuleStartPayload,
-  AlintRunEndPayload,
-  AlintRunStartPayload,
-  AlintTargetProgressPayload,
-  AlintUsageProgressPayload,
   Diagnostic,
+  DiagnosticProgressPayload,
+  ProgressFilePath,
+  ProgressReporter,
+  RuleEndPayload,
+  RuleStartPayload,
+  RunEndPayload,
+  RunStartPayload,
+  TargetProgressPayload,
+  UsageProgressPayload,
 } from '../../../core/types'
 
 import { relative } from 'node:path'
@@ -17,7 +17,7 @@ import { createColors } from 'tinyrainbow'
 
 const colors = createColors({ force: true })
 
-export interface SummaryProgressReporter extends AlintProgressReporter {
+export interface SummaryProgressReporter extends ProgressReporter {
   getRows: () => string[]
   tick: () => void
 }
@@ -41,7 +41,7 @@ interface FileState {
   completed: number
   endedAt?: number
   errored: number
-  file: AlintProgressFilePath
+  file: ProgressFilePath
   rule?: ActiveRuleState
   startedAt?: number
   target?: string
@@ -75,7 +75,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
 
   return {
     getRows: () => createRows(state, options, now()),
-    onDiagnostic: (payload: AlintDiagnosticProgressPayload) => {
+    onDiagnostic: (payload: DiagnosticProgressPayload) => {
       state.diagnostics = payload.diagnostics
     },
     onFileEnd: (payload) => {
@@ -91,7 +91,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       file.startedAt = payload.startedAt ?? now()
       file.endedAt = undefined
     },
-    onRuleEnd: (payload: AlintRuleEndPayload) => {
+    onRuleEnd: (payload: RuleEndPayload) => {
       const file = getFileState(state, payload.path.file)
 
       if (payload.cache === 'hit') {
@@ -113,7 +113,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
         file.rule = undefined
       }
     },
-    onRuleStart: (payload: AlintRuleStartPayload) => {
+    onRuleStart: (payload: RuleStartPayload) => {
       const file = getFileState(state, payload.path.file)
 
       file.startedAt ??= payload.startedAt ?? now()
@@ -124,7 +124,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       }
       file.target = file.rule.target
     },
-    onRunEnd: (payload: AlintRunEndPayload) => {
+    onRunEnd: (payload: RunEndPayload) => {
       state.cached = payload.cached
       state.completed = payload.completed
       state.diagnostics = payload.diagnostics
@@ -134,7 +134,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       state.runStartedAt = payload.startedAt ?? state.runStartedAt
       state.totalTokens = payload.usage.totalTokens
     },
-    onRunStart: (payload: AlintRunStartPayload) => {
+    onRunStart: (payload: RunStartPayload) => {
       state.cached = 0
       state.completed = 0
       state.diagnostics = []
@@ -150,7 +150,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
         state.files.set(file.path, createFileState(file))
       }
     },
-    onTargetEnd: (payload: AlintTargetProgressPayload) => {
+    onTargetEnd: (payload: TargetProgressPayload) => {
       const file = getFileState(state, payload.path.file)
       const target = formatTarget(payload)
 
@@ -158,13 +158,13 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
         file.target = undefined
       }
     },
-    onTargetStart: (payload: AlintTargetProgressPayload) => {
+    onTargetStart: (payload: TargetProgressPayload) => {
       const file = getFileState(state, payload.path.file)
 
       file.startedAt ??= payload.startedAt ?? now()
       file.target = formatTarget(payload)
     },
-    onUsage: (payload: AlintUsageProgressPayload) => {
+    onUsage: (payload: UsageProgressPayload) => {
       state.totalTokens = payload.total.totalTokens
     },
     tick: () => {
@@ -183,7 +183,7 @@ function countQueuedFiles(state: SummaryState): number {
   ).length
 }
 
-function createFileState(file: AlintProgressFilePath): FileState {
+function createFileState(file: ProgressFilePath): FileState {
   return {
     cached: 0,
     completed: 0,
@@ -343,7 +343,7 @@ function formatQueuedRow(queued: number, options: SummaryProgressReporterOptions
   return fitRow(`  ${queued} ${queued === 1 ? 'file' : 'files'} queued`, options.columns)
 }
 
-function formatTarget(payload: AlintRuleStartPayload | AlintTargetProgressPayload): string {
+function formatTarget(payload: RuleStartPayload | TargetProgressPayload): string {
   return payload.path.target.name
     ? `${payload.path.target.kind} ${payload.path.target.name}`
     : payload.path.target.kind
@@ -355,7 +355,7 @@ function getActiveFiles(state: SummaryState): FileState[] {
     .sort((left, right) => left.file.index - right.file.index)
 }
 
-function getFileState(state: SummaryState, file: AlintProgressFilePath): FileState {
+function getFileState(state: SummaryState, file: ProgressFilePath): FileState {
   const existingFile = state.files.get(file.path)
 
   if (existingFile) {
