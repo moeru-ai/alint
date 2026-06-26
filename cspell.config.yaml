@@ -1,12 +1,39 @@
 version: "0.2"
-ignorePaths: []
+ignorePaths:
+  - "**/node_modules/**"
+  - "**/dist/**"
+  - "**/coverage/**"
+  - pnpm-lock.yaml
+  - pnpm-workspace.yaml
+  - "**/.git/**"
+  - docs/superpowers/**
 dictionaryDefinitions: []
 dictionaries: []
 words:
+  - 31merror
+  - 33mwarning
   - agentic
+  - airi
   - Alint
+  - apeira
+  - bumpp
+  - masknet
+  - moeru
+  - ollama
+  - openrouter
+  - oxlint
+  - picklist
+  - qwen
+  - referer
   - retriable
+  - smol
+  - sonarjs
+  - Stringifiable
+  - taze
   - tinyrainbow
+  - tsdown
+  - unocss
+  - Unrefable
   - xsai
 ignoreWords: []
 import: []

@@ -6,7 +6,7 @@ const clearCurrentLine = '\r\x1B[K'
 const clearPreviousLine = '\r\x1B[1A\x1B[K'
 
 describe('createTtyProgressRenderer', () => {
-  it('starts an unrefed timer and renders the first frame', () => {
+  it('starts an un-reffed timer and renders the first frame', () => {
     const writes: string[] = []
     const interval = {
       unref() {

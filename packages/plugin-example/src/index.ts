@@ -78,7 +78,7 @@ const inlineMiniatureNormalizerPrompt = `
 You are reviewing one TypeScript file.
 
 Task:
-Warn about private reader/narrowing toolkits.
+Warn about private reader/narrowing tool-kits.
 
 Look for clusters of local helper functions that mechanically parse, validate, pick, or narrow unknown, any, JSON-like, message, command, event, config, or transport payload values into primitives, records, arrays, literal unions, optional values, or simple typed fields.
 
