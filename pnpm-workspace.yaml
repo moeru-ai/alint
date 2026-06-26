@@ -24,42 +24,42 @@ overrides:
   string.prototype.matchall: npm:@nolyfill/string.prototype.matchall@^1.0.44
 
 catalog:
-  '@antfu/eslint-config': ^9.0.0
-  '@arethetypeswrong/core': ^0.18.3
+  '@antfu/eslint-config': ^9.1.0
+  '@arethetypeswrong/core': ^0.18.4
   '@moeru/eslint-config': ^0.1.0-beta.18
-  '@types/node': ^26.0.0
+  '@types/node': ^26.0.1
   '@valibot/to-json-schema': ^1.7.1
   apeira: ^0.0.6
   bumpp: ^11.1.0
-  c12: ^3.3.0
+  c12: ^3.3.4
   cac: ^7.0.0
   cli-spinners: ^3.4.0
-  cspell: ^9.6.0
-  es-toolkit: ^1.48.1
+  cspell: ^9.8.0
+  es-toolkit: ^1.49.0
   eslint: ^10.5.0
-  eslint-plugin-oxlint: ^1.70.0
-  knip: ^6.17.1
+  eslint-plugin-oxlint: ^1.71.0
+  knip: ^6.21.0
   nano-staged: ^1.0.2
   oxc-minify: ^0.137.0
-  oxc-parser: ^0.95.0
-  oxlint: ^1.70.0
+  oxc-parser: ^0.137.0
+  oxlint: ^1.71.0
   pathe: ^2.0.3
   publint: ^0.3.21
   rollup: ^4.62.2
   simple-git-hooks: ^2.13.1
-  smol-toml: ^1.4.2
+  smol-toml: ^1.7.0
   std-env: ^4.1.0
   taze: ^19.14.1
-  tinyglobby: ^0.2.15
+  tinyglobby: ^0.2.17
   tinyrainbow: ^3.1.0
   tsdown: ^0.22.3
   tsx: ^4.22.4
-  turbo: ^2.9.18
+  turbo: ^2.10.0
   typescript: ^6.0.3
   unplugin-raw: ^0.7.0
   unplugin-unused: ^0.5.7
   valibot: ^1.4.1
-  vite: ^8.0.16
+  vite: ^8.1.0
   xdg-basedir: ^5.1.0
 
   xsai: ^0.5.0-beta.6
