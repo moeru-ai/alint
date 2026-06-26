@@ -70,6 +70,7 @@ components.d.ts
 **/typed-router.d.ts
 
 # Cache
+.alintcache
 .eslintcache
 **/.cache/
 **/.vitepress/cache/

@@ -10,7 +10,13 @@ export interface ProviderDefinition {
 
 export type ProviderType = 'openai-compatible'
 
+export interface RunnerCacheConfig {
+  enabled?: boolean
+  location?: string
+}
+
 export interface RunnerConfig {
+  cache?: boolean | RunnerCacheConfig
   fileConcurrency?: number
   ruleConcurrency?: number
   timeoutMs?: number

@@ -1,6 +1,6 @@
 import type { InspectOptions } from 'node:util'
 
-import type { SetupConfig } from '../config/types'
+import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { ReporterName } from './reporters'
 
 import process from 'node:process'
@@ -35,6 +35,8 @@ interface CliWritable {
 }
 
 interface GlobalCliOptions {
+  cache?: boolean
+  cacheLocation?: string
   config?: string
   fileConcurrency?: string
   format: string
@@ -58,6 +60,8 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
   let pendingResult: Promise<number> | undefined
 
   cli
+    .option('--no-cache', 'Disable cache for this run')
+    .option('--cache-location <path>', 'Path to the alint cache file or directory')
     .option('--config <path>', 'Path to alint config file')
     .option('--file-concurrency <count>', 'Number of files to lint concurrently')
     .option('--format <format>', 'Reporter format', { default: 'stylish' })
@@ -206,6 +210,25 @@ function isNoInteractive(options: SetupCliOptions): boolean {
   return options.noInteractive === true
 }
 
+function mergeRunnerCacheConfig(
+  setupCache: RunnerConfig['cache'],
+  configCache: RunnerConfig['cache'],
+): RunnerConfig['cache'] {
+  if (configCache === undefined) {
+    return setupCache
+  }
+
+  if (typeof configCache === 'boolean') {
+    return configCache
+  }
+
+  if (typeof setupCache === 'object') {
+    return { ...setupCache, ...configCache }
+  }
+
+  return configCache
+}
+
 function parseHeaders(headers: string[]): Record<string, string> | undefined {
   if (headers.length === 0) {
     return undefined
@@ -240,17 +263,39 @@ function parsePositiveIntegerOption(value: string | undefined, label: string): n
   return parsed
 }
 
+function resolveRunnerCacheConfig(
+  setupCache: RunnerConfig['cache'],
+  configCache: RunnerConfig['cache'],
+  options: GlobalCliOptions,
+): RunnerConfig['cache'] {
+  if (options.cache === false) {
+    return false
+  }
+
+  const configuredCache = mergeRunnerCacheConfig(setupCache, configCache)
+
+  if (options.cacheLocation !== undefined) {
+    return typeof configuredCache === 'object'
+      ? { ...configuredCache, location: options.cacheLocation }
+      : { location: options.cacheLocation }
+  }
+
+  return configuredCache
+}
+
 function resolveRunnerConfig(
   setupConfig: SetupConfig,
   config: { runner?: SetupConfig['runner'] },
   options: GlobalCliOptions,
 ): SetupConfig['runner'] {
+  const cache = resolveRunnerCacheConfig(setupConfig.runner?.cache, config.runner?.cache, options)
   const fileConcurrency = parsePositiveIntegerOption(options.fileConcurrency, '--file-concurrency')
   const ruleConcurrency = parsePositiveIntegerOption(options.ruleConcurrency, '--rule-concurrency')
   const timeoutMs = parsePositiveIntegerOption(options.timeoutMs, '--timeout-ms')
   const runner = {
     ...(setupConfig.runner ?? {}),
     ...(config.runner ?? {}),
+    cache,
     fileConcurrency: fileConcurrency ?? config.runner?.fileConcurrency ?? setupConfig.runner?.fileConcurrency,
     ruleConcurrency: ruleConcurrency ?? config.runner?.ruleConcurrency ?? setupConfig.runner?.ruleConcurrency,
     timeoutMs: timeoutMs ?? config.runner?.timeoutMs ?? setupConfig.runner?.timeoutMs,

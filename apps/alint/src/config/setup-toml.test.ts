@@ -134,6 +134,35 @@ id = "qwen"
     expect(toml).toContain('timeout_ms = 120000')
   })
 
+  it('parses and stringifies runner cache settings', () => {
+    const config = parseSetupConfigToml([
+      'version = 1',
+      '',
+      '[runner.cache]',
+      'enabled = false',
+      'location = ".cache/alint.json"',
+      '',
+      '[[providers]]',
+      'id = "ollama"',
+      'type = "openai-compatible"',
+      'endpoint = "http://localhost:11434/v1"',
+      '',
+      '[[providers.models]]',
+      'id = "qwen:8b"',
+    ].join('\n'))
+
+    expect(config.runner?.cache).toEqual({
+      enabled: false,
+      location: '.cache/alint.json',
+    })
+
+    expect(stringifySetupConfigToml(config)).toContain('[runner.cache]')
+    expect(stringifySetupConfigToml(config)).toContain('enabled = false')
+    expect(stringifySetupConfigToml(config)).toContain(
+      'location = ".cache/alint.json"',
+    )
+  })
+
   it('rejects invalid runner settings', () => {
     expect(() => parseSetupConfigToml(`
 version = 1

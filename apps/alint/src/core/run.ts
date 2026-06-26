@@ -1,5 +1,6 @@
 import type { Awaitable, EnabledRule, RuleContext, RuleHandlers } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
+import type { CacheEntry, CacheStore } from './cache'
 import type { JsSourceUnits } from './source/js'
 import type { SourceFile } from './source/types'
 import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunOptions, RunResult, RunUsage } from './types'
@@ -10,10 +11,21 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { resolve } from 'pathe'
 
+import packageJson from '../../package.json'
+
 import { loadAlintConfig } from '../config/load-config'
 import { emptySetupConfig } from '../config/setup-load'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
+import {
+  createCacheKey,
+  createCacheStore,
+  createTargetIdentityResolver,
+  hashText,
+  normalizeCachePath,
+  normalizeRunnerCacheConfig,
+  stableHash,
+} from './cache'
 import { extractJsSourceUnits } from './source/js'
 import { createSourceRuntime } from './source/runtime'
 
@@ -25,6 +37,15 @@ export interface AlintRunFailure {
     kind: ProgressTargetKind
     name?: string
   }
+}
+
+interface CacheRunContext {
+  configHash: string
+  cwd: string
+  enabled: boolean
+  fileEntryKeys: Map<string, Set<string>>
+  modelHash: string
+  store: CacheStore
 }
 
 interface ExecutionPlanEntry {
@@ -41,8 +62,12 @@ interface ExecutionPlanEntry {
 
 interface ExecutionTarget {
   executions: RuleTargetExecution[]
+  identity: string
   kind: ProgressTargetKind
+  loc?: CacheEntry['target']['loc']
   name?: string
+  range?: CacheEntry['target']['range']
+  text: string
 }
 
 interface PreparedFile {
@@ -58,13 +83,17 @@ interface PreparedFileExecutionPlan {
 }
 
 interface RuleRuntime {
+  cacheable: boolean
   enabledRule: EnabledRule
   executionState: AsyncLocalStorage<RuleRuntimeState>
   handlers: RuleHandlers
+  ruleHash: string
 }
 
 interface RuleRuntimeState {
   activeFilePath?: string
+  cacheDiagnostics?: Diagnostic[]
+  cacheUsage?: InferenceUsageRecord[]
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
   progressPath?: ProgressPath
 }
@@ -119,6 +148,20 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const usage = createUsageAccumulator()
   const registry = buildRuleRegistry(config)
   const src = createSourceRuntime()
+  const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
+  const cacheStore = await createCacheStore({
+    cwd,
+    enabled: normalizedCacheConfig.enabled,
+    location: normalizedCacheConfig.location,
+  })
+  const cacheContext: CacheRunContext = {
+    configHash: stableHash({ rules: config.rules ?? {} }),
+    cwd,
+    enabled: normalizedCacheConfig.enabled,
+    fileEntryKeys: new Map(),
+    modelHash: stableHash({ modelOverride: options.modelOverride, setupConfig }),
+    store: cacheStore,
+  }
   const files = await Promise.all(
     (options.files ?? []).map(async (filePath) => {
       const file = await src.readFile(resolve(cwd, filePath))
@@ -135,6 +178,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   let planned = 0
   const counters = createRuleEndCounters()
   const primaryError = createPrimaryErrorState()
+  let filePlans: PreparedFileExecutionPlan[] = []
   let runStartedAt: number | undefined
   let runError: unknown
 
@@ -154,9 +198,12 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
               ...record,
               ruleId: record.ruleId ?? enabledRule.id,
             })
+            const state = executionState.getStore()
+
+            state?.cacheUsage?.push(usageRecord)
 
             options.progress?.onUsage?.({
-              path: executionState.getStore()?.progressPath,
+              path: state?.progressPath,
               record: usageRecord,
               total: usage.toJSON(),
             })
@@ -207,6 +254,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
           } satisfies Diagnostic
 
           diagnostics.push(diagnostic)
+          state?.cacheDiagnostics?.push(diagnostic)
           options.progress?.onDiagnostic?.({
             diagnostic,
             diagnostics: [...diagnostics],
@@ -218,13 +266,23 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       }
 
       return {
+        cacheable: enabledRule.rule.cache !== false,
         enabledRule,
         executionState,
         handlers: enabledRule.rule.create(context),
+        ruleHash: stableHash({
+          cache: enabledRule.rule.cache ?? true,
+          create: String(enabledRule.rule.create),
+          id: enabledRule.id,
+          localId: enabledRule.localId,
+          model: enabledRule.rule.model,
+          scope: enabledRule.scope,
+          severity: enabledRule.severity,
+        }),
       }
     })
 
-    const filePlans = createPreparedFileExecutionPlans(ruleRuntimes, files)
+    filePlans = createPreparedFileExecutionPlans(ruleRuntimes, files, cwd)
     planned = calculatePlannedExecutions(filePlans)
     runStartedAt = clock()
 
@@ -239,7 +297,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     await runConcurrently(
       filePlans.filter(filePlan => filePlan.targets.length > 0),
       resolveFileConcurrency(options.runner?.fileConcurrency),
-      filePlan => executeFilePlan(filePlan, files.length, clock, counters, options),
+      filePlan => executeFilePlan(filePlan, files.length, clock, counters, diagnostics, usage, cacheContext, options),
     )
   }
   catch (error) {
@@ -247,6 +305,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     runError = error
   }
   finally {
+    await reconcileCache(filePlans, cacheContext)
     emitCleanupProgress(
       () => options.progress?.onRunEnd?.({
         ...counters.snapshot(planned),
@@ -308,7 +367,9 @@ function collectExecutionTargets(
   if (fileExecutions.length > 0) {
     targets.push({
       executions: fileExecutions,
+      identity: '',
       kind: 'file',
+      text: preparedFile.file.text,
     })
   }
 
@@ -329,8 +390,12 @@ function collectExecutionTargets(
       if (executions.length > 0) {
         targets.push({
           executions,
+          identity: '',
           kind: 'class',
+          loc: classNode.loc,
           name: classNode.name,
+          range: classNode.range,
+          text: classNode.text,
         })
       }
     }
@@ -351,8 +416,12 @@ function collectExecutionTargets(
       if (executions.length > 0) {
         targets.push({
           executions,
+          identity: '',
           kind: 'function',
+          loc: functionNode.loc,
           name: functionNode.name,
+          range: functionNode.range,
+          text: functionNode.text,
         })
       }
     }
@@ -378,16 +447,49 @@ function createAlintRunError(error: unknown, result: RunResult): AlintRunError {
   })
 }
 
+function createExecutionCacheKey(
+  runtime: RuleRuntime,
+  target: ExecutionTarget,
+  path: ProgressPath,
+  cacheContext: CacheRunContext,
+): string | undefined {
+  if (!cacheContext.enabled || !runtime.cacheable) {
+    return undefined
+  }
+
+  return createCacheKey({
+    alintVersion: packageJson.version,
+    configHash: cacheContext.configHash,
+    filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
+    modelHash: cacheContext.modelHash,
+    ruleHash: runtime.ruleHash,
+    schemaVersion: 1,
+    targetHash: hashText(target.text),
+    targetIdentity: target.identity,
+    targetKind: target.kind,
+  })
+}
+
 function createPreparedFileExecutionPlans(
   ruleRuntimes: RuleRuntime[],
   files: PreparedFile[],
+  cwd: string,
 ): PreparedFileExecutionPlan[] {
   return files.map((preparedFile, fileOffset) => {
+    const targets = collectExecutionTargets(ruleRuntimes, preparedFile)
+    const resolveTargetIdentity = createTargetIdentityResolver(
+      targets.map(target => toTargetIdentityInput(cwd, preparedFile.file.path, target)),
+    )
+
+    for (const target of targets) {
+      target.identity = resolveTargetIdentity(toTargetIdentityInput(cwd, preparedFile.file.path, target))
+    }
+
     const filePlan: PreparedFileExecutionPlan = {
       fileIndex: fileOffset + 1,
       planned: 0,
       preparedFile,
-      targets: collectExecutionTargets(ruleRuntimes, preparedFile),
+      targets,
     }
 
     filePlan.planned = calculateFilePlanExecutions(filePlan)
@@ -436,10 +538,14 @@ function createProgressPath(
 }
 
 function createRuleEndCounters() {
+  let cached = 0
   let completed = 0
   let errored = 0
 
   return {
+    cache() {
+      cached += 1
+    },
     complete() {
       completed += 1
     },
@@ -448,7 +554,7 @@ function createRuleEndCounters() {
     },
     snapshot(planned: number) {
       return {
-        cached: 0,
+        cached,
         completed,
         errored,
         planned,
@@ -501,6 +607,9 @@ async function executeFilePlan(
   filesTotal: number,
   clock: () => number,
   counters: ReturnType<typeof createRuleEndCounters>,
+  diagnostics: Diagnostic[],
+  usage: ReturnType<typeof createUsageAccumulator>,
+  cacheContext: CacheRunContext,
   options: RunOptions,
 ): Promise<void> {
   const preparedFile = filePlan.preparedFile
@@ -565,8 +674,12 @@ async function executeFilePlan(
           await executeProgressTarget(
             execution,
             progressPath,
+            target,
             clock,
             counters,
+            diagnostics,
+            usage,
+            cacheContext,
             options,
           )
         }
@@ -606,23 +719,70 @@ async function executeFilePlan(
 async function executeProgressTarget(
   execution: RuleTargetExecution,
   path: ProgressPath,
+  target: ExecutionTarget,
   clock: () => number,
   counters: ReturnType<typeof createRuleEndCounters>,
+  diagnostics: Diagnostic[],
+  usage: ReturnType<typeof createUsageAccumulator>,
+  cacheContext: CacheRunContext,
   options: RunOptions,
 ): Promise<void> {
   const startedAt = clock()
+  const cacheKey = createExecutionCacheKey(execution.runtime, target, path, cacheContext)
+  const cachedEntry = cacheKey && cacheContext.enabled && execution.runtime.cacheable
+    ? cacheContext.store.get(cacheKey)
+    : undefined
 
   options.progress?.onRuleStart?.({
     path,
     startedAt,
   })
 
+  if (cacheKey && cachedEntry) {
+    rememberFileCacheEntry(cacheContext, path.file.path, cacheKey)
+    try {
+      replayCachedEntry(cachedEntry, path, diagnostics, usage, options)
+    }
+    catch (error) {
+      counters.error()
+
+      try {
+        options.progress?.onRuleEnd?.({
+          cache: 'hit',
+          endedAt: clock(),
+          path,
+          startedAt,
+          state: 'errored',
+        })
+      }
+      catch {
+        // Preserve the original replay failure when error-progress callbacks also fail.
+      }
+
+      throw new AlintRuleExecutionError(error, path)
+    }
+
+    counters.cache()
+    options.progress?.onRuleEnd?.({
+      cache: 'hit',
+      endedAt: clock(),
+      path,
+      startedAt,
+      state: 'completed',
+    })
+    return
+  }
+
   let handlerError: unknown
   let handlerSucceeded = false
+  const cacheDiagnostics: Diagnostic[] | undefined = cacheKey ? [] : undefined
+  const cacheUsage: InferenceUsageRecord[] | undefined = cacheKey ? [] : undefined
 
   try {
     await execution.runtime.executionState.run({
       activeFilePath: path.file.path,
+      cacheDiagnostics,
+      cacheUsage,
       progressPath: path,
     }, execution.run)
     handlerSucceeded = true
@@ -632,6 +792,29 @@ async function executeProgressTarget(
   }
 
   if (handlerSucceeded) {
+    if (cacheKey && cacheContext.enabled && execution.runtime.cacheable) {
+      cacheContext.store.set(cacheKey, {
+        diagnostics: cacheDiagnostics ?? [],
+        filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
+        fingerprint: {
+          alintVersion: packageJson.version,
+          configHash: cacheContext.configHash,
+          modelHash: cacheContext.modelHash,
+          ruleHash: execution.runtime.ruleHash,
+        },
+        target: {
+          hash: hashText(target.text),
+          identity: target.identity,
+          kind: target.kind,
+          loc: target.loc,
+          name: target.name,
+          range: target.range,
+        },
+        usage: cacheUsage ?? [],
+      })
+      rememberFileCacheEntry(cacheContext, path.file.path, cacheKey)
+    }
+
     counters.complete()
     options.progress?.onRuleEnd?.({
       cache: 'miss',
@@ -712,6 +895,67 @@ function mergeModelRequirement(
   }
 }
 
+async function reconcileCache(
+  filePlans: PreparedFileExecutionPlan[],
+  cacheContext: CacheRunContext,
+): Promise<void> {
+  try {
+    for (const filePlan of filePlans) {
+      const file = filePlan.preparedFile.file
+      const normalizedPath = normalizeCachePath(cacheContext.cwd, file.path)
+      const entries = [...(cacheContext.fileEntryKeys.get(normalizedPath) ?? [])]
+
+      cacheContext.store.markFile(file.path, hashText(file.text), entries)
+    }
+
+    await cacheContext.store.reconcile()
+  }
+  catch {
+    // Cache writes are opportunistic and must not mask lint results.
+  }
+}
+
+function rememberFileCacheEntry(
+  cacheContext: CacheRunContext,
+  filePath: string,
+  cacheKey: string,
+): void {
+  const normalizedPath = normalizeCachePath(cacheContext.cwd, filePath)
+  const entries = cacheContext.fileEntryKeys.get(normalizedPath) ?? new Set<string>()
+
+  entries.add(cacheKey)
+  cacheContext.fileEntryKeys.set(normalizedPath, entries)
+}
+
+function replayCachedEntry(
+  entry: CacheEntry,
+  path: ProgressPath,
+  diagnostics: Diagnostic[],
+  usage: ReturnType<typeof createUsageAccumulator>,
+  options: RunOptions,
+): void {
+  for (const cachedDiagnostic of entry.diagnostics) {
+    const diagnostic = { ...cachedDiagnostic }
+
+    diagnostics.push(diagnostic)
+    options.progress?.onDiagnostic?.({
+      diagnostic,
+      diagnostics: [...diagnostics],
+      path,
+    })
+  }
+
+  for (const cachedUsage of entry.usage) {
+    const record = usage.record({ ...cachedUsage })
+
+    options.progress?.onUsage?.({
+      path,
+      record,
+      total: usage.toJSON(),
+    })
+  }
+}
+
 function resolveFileConcurrency(fileConcurrency: number | undefined): number {
   return fileConcurrency ?? 1
 }
@@ -776,5 +1020,18 @@ function toProgressFilePath(filePlan: PreparedFileExecutionPlan, filesTotal: num
     path: filePlan.preparedFile.file.path,
     planned: filePlan.planned,
     total: filesTotal,
+  }
+}
+
+function toTargetIdentityInput(
+  cwd: string,
+  filePath: string,
+  target: ExecutionTarget,
+) {
+  return {
+    filePath: target.kind === 'file' ? normalizeCachePath(cwd, filePath) : undefined,
+    kind: target.kind,
+    name: target.name,
+    range: target.range,
   }
 }

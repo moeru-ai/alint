@@ -83,6 +83,37 @@ alint --model qwen:8b demo.ts
 
 `alint` returns exit code `1` when diagnostics are reported and `0` when the run is clean.
 
+### Cache
+
+`alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged files, classes, functions, and methods.
+
+> [!NOTE] `.alintcache` should not be committed to Git repository.
+>
+> You can ignore it by adding `.alintcache` to your `.gitignore` file.
+>
+> ```bash
+> echo ".alintcache" >> .gitignore
+> ```
+
+If you want to lint without the previous cache, you can run:
+
+```bash
+alint --no-cache demo.ts
+```
+
+For Rule authors, you can opt out of caching when they depend on external state:
+
+```ts
+defineRule({
+  cache: false,
+  create: ctx => ({
+    onFunction(fn) {
+      // Always reruns.
+    },
+  }),
+})
+```
+
 ## Concepts
 
 ### `alint` User side

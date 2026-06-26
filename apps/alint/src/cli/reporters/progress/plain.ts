@@ -25,9 +25,10 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
       const warnCount = countDiagnostics(payload.diagnostics, 'warn')
       const errorCount = countDiagnostics(payload.diagnostics, 'error')
       const state = payload.errored > 0 ? 'failed' : 'finished'
+      const cached = payload.cached > 0 ? `, ${payload.cached} cached` : ''
       const errored = payload.errored > 0 ? `, ${payload.errored} errored` : ''
 
-      writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens${errored}`)
+      writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens${cached}${errored}`)
     },
     onRunStart: (payload: RunStartPayload) => {
       writeLine(`alint started: ${payload.filesTotal} files, ${payload.rulesTotal} rules, ${payload.planned} planned executions`)

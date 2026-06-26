@@ -20,7 +20,13 @@ interface StringifiableProviderDefinition {
   type: ProviderType
 }
 
+interface StringifiableRunnerCacheConfig {
+  enabled?: boolean
+  location?: string
+}
+
 interface StringifiableRunnerConfig {
+  cache?: boolean | StringifiableRunnerCacheConfig
   file_concurrency?: number
   rule_concurrency?: number
   timeout_ms?: number
@@ -50,7 +56,13 @@ interface TomlProviderDefinition {
   type?: unknown
 }
 
+interface TomlRunnerCacheConfig {
+  enabled?: unknown
+  location?: unknown
+}
+
 interface TomlRunnerConfig {
+  cache?: unknown
   file_concurrency?: unknown
   rule_concurrency?: unknown
   timeout_ms?: unknown
@@ -208,6 +220,10 @@ function parseProvider(provider: TomlProviderDefinition): ProviderDefinition {
 function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
   const parsedRunner: RunnerConfig = {}
 
+  if (runner.cache !== undefined) {
+    parsedRunner.cache = parseRunnerCache(runner.cache)
+  }
+
   if (runner.file_concurrency !== undefined) {
     parsedRunner.fileConcurrency = parsePositiveInteger(
       runner.file_concurrency,
@@ -230,6 +246,36 @@ function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
   }
 
   return parsedRunner
+}
+
+function parseRunnerCache(cache: unknown): RunnerConfig['cache'] {
+  if (typeof cache === 'boolean') {
+    return cache
+  }
+
+  if (!isPlainObject(cache)) {
+    throw new TypeError('Invalid runner cache: must be a boolean or table.')
+  }
+
+  const tomlCache = cache as TomlRunnerCacheConfig
+  const parsedCache: Exclude<RunnerConfig['cache'], boolean | undefined> = {}
+
+  if (tomlCache.enabled !== undefined) {
+    if (typeof tomlCache.enabled !== 'boolean') {
+      throw new TypeError('Invalid runner cache enabled: must be a boolean.')
+    }
+
+    parsedCache.enabled = tomlCache.enabled
+  }
+
+  if (tomlCache.location !== undefined) {
+    parsedCache.location = readNonEmptyString(
+      tomlCache.location,
+      'runner cache location',
+    )
+  }
+
+  return parsedCache
 }
 
 function readFiniteNumber(value: unknown, label: string): number {
@@ -337,8 +383,15 @@ function toTomlProvider(
 
 function toTomlRunner(runner: RunnerConfig): StringifiableRunnerConfig {
   return {
+    cache: toTomlRunnerCache(runner.cache),
     file_concurrency: runner.fileConcurrency,
     rule_concurrency: runner.ruleConcurrency,
     timeout_ms: runner.timeoutMs,
   }
+}
+
+function toTomlRunnerCache(
+  cache: RunnerConfig['cache'],
+): StringifiableRunnerConfig['cache'] {
+  return cache
 }

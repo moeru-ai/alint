@@ -38,6 +38,40 @@ async function createTestIo(): Promise<TestIo> {
   return io
 }
 
+async function writeCacheFixture(cwd: string, runnerConfig = ''): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  const callKey = `__alintCacheFixtureCalls_${cwd}`
+  await writeFile(join(cwd, 'alint.config.ts'), `
+const callKey = ${JSON.stringify(callKey)}
+globalThis[callKey] = globalThis[callKey] ?? 0
+
+export default {
+  plugins: [
+    {
+      scope: 'company',
+      rules: {
+        'cached': {
+          create: (ctx) => ({
+            onFunction: async (functionNode) => {
+              globalThis[callKey] += 1
+              ctx.report({
+                filePath: functionNode.file.path,
+                message: 'checked ' + globalThis[callKey],
+              })
+            },
+          }),
+        },
+      },
+    },
+  ],
+  rules: {
+    'company/cached': 'warn',
+  },
+  ${runnerConfig}
+}
+`)
+}
+
 async function writeProgressFixture(cwd: string): Promise<void> {
   await writeFile(join(cwd, 'demo.ts'), [
     'export function load() {',
@@ -156,6 +190,8 @@ describe('executeCli', () => {
 
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('alint')
+    expect(io.stdoutText).toContain('--no-cache')
+    expect(io.stdoutText).not.toMatch(/(^|\n)\s*--cache(?:\s|,)/)
   })
 
   it('returns 2 when non-interactive setup is missing provider endpoint', async () => {
@@ -356,6 +392,238 @@ export default {
       '0',
       'demo.ts',
     ], io)).rejects.toThrow('--file-concurrency must be a positive integer.')
+  })
+
+  it('writes the default cache and reuses it on the next run', async () => {
+    const io = await createTestIo()
+
+    await writeCacheFixture(io.cwd)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+    await expect(readFile(join(io.cwd, '.alintcache'), 'utf8')).resolves.toContain('"entries"')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+  })
+
+  it('writes and reads the requested cache location', async () => {
+    const io = await createTestIo()
+    const cachePath = join(io.cwd, 'custom-cache.json')
+
+    await writeCacheFixture(io.cwd)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-location',
+      cachePath,
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+    await expect(readFile(cachePath, 'utf8')).resolves.toContain('"entries"')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-location',
+      cachePath,
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+  })
+
+  it('forces execution with --no-cache even when cache entries exist', async () => {
+    const io = await createTestIo()
+
+    await writeCacheFixture(io.cwd)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--no-cache',
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
+  })
+
+  it('preserves disabled setup cache when project config only overrides cache location', async () => {
+    const io = await createTestIo()
+    const cachePath = join(io.cwd, 'custom.json')
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      runner: {
+        cache: { enabled: false },
+      },
+      version: 1,
+    })
+    await writeCacheFixture(io.cwd, `
+  runner: {
+    cache: { location: 'custom.json' },
+  },`)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
+    await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('lets project config disable setup cache location', async () => {
+    const io = await createTestIo()
+    const cachePath = join(io.cwd, 'setup-cache.json')
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      runner: {
+        cache: { location: 'setup-cache.json' },
+      },
+      version: 1,
+    })
+    await writeCacheFixture(io.cwd, `
+  runner: {
+    cache: { enabled: false },
+  },`)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
+    await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('lets --cache-location override the merged config cache location', async () => {
+    const io = await createTestIo()
+    const setupCachePath = join(io.cwd, 'setup-cache.json')
+    const projectCachePath = join(io.cwd, 'project-cache.json')
+    const cliCachePath = join(io.cwd, 'cli-cache.json')
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      runner: {
+        cache: { location: 'setup-cache.json' },
+      },
+      version: 1,
+    })
+    await writeCacheFixture(io.cwd, `
+  runner: {
+    cache: { location: 'project-cache.json' },
+  },`)
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-location',
+      cliCachePath,
+      'demo.ts',
+    ], io)
+
+    expect(firstExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+    await expect(readFile(cliCachePath, 'utf8')).resolves.toContain('"entries"')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-location',
+      cliCachePath,
+      'demo.ts',
+    ], io)
+
+    expect(secondExitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+    await expect(readFile(setupCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(readFile(projectCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
 
   it('formats rule execution failures without interpreting provider payloads', async () => {

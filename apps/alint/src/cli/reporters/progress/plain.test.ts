@@ -90,6 +90,29 @@ describe('createPlainProgressReporter', () => {
 
     expect(chunks.join('')).toBe('alint failed: 0 warn, 0 error, 0 tokens, 1 errored\n')
   })
+
+  it('prints cached count in the final summary', () => {
+    const chunks: string[] = []
+    const reporter = createPlainProgressReporter({
+      write: chunk => chunks.push(chunk),
+    })
+
+    reporter.onRunEnd?.({
+      cached: 2,
+      completed: 3,
+      diagnostics: [],
+      errored: 0,
+      planned: 5,
+      usage: {
+        inputTokens: 0,
+        outputTokens: 0,
+        records: [],
+        totalTokens: 0,
+      },
+    })
+
+    expect(chunks.join('')).toContain('2 cached')
+  })
 })
 
 describe('createCliProgressReporter', () => {

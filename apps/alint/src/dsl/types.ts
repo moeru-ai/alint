@@ -35,6 +35,8 @@ export interface PluginDefinition {
   scope: string
 }
 
+export type RuleCacheConfig = boolean | { level?: 'target' }
+
 export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
 
 export interface RuleContext {
@@ -54,6 +56,7 @@ export interface RuleContext {
 }
 
 export interface RuleDefinition {
+  cache?: RuleCacheConfig
   create: (context: RuleContext) => RuleHandlers
   model?: ModelRequirement
 }
