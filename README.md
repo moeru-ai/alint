@@ -1,5 +1,7 @@
 # `alint`
 
+![Demo](./docs/assets/demo.gif)
+
 Alint is a [`eslint`](https://eslint.org/) inspired ~~static~~ agentic code analysis tool for **vibe coded** code that needs another look. It uses LLMs to analyze bad smell code patterns with agents you implement in rules, and report diagnostics in a familiar format.
 
 While `alint` is inspired by `eslint`, but we expect that the concept that `alint` brought to the table will be a new paradigm for code analysis. It should not be limited to just JavaScript/TypeScript, you can easily extend this to other languages and even non-code artifacts.
