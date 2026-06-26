@@ -2,6 +2,12 @@ import type { RunnerConfig } from '../config/types'
 import type { ClassUnit, FunctionUnit, SourceFile, SourceRuntime } from '../core/source/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 
+export interface AlintConfig {
+  plugins?: PluginDefinition[]
+  rules?: Record<string, RuleConfigEntry>
+  runner?: RunnerConfig
+}
+
 export type Awaitable<T> = Promise<T> | T
 
 export interface DiagnosticDescriptor {
@@ -22,12 +28,6 @@ export interface EnabledRule {
   rule: RuleDefinition
   scope: string
   severity: Exclude<RuleSeverity, 'off'>
-}
-
-export interface AlintConfig {
-  plugins?: PluginDefinition[]
-  rules?: Record<string, RuleConfigEntry>
-  runner?: RunnerConfig
 }
 
 export interface PluginDefinition {

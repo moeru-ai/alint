@@ -63,11 +63,11 @@ export { defineConfig, definePlugin, defineRule } from './dsl/define'
 export { buildRuleRegistry } from './dsl/registry'
 
 export type {
+  AlintConfig,
   Awaitable,
   DiagnosticDescriptor,
   DiagnosticLocation,
   EnabledRule,
-  AlintConfig,
   PluginDefinition,
   RuleConfigEntry,
   RuleContext,

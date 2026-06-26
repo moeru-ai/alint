@@ -1,5 +1,5 @@
 import type { RunnerConfig, SetupConfig } from '../config/types'
-import type { DiagnosticLocation, AlintConfig, RuleInferenceUsageRecord } from '../dsl/types'
+import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
 
 export interface Diagnostic {
   evidence?: unknown

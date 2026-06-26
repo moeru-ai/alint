@@ -1,7 +1,6 @@
 {
   "name": "@alint-js/plugin-example",
   "type": "module",
-  "version": "0.0.0",
   "private": true,
   "exports": {
     ".": {
@@ -18,9 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@alint-js/cli": "workspace:*",
     "@valibot/to-json-schema": "catalog:",
     "apeira": "catalog:",
-    "@alint-js/cli": "workspace:*",
     "valibot": "catalog:",
     "xsai": "catalog:"
   },

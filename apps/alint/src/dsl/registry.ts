@@ -1,4 +1,4 @@
-import type { EnabledRule, AlintConfig, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
+import type { AlintConfig, EnabledRule, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
 
 export function buildRuleRegistry(config: AlintConfig): RuleRegistry {
   const rules = new Map<string, RuleDefinition>()
