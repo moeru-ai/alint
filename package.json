@@ -17,11 +17,13 @@
     "knip": "knip"
   },
   "devDependencies": {
+    "@alint-js/plugin-example": "workspace:*",
     "@antfu/eslint-config": "catalog:",
     "@arethetypeswrong/core": "catalog:",
     "@moeru/eslint-config": "catalog:",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:vitest",
+    "alint": "workspace:*",
     "bumpp": "catalog:",
     "cac": "catalog:",
     "cspell": "catalog:",

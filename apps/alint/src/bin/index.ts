@@ -1,19 +1,24 @@
-#!/usr/bin/env tsx
+#!/usr/bin/env node
 
-import process, { exit } from 'node:process'
+import process from 'node:process'
 
-let stopping = false
+import { executeCli } from '../cli'
 
-async function shutdown() {
-  if (stopping)
-    return
+void executeCli(process.argv, {
+  cwd: process.cwd(),
+  stderr: process.stderr,
+  stdout: process.stdout,
+}).then((exitCode) => {
+  process.exitCode = exitCode
+}).catch((error) => {
+  process.stderr.write(`${formatError(error)}\n`)
+  process.exitCode = 2
+})
 
-  stopping = true
-  exit(0)
+function formatError(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+
+  return String(error)
 }
-
-process.on('SIGINT', shutdown)
-process.on('SIGTERM', shutdown)
-
-// eslint-disable-next-line no-console
-console.log('Starting alint...')

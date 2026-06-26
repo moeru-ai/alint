@@ -2,6 +2,41 @@
   "name": "alint",
   "type": "module",
   "version": "1.0.0",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "alint": "./dist/bin/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
   "scripts": {
+    "alint": "node ./dist/bin/index.mjs",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "c12": "catalog:",
+    "cac": "catalog:",
+    "cli-spinners": "catalog:",
+    "es-toolkit": "catalog:",
+    "oxc-parser": "catalog:",
+    "pathe": "catalog:",
+    "smol-toml": "catalog:",
+    "std-env": "catalog:",
+    "tinyglobby": "catalog:",
+    "tinyrainbow": "catalog:",
+    "xdg-basedir": "catalog:"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest"
   }
 }
