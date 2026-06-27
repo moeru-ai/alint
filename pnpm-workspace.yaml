@@ -27,6 +27,7 @@ catalog:
   '@antfu/eslint-config': ^9.1.0
   '@arethetypeswrong/core': ^0.18.4
   '@moeru/eslint-config': ^0.1.0-beta.18
+  '@moeru/std': ^0.1.0-beta.18
   '@types/node': ^26.0.1
   '@valibot/to-json-schema': ^1.7.1
   apeira: ^0.0.6

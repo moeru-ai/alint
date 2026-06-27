@@ -41,6 +41,14 @@ export default defineConfig({
         message: 'Avoid `error instanceof Error ? error.message : ...`. Use `errorMessageFrom(error)` from \'@moeru/std\' (or `errorMessageFromUnknown(error, fallback)` from \'@proj-airi/stage-shared\'). Pair with `?? \'fallback\'` when a default is needed.',
         selector: 'ConditionalExpression[test.type=\'BinaryExpression\'][test.operator=\'instanceof\'][test.right.name=\'Error\'][consequent.type=\'MemberExpression\'][consequent.property.name=\'message\']',
       },
+      {
+        message: 'Avoid hand-written clamp logic. Use `clamp(value, lower, upper)` from `es-toolkit` instead.',
+        selector: 'FunctionDeclaration[id.name=/clamp/i] ReturnStatement CallExpression[callee.object.name=\'Math\'][callee.property.name=\'min\'] > CallExpression[callee.object.name=\'Math\'][callee.property.name=\'max\']:first-child',
+      },
+      {
+        message: 'Avoid hand-written clamp logic. Use `clamp(value, lower, upper)` from `es-toolkit` instead.',
+        selector: 'FunctionDeclaration[id.name=/clamp/i] ReturnStatement CallExpression[callee.object.name=\'Math\'][callee.property.name=\'max\'] > CallExpression[callee.object.name=\'Math\'][callee.property.name=\'min\']:first-child',
+      },
       'TSEnumDeclaration[const=true]',
       'TSExportAssignment',
     ],

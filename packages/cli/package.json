@@ -1,0 +1,38 @@
+{
+  "name": "@alint-js/cli",
+  "type": "module",
+  "version": "0.0.1",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "bin": {
+    "alint": "./dist/bin/index.mjs"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "alint": "node ./dist/bin/index.mjs",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@alint-js/config": "workspace:*",
+    "@alint-js/core": "workspace:*",
+    "cac": "catalog:",
+    "cli-spinners": "catalog:",
+    "pathe": "catalog:",
+    "tinyrainbow": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest"
+  }
+}

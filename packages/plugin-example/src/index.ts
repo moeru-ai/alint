@@ -1,8 +1,8 @@
-import type { RuleContext } from '@alint-js/cli'
+import type { RuleContext } from '@alint-js/core'
 import type { JsonSchema } from '@valibot/to-json-schema'
 import type { GenerateTextResult } from 'xsai'
 
-import { definePlugin, defineRule } from '@alint-js/cli'
+import { definePlugin, defineRule } from '@alint-js/core'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { generateText, rawTool } from 'xsai'
 

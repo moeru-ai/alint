@@ -4,7 +4,9 @@ export default defineConfig({
   test: {
     passWithNoTests: true,
     projects: [
-      'apps/alint',
+      'packages/core',
+      'packages/config',
+      'packages/cli',
       'packages/plugin-example',
     ],
   },

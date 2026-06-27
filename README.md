@@ -174,7 +174,7 @@ Similar to `eslint`,
 ```ts
 import yourPlugin from '@your-alint-config/your-rules'
 
-import { defineConfig } from '@alint-js/cli'
+import { defineConfig } from '@alint-js/core'
 
 export default defineConfig({
   plugins: [
@@ -208,7 +208,7 @@ However, be careful with the token cost, since `alint` is designed to be a code 
 
 ```ts
 // packages/your-rule/src/rules/review-load/rule.ts
-import { defineRule } from '@alint-js/cli'
+import { defineRule } from '@alint-js/core'
 
 const reviewLoad = defineRule({
   create: ctx => ({
@@ -236,7 +236,7 @@ And export it as a plugin:
 
 ```ts
 // packages/your-rule/src/plugin.ts
-import { definePlugin } from '@alint-js/cli'
+import { definePlugin } from '@alint-js/core'
 
 // If you want to use the package name as the scope, you can import the package.json and use it as the scope.
 // import * as packageJSON from '../package.json'

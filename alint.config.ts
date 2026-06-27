@@ -1,4 +1,4 @@
-import { defineConfig } from '@alint-js/cli'
+import { defineConfig } from '@alint-js/core'
 import { examplePlugin } from '@alint-js/plugin-example'
 
 export default defineConfig({

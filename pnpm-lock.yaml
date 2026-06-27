@@ -15,6 +15,9 @@ catalogs:
     '@moeru/eslint-config':
       specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.18
+    '@moeru/std':
+      specifier: ^0.1.0-beta.18
+      version: 0.1.0-beta.18
     '@types/node':
       specifier: ^26.0.1
       version: 26.0.1
@@ -39,9 +42,6 @@ catalogs:
     cspell:
       specifier: ^9.8.0
       version: 9.8.0
-    es-toolkit:
-      specifier: ^1.49.0
-      version: 1.49.0
     eslint:
       specifier: ^10.5.0
       version: 10.5.0
@@ -78,15 +78,9 @@ catalogs:
     smol-toml:
       specifier: ^1.7.0
       version: 1.7.0
-    std-env:
-      specifier: ^4.1.0
-      version: 4.1.0
     taze:
       specifier: ^19.14.1
       version: 19.14.1
-    tinyglobby:
-      specifier: ^0.2.17
-      version: 0.2.17
     tinyrainbow:
       specifier: ^3.1.0
       version: 3.1.0
@@ -145,7 +139,13 @@ importers:
     devDependencies:
       '@alint-js/cli':
         specifier: workspace:*
-        version: link:apps/alint
+        version: link:packages/cli
+      '@alint-js/config':
+        specifier: workspace:*
+        version: link:packages/config
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:packages/core
       '@alint-js/plugin-example':
         specifier: workspace:*
         version: link:packages/plugin-example
@@ -228,42 +228,89 @@ importers:
         specifier: catalog:vitest
         version: 4.1.9(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
-  apps/alint:
+  packages/cli:
     dependencies:
-      c12:
-        specifier: 'catalog:'
-        version: 3.3.4(magicast@0.5.3)
+      '@alint-js/config':
+        specifier: workspace:*
+        version: link:../config
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
       cac:
         specifier: 'catalog:'
         version: 7.0.0
       cli-spinners:
         specifier: 'catalog:'
         version: 3.4.0
-      es-toolkit:
+      pathe:
         specifier: 'catalog:'
-        version: 1.49.0
-      oxc-parser:
+        version: 2.0.3
+      tinyrainbow:
         specifier: 'catalog:'
-        version: 0.137.0
+        version: 3.1.0
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.0.1
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: catalog:vitest
+        version: 4.1.9(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/config:
+    dependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      c12:
+        specifier: 'catalog:'
+        version: 3.3.4(magicast@0.5.3)
       pathe:
         specifier: 'catalog:'
         version: 2.0.3
       smol-toml:
         specifier: 'catalog:'
         version: 1.7.0
-      std-env:
-        specifier: 'catalog:'
-        version: 4.1.0
-      tinyglobby:
-        specifier: 'catalog:'
-        version: 0.2.17
-      tinyrainbow:
-        specifier: 'catalog:'
-        version: 3.1.0
       xdg-basedir:
         specifier: 'catalog:'
         version: 5.1.0
     devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.0.1
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: catalog:vitest
+        version: 4.1.9(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
+  packages/core:
+    dependencies:
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.18
+      oxc-parser:
+        specifier: 'catalog:'
+        version: 0.137.0
+      pathe:
+        specifier: 'catalog:'
+        version: 2.0.3
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.1(typescript@6.0.3)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.0.1
       tsdown:
         specifier: 'catalog:'
         version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
@@ -276,9 +323,9 @@ importers:
 
   packages/plugin-example:
     dependencies:
-      '@alint-js/cli':
+      '@alint-js/core':
         specifier: workspace:*
-        version: link:../../apps/alint
+        version: link:../core
       '@valibot/to-json-schema':
         specifier: 'catalog:'
         version: 1.7.1(valibot@1.4.1(typescript@6.0.3))
@@ -2479,9 +2526,6 @@ packages:
 
   es-module-lexer@2.1.0:
     resolution: {integrity: sha512-n27zTYMjYu1aj4MjCWzSP7G9r75utsaoc8m61weK+W8JMBGGQybd43GstCXZ3WNmSFtGT9wi59qQTW6mhTR5LQ==}
-
-  es-toolkit@1.49.0:
-    resolution: {integrity: sha512-G5iZ6Pc/FNRY/soKZHC+TxGDD83rHUDXxzaWhGCX44vAv/tMs56WMusnm/KMNK+luUPsgA9U28cGr4RDlSzL2g==}
 
   esbuild@0.28.1:
     resolution: {integrity: sha512-HrJrvZv5ayxBzPfwphOoNzkzOIIlifzk0KJrGK2c8R4+LKpMtpYLQeUdjnwjWv/LZlkH2laZk+4w78pi99D4Vw==}
@@ -5880,8 +5924,6 @@ snapshots:
       is-safe-filename: 0.1.1
 
   es-module-lexer@2.1.0: {}
-
-  es-toolkit@1.49.0: {}
 
   esbuild@0.28.1:
     optionalDependencies:

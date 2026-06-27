@@ -19,6 +19,8 @@
   },
   "devDependencies": {
     "@alint-js/cli": "workspace:*",
+    "@alint-js/config": "workspace:*",
+    "@alint-js/core": "workspace:*",
     "@alint-js/plugin-example": "workspace:*",
     "@antfu/eslint-config": "catalog:",
     "@arethetypeswrong/core": "catalog:",
