@@ -1,18 +1,25 @@
 /// Super WIP
-/// Usage: test.mts <cwd> <targetFile>
+/// Usage: test.mts <cwd> <targetFile> <apeira|pi>
 
-import type { SetupConfig } from '@alint-js/cli'
+import type { SetupConfig } from '@alint-js/core'
 
 import type { AgentAdapter } from './src/agent/types'
 
 import process from 'node:process'
 
-import { definePlugin, runAlint } from '@alint-js/cli'
+import { definePlugin, runAlint } from '@alint-js/core'
 
 import { createApeiraAdapter } from './src/agent/apeira'
+import { createPiAdapter } from './src/agent/pi'
 import { createReinventedHelperRule } from './src/rules/reinvented-helper'
 
-function withDebug(base: AgentAdapter): AgentAdapter {
+const cwd = process.argv[2]
+const target = process.argv[3] ?? 'target.ts'
+const which = process.argv[4] ?? 'apeira'
+
+const base = which === 'pi' ? createPiAdapter() : createApeiraAdapter()
+
+function withDebug(adapter: AgentAdapter): AgentAdapter {
   return async (request) => {
     const tools = request.tools.map(tool => ({
       ...tool,
@@ -23,15 +30,12 @@ function withDebug(base: AgentAdapter): AgentAdapter {
       },
     }))
 
-    const result = await base({ ...request, tools })
-    console.error(`[adapter] raw usage from apeira: ${JSON.stringify(result.usage)}`)
+    const result = await adapter({ ...request, tools })
+    console.error(`[adapter:${which}] raw usage: ${JSON.stringify(result.usage)}`)
 
     return result
   }
 }
-
-const cwd = process.argv[2]
-const target = process.argv[3] ?? 'target.ts'
 
 const setupConfig: SetupConfig = {
   providers: [
@@ -46,11 +50,11 @@ const setupConfig: SetupConfig = {
 }
 
 const plugin = definePlugin({
-  rules: { 'reinvented-helper': createReinventedHelperRule(withDebug(createApeiraAdapter())) },
+  rules: { 'reinvented-helper': createReinventedHelperRule(withDebug(base)) },
   scope: '@alint-js/plugin-example',
 })
 
-console.error(`[live] running reinvented-helper on ${cwd}/${target} ...`)
+console.error(`[test] running reinvented-helper via ${which} on ${cwd}/${target} ...`)
 
 try {
   const result = await runAlint({
@@ -65,11 +69,9 @@ try {
 
   console.log('=== diagnostics ===')
   console.log(JSON.stringify(result.diagnostics, null, 2))
-  console.log('=== usage ===')
-  console.log(JSON.stringify(result.usage, null, 2))
 }
 catch (error) {
-  console.error('[live] runAlint threw:', error instanceof Error ? error.message : error)
+  console.error('[test] runAlint threw:', error instanceof Error ? error.message : error)
 
   if (error && typeof error === 'object' && 'result' in error) {
     console.log('=== partial result ===')

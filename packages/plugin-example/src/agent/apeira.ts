@@ -1,6 +1,6 @@
 /// Super WIP
 
-import type { ResolvedModel } from '@alint-js/cli'
+import type { ResolvedModel } from '@alint-js/core'
 import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
 import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from './types'

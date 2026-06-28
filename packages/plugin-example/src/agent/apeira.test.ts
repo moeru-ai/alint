@@ -1,4 +1,4 @@
-import type { ResolvedModel } from '@alint-js/cli'
+import type { ResolvedModel } from '@alint-js/core'
 import type { RunnerContext } from 'apeira'
 
 import type { AgentTool } from './types'

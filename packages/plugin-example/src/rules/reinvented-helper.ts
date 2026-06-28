@@ -1,6 +1,6 @@
 /// Super WIP
 
-import type { RuleDefinition, SourceFile, SourceRuntime } from '@alint-js/cli'
+import type { RuleDefinition, SourceFile, SourceRuntime } from '@alint-js/core'
 
 import type { AgentAdapter, AgentTool } from '../agent/types'
 

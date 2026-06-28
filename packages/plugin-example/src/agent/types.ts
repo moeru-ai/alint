@@ -1,6 +1,6 @@
 /// Super WIP
 
-import type { ResolvedModel } from '@alint-js/cli'
+import type { ResolvedModel } from '@alint-js/core'
 
 export type AgentAdapter = (request: AgentRequest) => Promise<AgentResult>
 
