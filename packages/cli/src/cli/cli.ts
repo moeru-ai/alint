@@ -13,16 +13,20 @@ import c from 'tinyrainbow'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadAlintConfig, loadSetupConfig, mergeSetupConfigs, writeSetupConfig } from '@alint-js/config'
 import { AlintRunError, runAlint } from '@alint-js/core'
+import { errorMessageFrom } from '@moeru/std/error'
 import { cac } from 'cac'
 import { resolve } from 'pathe'
 
+import { findModel, formatModelList, formatModelShow, formatProviderList, formatProviderShow, parseHeaderList, probeModels } from './provider-registry'
 import { formatDiagnostics } from './reporters'
 import { createCliProgressReporter } from './reporters/progress'
+import { runInteractiveSetup } from './setup-interactive'
 
 export interface CliIo {
   cwd: string
   env?: NodeJS.ProcessEnv
   stderr: CliWritable
+  stdin?: { isTTY?: boolean }
   stdout: CliWritable
 }
 
@@ -44,11 +48,17 @@ interface GlobalCliOptions {
   timeoutMs?: string
 }
 
+interface ProbeCliOptions {
+  endpoint?: string
+  providerHeader?: string | string[]
+}
+
 interface SetupCliOptions extends GlobalCliOptions {
   local?: boolean
   noInteractive?: boolean
   providerEndpoint?: string
   providerHeader?: string | string[]
+  providerId?: string
   providerModel?: string | string[]
 }
 
@@ -74,6 +84,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('--local', 'Write project-local config')
     .option('-N, --no-interactive', 'Disable interactive setup')
     .option('--provider-endpoint <endpoint>', 'Provider endpoint')
+    .option('--provider-id <id>', 'Provider id')
     .option('--provider-model <model>', 'Provider model')
     .option('--provider-header <Key=Value>', 'Provider header')
     .action((options: SetupCliOptions) => {
@@ -81,6 +92,15 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
         ...options,
         noInteractive: setupNoInteractive,
       }, io)
+      return pendingResult
+    })
+
+  cli
+    .command('config [...args]', 'Manage alint configuration')
+    .option('--endpoint <url>', 'Provider endpoint')
+    .option('--provider-header <Key=Value>', 'Provider header')
+    .action((args: string[], options: ProbeCliOptions) => {
+      pendingResult = runConfigCommand(args, options, io)
       return pendingResult
     })
 
@@ -122,6 +142,7 @@ async function assertConfigExists(cwd: string, configPath: string): Promise<void
 }
 
 function createSetupConfig(
+  providerId: string,
   providerEndpoint: string,
   options: SetupCliOptions,
 ): SetupConfig {
@@ -136,7 +157,7 @@ function createSetupConfig(
       {
         endpoint: providerEndpoint,
         headers,
-        id: providerEndpoint,
+        id: providerId,
         models,
         type: 'openai-compatible',
       },
@@ -208,6 +229,17 @@ function isNoInteractive(options: SetupCliOptions): boolean {
   return options.noInteractive === true
 }
 
+async function loadMergedSetupConfig(io: CliIo): Promise<SetupConfig> {
+  const globalSetupConfigPath = getGlobalSetupConfigPath(io.env ?? process.env)
+  const projectSetupConfigPath = getProjectSetupConfigPath(io.cwd)
+  const [globalSetupConfig, projectSetupConfig] = await Promise.all([
+    loadSetupConfig(globalSetupConfigPath),
+    loadSetupConfig(projectSetupConfigPath),
+  ])
+
+  return mergeSetupConfigs(globalSetupConfig, projectSetupConfig)
+}
+
 function mergeRunnerCacheConfig(
   setupCache: RunnerConfig['cache'],
   configCache: RunnerConfig['cache'],
@@ -228,23 +260,7 @@ function mergeRunnerCacheConfig(
 }
 
 function parseHeaders(headers: string[]): Record<string, string> | undefined {
-  if (headers.length === 0) {
-    return undefined
-  }
-
-  const parsedHeaders: Record<string, string> = {}
-
-  for (const header of headers) {
-    const separatorIndex = header.indexOf('=')
-
-    if (separatorIndex <= 0) {
-      throw new Error(`Invalid provider header "${header}". Expected Key=Value.`)
-    }
-
-    parsedHeaders[header.slice(0, separatorIndex)] = header.slice(separatorIndex + 1)
-  }
-
-  return parsedHeaders
+  return parseHeaderList(headers)
 }
 
 function parsePositiveIntegerOption(value: string | undefined, label: string): number | undefined {
@@ -304,6 +320,39 @@ function resolveRunnerConfig(
     : undefined
 }
 
+async function runConfigCommand(
+  args: string[],
+  options: ProbeCliOptions,
+  io: CliIo,
+): Promise<number> {
+  if (args[0] === 'models' && args[1] === 'probe' && args.length === 2) {
+    return runModelsProbeCommand(options, io)
+  }
+
+  if (args[0] === 'models' && args[1] === 'ls' && args.length === 2) {
+    return runModelsListCommand(io)
+  }
+
+  if (args[0] === 'models' && args[1] === 'show' && args.length === 3) {
+    return runModelsShowCommand(args[2], io)
+  }
+
+  if (args[0] === 'providers' && args[1] === 'ls' && args.length === 2) {
+    return runProvidersListCommand(io)
+  }
+
+  if (args[0] === 'providers' && args[1] === 'show' && args.length === 3) {
+    return runProvidersShowCommand(args[2], io)
+  }
+
+  if (args[0] === 'providers' && args[1] === 'probe' && args.length === 2) {
+    return runProvidersProbeCommand(options, io)
+  }
+
+  io.stderr.write(`unknown config command: ${args.join(' ')}\n`)
+  return 2
+}
+
 async function runDefaultCommand(
   files: string[],
   options: GlobalCliOptions,
@@ -313,14 +362,10 @@ async function runDefaultCommand(
     await assertConfigExists(io.cwd, options.config)
   }
 
-  const globalSetupConfigPath = getGlobalSetupConfigPath(io.env ?? process.env)
-  const projectSetupConfigPath = getProjectSetupConfigPath(io.cwd)
-  const [globalSetupConfig, projectSetupConfig, config] = await Promise.all([
-    loadSetupConfig(globalSetupConfigPath),
-    loadSetupConfig(projectSetupConfigPath),
+  const [setupConfig, config] = await Promise.all([
+    loadMergedSetupConfig(io),
     loadAlintConfig(io.cwd, options.config),
   ])
-  const setupConfig = mergeSetupConfigs(globalSetupConfig, projectSetupConfig)
   const runner = resolveRunnerConfig(setupConfig, config, options)
   const progress = shouldEnableProgress(options, io)
     ? createCliProgressReporter({
@@ -368,17 +413,96 @@ async function runDefaultCommand(
   return result.diagnostics.length > 0 ? 1 : 0
 }
 
+async function runModelsListCommand(io: CliIo): Promise<number> {
+  io.stdout.write(formatModelList(await loadMergedSetupConfig(io)))
+  return 0
+}
+
+async function runModelsProbeCommand(
+  options: ProbeCliOptions,
+  io: CliIo,
+): Promise<number> {
+  if (!options.endpoint) {
+    io.stderr.write('config models probe requires --endpoint.\n')
+    return 2
+  }
+
+  try {
+    const models = await probeModels(options.endpoint, parseHeaderList(toArray(options.providerHeader)) ?? {})
+    io.stdout.write(`${models.join('\n')}${models.length > 0 ? '\n' : ''}`)
+    return 0
+  }
+  catch (error) {
+    io.stderr.write(`failed to probe models: ${errorMessageFrom(error) ?? String(error)}\n`)
+    return 2
+  }
+}
+
+async function runModelsShowCommand(model: string, io: CliIo): Promise<number> {
+  const candidate = findModel(await loadMergedSetupConfig(io), model)
+
+  if (candidate === undefined) {
+    io.stderr.write(`unknown model "${model}".\n`)
+    return 2
+  }
+
+  io.stdout.write(formatModelShow(candidate))
+  return 0
+}
+
+async function runProvidersListCommand(io: CliIo): Promise<number> {
+  io.stdout.write(formatProviderList(await loadMergedSetupConfig(io)))
+  return 0
+}
+
+async function runProvidersProbeCommand(
+  options: ProbeCliOptions,
+  io: CliIo,
+): Promise<number> {
+  if (!options.endpoint) {
+    io.stderr.write('config providers probe requires --endpoint.\n')
+    return 2
+  }
+
+  try {
+    const models = await probeModels(options.endpoint, parseHeaderList(toArray(options.providerHeader)) ?? {})
+    io.stdout.write(`endpoint: ${options.endpoint}\nmodels: ${models.length}\n`)
+    return 0
+  }
+  catch (error) {
+    io.stderr.write(`failed to probe provider: ${errorMessageFrom(error) ?? String(error)}\n`)
+    return 2
+  }
+}
+
+async function runProvidersShowCommand(providerId: string, io: CliIo): Promise<number> {
+  const config = await loadMergedSetupConfig(io)
+  const provider = config.providers.find(item => item.id === providerId)
+
+  if (provider === undefined) {
+    io.stderr.write(`unknown provider "${providerId}".\n`)
+    return 2
+  }
+
+  io.stdout.write(formatProviderShow(provider))
+  return 0
+}
+
 async function runSetupCommand(
   options: SetupCliOptions,
   io: CliIo,
 ): Promise<number> {
   if (!options.providerEndpoint) {
     if (!isNoInteractive(options)) {
-      io.stderr.write('interactive setup is not implemented yet. Use -N/--no-interactive with --provider-endpoint.\n')
-      return 2
+      return runInteractiveSetup({ ...io, stdin: io.stdin ?? process.stdin })
     }
 
     io.stderr.write('setup requires --provider-endpoint in --no-interactive mode.\n')
+    return 2
+  }
+
+  if (!options.providerId) {
+    io.stderr.write('setup requires --provider-id in --no-interactive mode.\n')
     return 2
   }
 
@@ -388,7 +512,7 @@ async function runSetupCommand(
   const existingConfig = await loadSetupConfig(setupConfigPath)
   const nextConfig = mergeSetupConfigs(
     existingConfig,
-    createSetupConfig(options.providerEndpoint, options),
+    createSetupConfig(options.providerId, options.providerEndpoint, options),
   )
 
   await writeSetupConfig(setupConfigPath, nextConfig)

@@ -3,6 +3,8 @@ import type { LineRange, SourceFile, SourcePosition, SourceRange, SourceRuntime,
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 
+import { clamp } from 'es-toolkit'
+
 export function createSourceFile(path: string, text: string): SourceFile {
   return {
     language: inferLanguage(path),
@@ -65,11 +67,11 @@ function clampLine(line: number, lineCount: number): number {
     return 1
   }
 
-  return Math.min(Math.max(Math.trunc(line), 1), lineCount)
+  return clamp(Math.trunc(line), 1, lineCount)
 }
 
 function clampOffset(offset: number, textLength: number): number {
-  return Math.min(Math.max(Math.trunc(offset), 0), textLength)
+  return clamp(Math.trunc(offset), 0, textLength)
 }
 
 function getPosition(text: string, offset: number): SourcePosition {

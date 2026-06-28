@@ -1,4 +1,5 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -6,6 +7,8 @@ import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig }
 import { describe, expect, it } from 'vitest'
 
 import { executeCli } from './cli'
+import { createProviderId } from './provider-registry'
+import { formatProbeModelsFailure, isBackInput, withBackOption } from './setup-interactive'
 
 interface TestIo {
   cwd: string
@@ -18,8 +21,13 @@ interface TestIo {
 
 async function createTestIo(): Promise<TestIo> {
   const cwd = await mkdtemp(join(tmpdir(), 'alint-cli-'))
+  const configHome = await mkdtemp(join(tmpdir(), 'alint-config-home-'))
   const io: TestIo = {
     cwd,
+    env: {
+      ...process.env,
+      XDG_CONFIG_HOME: configHome,
+    },
     stderr: {
       write: (chunk: string) => {
         io.stderrText += chunk
@@ -35,6 +43,41 @@ async function createTestIo(): Promise<TestIo> {
   }
 
   return io
+}
+
+async function withModelsServer(
+  handler: (request: { headers: NodeJS.Dict<string | string[] | undefined>, url?: string }) => { body: unknown, status?: number },
+): Promise<{ close: () => Promise<void>, endpoint: string }> {
+  const server = createServer((request, response) => {
+    const result = handler({ headers: request.headers, url: request.url })
+    response.statusCode = result.status ?? 200
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify(result.body))
+  })
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
+
+  const address = server.address()
+
+  if (address === null || typeof address === 'string') {
+    throw new Error('Expected TCP test server address.')
+  }
+
+  return {
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve()
+      })
+    }),
+    endpoint: `http://127.0.0.1:${address.port}/v1/`,
+  }
 }
 
 async function writeCacheFixture(cwd: string, runnerConfig = ''): Promise<void> {
@@ -106,6 +149,32 @@ export default {
 `)
 }
 
+describe('createProviderId', () => {
+  it('creates endpoint-based provider ids and avoids collisions', () => {
+    expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('localhost')
+    expect(createProviderId('https://openrouter.ai/api/v1', new Set(['openrouter-ai']))).toBe('openrouter-ai-2')
+    expect(createProviderId('not a url', new Set())).toBe('provider')
+  })
+})
+
+describe('interactive setup navigation', () => {
+  it('adds an explicit back option and recognizes text back input', () => {
+    expect(withBackOption([{ label: 'Ollama', value: 'ollama' }])).toEqual([
+      { label: 'Ollama', value: 'ollama' },
+      { label: 'Back', value: '__alint_back__' },
+    ])
+    expect(isBackInput('..')).toBe(true)
+    expect(isBackInput(' .. ')).toBe(true)
+    expect(isBackInput('qwen:8b')).toBe(false)
+  })
+
+  it('explains likely Ollama HTTPS probe failures', () => {
+    expect(formatProbeModelsFailure('https://localhost:11434/v1', new Error('fetch failed'))).toBe(
+      'Could not probe models: fetch failed. Ollama usually uses http://localhost:11434/v1.',
+    )
+  })
+})
+
 describe('executeCli', () => {
   it('writes local setup config and returns 0 for non-interactive setup', async () => {
     const io = await createTestIo()
@@ -116,6 +185,8 @@ describe('executeCli', () => {
       'setup',
       '-N',
       '--local',
+      '--provider-id',
+      'ollama',
       '--provider-endpoint',
       'http://localhost:11434/v1',
       '--provider-model',
@@ -125,6 +196,7 @@ describe('executeCli', () => {
     expect(exitCode).toBe(0)
 
     const toml = await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')
+    expect(toml).toContain('id = "ollama"')
     expect(toml).toContain('endpoint = "http://localhost:11434/v1"')
     expect(toml).toContain('id = "qwen:8b"')
   })
@@ -138,6 +210,8 @@ describe('executeCli', () => {
       'setup',
       '--no-interactive',
       '--local',
+      '--provider-id',
+      'ollama',
       '--provider-endpoint',
       'http://localhost:11434/v1',
       '--provider-model',
@@ -146,6 +220,79 @@ describe('executeCli', () => {
 
     expect(exitCode).toBe(0)
     expect(await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')).toContain('id = "qwen:8b"')
+  })
+
+  it('writes provider id from --provider-id during non-interactive setup', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'setup',
+      '-N',
+      '--local',
+      '--provider-id',
+      'ollama',
+      '--provider-endpoint',
+      'http://localhost:11434/v1',
+      '--provider-model',
+      'qwen:8b',
+    ], io)
+
+    expect(exitCode).toBe(0)
+
+    const toml = await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')
+    expect(toml).toContain('id = "ollama"')
+    expect(toml).toContain('endpoint = "http://localhost:11434/v1"')
+    expect(toml).toContain('id = "qwen:8b"')
+  })
+
+  it('keeps repeated setup providers separate when provider ids differ', async () => {
+    const io = await createTestIo()
+
+    const firstExitCode = await executeCli([
+      'node',
+      'alint',
+      'setup',
+      '-N',
+      '--local',
+      '--provider-id',
+      'first',
+      '--provider-endpoint',
+      'http://localhost:11434/v1',
+      '--provider-model',
+      'first-model',
+      '--provider-header',
+      'Authorization=Bearer first',
+    ], io)
+
+    expect(firstExitCode).toBe(0)
+
+    const secondExitCode = await executeCli([
+      'node',
+      'alint',
+      'setup',
+      '-N',
+      '--local',
+      '--provider-id',
+      'second',
+      '--provider-endpoint',
+      'http://localhost:11434/v1',
+      '--provider-model',
+      'second-model',
+      '--provider-header',
+      'Authorization=Bearer second',
+    ], io)
+
+    expect(secondExitCode).toBe(0)
+
+    const toml = await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')
+    expect(toml).toContain('id = "first"')
+    expect(toml).toContain('id = "second"')
+    expect(toml).toContain('id = "first-model"')
+    expect(toml).toContain('id = "second-model"')
+    expect(toml).toContain('Authorization = "Bearer first"')
+    expect(toml).toContain('Authorization = "Bearer second"')
   })
 
   it('writes global setup config under XDG_CONFIG_HOME with repeated models and headers', async () => {
@@ -161,6 +308,8 @@ describe('executeCli', () => {
       'alint',
       'setup',
       '-N',
+      '--provider-id',
+      'ollama',
       '--provider-endpoint',
       'http://localhost:11434/v1',
       '--provider-model',
@@ -180,6 +329,301 @@ describe('executeCli', () => {
     expect(toml).toContain('id = "qwen:32b"')
     expect(toml).toContain('Authorization = "Bearer token"')
     expect(toml).toContain('X-Test = "true"')
+  })
+
+  it('prints discovered models from config models probe', async () => {
+    const io = await createTestIo()
+    const server = await withModelsServer(({ headers, url }) => {
+      expect(url).toBe('/v1/models')
+      expect(headers.authorization).toBe('Bearer probe')
+
+      return {
+        body: {
+          data: [
+            { id: 'qwen:8b' },
+            { id: 'qwen:32b' },
+            { id: 123 },
+          ],
+        },
+      }
+    })
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'probe',
+        '--endpoint',
+        server.endpoint,
+        '--provider-header',
+        'Authorization=Bearer probe',
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect(io.stdoutText).toBe('qwen:8b\nqwen:32b\n')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('returns 2 when config models probe cannot read OpenAI-compatible models', async () => {
+    const io = await createTestIo()
+    const server = await withModelsServer(() => ({ body: { data: [] }, status: 500 }))
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'probe',
+        '--endpoint',
+        server.endpoint,
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toContain('failed to probe models:')
+      expect(io.stdoutText).toBe('')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('returns 2 when config models probe receives a malformed response', async () => {
+    const io = await createTestIo()
+    const server = await withModelsServer(() => ({ body: {} }))
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'probe',
+        '--endpoint',
+        server.endpoint,
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toContain('failed to probe models:')
+      expect(io.stdoutText).toBe('')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('lists flattened configured models', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'http://localhost:11434/v1',
+          id: 'ollama',
+          models: [
+            { id: 'local:qwen-8b', name: 'qwen:8b' },
+            { id: 'local:qwen-32b' },
+          ],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'ls',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'id              provider  name            ',
+      'local:qwen-8b   ollama    qwen:8b         ',
+      'local:qwen-32b  ollama    local:qwen-32b  ',
+      '',
+    ].join('\n'))
+  })
+
+  it('shows one configured model by alias without printing header values', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'http://localhost:11434/v1',
+          headers: { Authorization: 'Bearer secret' },
+          id: 'ollama',
+          models: [
+            {
+              aliases: ['default'],
+              capabilities: ['code-review'],
+              contextWindow: 32768,
+              defaultParams: { temperature: 0.1 },
+              id: 'local:qwen-8b',
+              name: 'qwen:8b',
+              size: 'small',
+            },
+          ],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'show',
+      'default',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('id: local:qwen-8b\n')
+    expect(io.stdoutText).toContain('name: qwen:8b\n')
+    expect(io.stdoutText).toContain('provider: ollama\n')
+    expect(io.stdoutText).toContain('aliases: default\n')
+    expect(io.stdoutText).toContain('capabilities: code-review\n')
+    expect(io.stdoutText).toContain('contextWindow: 32768\n')
+    expect(io.stdoutText).toContain('defaultParams: {"temperature":0.1}\n')
+    expect(io.stdoutText).not.toContain('secret')
+  })
+
+  it('returns 2 when model is unknown', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'show',
+      'missing',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('unknown model "missing".\n')
+  })
+
+  it('lists merged config providers without printing header values', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'http://localhost:11434/v1',
+          headers: { Authorization: 'Bearer secret' },
+          id: 'ollama',
+          models: [{ id: 'qwen:8b' }, { id: 'qwen:32b' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'ls',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'id      type               endpoint                   models  ',
+      'ollama  openai-compatible  http://localhost:11434/v1  2       ',
+      '',
+    ].join('\n'))
+    expect(io.stdoutText).not.toContain('secret')
+  })
+
+  it('shows one provider with header keys only', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'https://openrouter.ai/api/v1',
+          headers: {
+            'Authorization': 'Bearer secret',
+            'HTTP-Referer': 'https://example.test',
+          },
+          id: 'openrouter',
+          models: [{ id: 'openai/gpt-4.1-mini' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'show',
+      'openrouter',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('id: openrouter\n')
+    expect(io.stdoutText).toContain('endpoint: https://openrouter.ai/api/v1\n')
+    expect(io.stdoutText).toContain('models: openai/gpt-4.1-mini\n')
+    expect(io.stdoutText).toContain('headers: Authorization, HTTP-Referer\n')
+    expect(io.stdoutText).not.toContain('secret')
+    expect(io.stdoutText).not.toContain('example.test')
+  })
+
+  it('returns 2 when provider is unknown', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'show',
+      'missing',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('unknown provider "missing".\n')
+  })
+
+  it('probes provider reachability and model count', async () => {
+    const io = await createTestIo()
+    const server = await withModelsServer(() => ({
+      body: { data: [{ id: 'one' }, { id: 'two' }] },
+    }))
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'probe',
+        '--endpoint',
+        server.endpoint,
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect(io.stdoutText).toBe(`endpoint: ${server.endpoint}\nmodels: 2\n`)
+    }
+    finally {
+      await server.close()
+    }
   })
 
   it('prints help and returns 0', async () => {
@@ -210,7 +654,26 @@ describe('executeCli', () => {
     expect(io.stderrText).toBe('setup requires --provider-endpoint in --no-interactive mode.\n')
   })
 
-  it('returns a deferred interactive setup message when setup has no non-interactive inputs', async () => {
+  it('returns 2 when non-interactive setup is missing provider id', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'setup',
+      '-N',
+      '--local',
+      '--provider-endpoint',
+      'http://localhost:11434/v1',
+      '--provider-model',
+      'qwen:8b',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('setup requires --provider-id in --no-interactive mode.\n')
+  })
+
+  it('returns 2 when interactive setup is requested without a TTY', async () => {
     const io = await createTestIo()
 
     const exitCode = await executeCli([
@@ -220,7 +683,7 @@ describe('executeCli', () => {
     ], io)
 
     expect(exitCode).toBe(2)
-    expect(io.stderrText).toBe('interactive setup is not implemented yet. Use -N/--no-interactive with --provider-endpoint.\n')
+    expect(io.stderrText).toBe('interactive setup requires a TTY. Use -N/--no-interactive with --provider-id and --provider-endpoint.\n')
   })
 
   it('formats diagnostics for the default run command and returns 1 when diagnostics exist', async () => {
@@ -763,6 +1226,8 @@ export default {
       'alint',
       'setup',
       '-N',
+      '--provider-id',
+      'global',
       '--provider-endpoint',
       'http://localhost:11434/v1',
       '--provider-model',
@@ -774,6 +1239,8 @@ export default {
       'setup',
       '-N',
       '--local',
+      '--provider-id',
+      'project',
       '--provider-endpoint',
       'http://localhost:11434/v1',
       '--provider-model',
