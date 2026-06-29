@@ -24,9 +24,12 @@
   "dependencies": {
     "@alint-js/config": "workspace:*",
     "@alint-js/core": "workspace:*",
+    "@clack/prompts": "catalog:",
+    "@moeru/std": "catalog:",
     "cac": "catalog:",
     "cli-spinners": "catalog:",
     "pathe": "catalog:",
+    "table": "catalog:",
     "tinyrainbow": "catalog:"
   },
   "devDependencies": {
