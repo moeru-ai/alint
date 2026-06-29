@@ -2,6 +2,7 @@ import type { InspectOptions } from 'node:util'
 
 import type { RunnerConfig, SetupConfig } from '@alint-js/config'
 
+import type { SetupCommandOptions } from './commands/setup'
 import type { ReporterName } from './reporters'
 
 import process from 'node:process'
@@ -11,16 +12,16 @@ import { inspect } from 'node:util'
 
 import c from 'tinyrainbow'
 
-import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadAlintConfig, loadSetupConfig, mergeSetupConfigs, writeSetupConfig } from '@alint-js/config'
+import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadAlintConfig, loadSetupConfig, mergeSetupConfigs } from '@alint-js/config'
 import { AlintRunError, runAlint } from '@alint-js/core'
 import { errorMessageFrom } from '@moeru/std/error'
 import { cac } from 'cac'
 import { resolve } from 'pathe'
 
+import { runSetupCommand } from './commands/setup'
 import { findModel, formatModelList, formatModelShow, formatProviderList, formatProviderShow, parseHeaderList, probeModels } from './provider-registry'
 import { formatDiagnostics } from './reporters'
 import { createCliProgressReporter } from './reporters/progress'
-import { runInteractiveSetup } from './setup-interactive'
 
 export interface CliIo {
   cwd: string
@@ -53,15 +54,6 @@ interface ProbeCliOptions {
   providerHeader?: string | string[]
 }
 
-interface SetupCliOptions extends GlobalCliOptions {
-  local?: boolean
-  noInteractive?: boolean
-  providerEndpoint?: string
-  providerHeader?: string | string[]
-  providerId?: string
-  providerModel?: string | string[]
-}
-
 export async function executeCli(argv: string[], io: CliIo): Promise<number> {
   const cli = cac('alint')
   const setupNoInteractive = argv.includes('-N') || argv.includes('--no-interactive')
@@ -87,7 +79,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('--provider-id <id>', 'Provider id')
     .option('--provider-model <model>', 'Provider model')
     .option('--provider-header <Key=Value>', 'Provider header')
-    .action((options: SetupCliOptions) => {
+    .action((options: SetupCommandOptions) => {
       pendingResult = runSetupCommand({
         ...options,
         noInteractive: setupNoInteractive,
@@ -138,31 +130,6 @@ async function assertConfigExists(cwd: string, configPath: string): Promise<void
     }
 
     throw error
-  }
-}
-
-function createSetupConfig(
-  providerId: string,
-  providerEndpoint: string,
-  options: SetupCliOptions,
-): SetupConfig {
-  const models = toArray(options.providerModel).map(model => ({
-    id: model,
-    name: model,
-  }))
-  const headers = parseHeaders(toArray(options.providerHeader))
-
-  return {
-    providers: [
-      {
-        endpoint: providerEndpoint,
-        headers,
-        id: providerId,
-        models,
-        type: 'openai-compatible',
-      },
-    ],
-    version: 1,
   }
 }
 
@@ -225,10 +192,6 @@ function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
 }
 
-function isNoInteractive(options: SetupCliOptions): boolean {
-  return options.noInteractive === true
-}
-
 async function loadMergedSetupConfig(io: CliIo): Promise<SetupConfig> {
   const globalSetupConfigPath = getGlobalSetupConfigPath(io.env ?? process.env)
   const projectSetupConfigPath = getProjectSetupConfigPath(io.cwd)
@@ -257,10 +220,6 @@ function mergeRunnerCacheConfig(
   }
 
   return configCache
-}
-
-function parseHeaders(headers: string[]): Record<string, string> | undefined {
-  return parseHeaderList(headers)
 }
 
 function parsePositiveIntegerOption(value: string | undefined, label: string): number | undefined {
@@ -485,37 +444,6 @@ async function runProvidersShowCommand(providerId: string, io: CliIo): Promise<n
   }
 
   io.stdout.write(formatProviderShow(provider))
-  return 0
-}
-
-async function runSetupCommand(
-  options: SetupCliOptions,
-  io: CliIo,
-): Promise<number> {
-  if (!options.providerEndpoint) {
-    if (!isNoInteractive(options)) {
-      return runInteractiveSetup({ ...io, stdin: io.stdin ?? process.stdin })
-    }
-
-    io.stderr.write('setup requires --provider-endpoint in --no-interactive mode.\n')
-    return 2
-  }
-
-  if (!options.providerId) {
-    io.stderr.write('setup requires --provider-id in --no-interactive mode.\n')
-    return 2
-  }
-
-  const setupConfigPath = options.local
-    ? getProjectSetupConfigPath(io.cwd)
-    : getGlobalSetupConfigPath(io.env ?? process.env)
-  const existingConfig = await loadSetupConfig(setupConfigPath)
-  const nextConfig = mergeSetupConfigs(
-    existingConfig,
-    createSetupConfig(options.providerId, options.providerEndpoint, options),
-  )
-
-  await writeSetupConfig(setupConfigPath, nextConfig)
   return 0
 }
 

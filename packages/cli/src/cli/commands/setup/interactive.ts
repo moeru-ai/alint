@@ -6,7 +6,7 @@ import process from 'node:process'
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, mergeSetupConfigs, writeSetupConfig } from '@alint-js/config'
 import { errorMessageFrom } from '@moeru/std/error'
 
-import { createProviderId, parseHeaderList, probeModels } from './provider-registry'
+import { createProviderId, parseHeaderList, probeModels } from '../../provider-registry'
 
 export interface InteractiveSetupIo {
   cwd: string
