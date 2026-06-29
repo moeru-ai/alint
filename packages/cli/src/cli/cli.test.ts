@@ -7,8 +7,8 @@ import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig }
 import { describe, expect, it } from 'vitest'
 
 import { executeCli } from './cli'
+import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId } from './provider-registry'
-import { formatProbeModelsFailure, isBackInput, withBackOption } from './setup-interactive'
 
 interface TestIo {
   cwd: string
