@@ -1,10 +1,12 @@
 /// Super WIP
 
+import type { AgentAdapter, AgentTool } from '@alint-js/agent'
 import type { RuleDefinition, SourceFile, SourceRuntime } from '@alint-js/core'
 
-import type { AgentAdapter, AgentTool } from '../agent/types'
-
 import { resolve } from 'node:path'
+
+import { defineTool } from '@alint-js/agent'
+import { errorMessageFrom } from '@moeru/std/error'
 
 export interface ReinventedHelperFinding {
   line: number
@@ -20,7 +22,7 @@ export const reinventedHelperInstructions = [
 ].join('\n')
 
 export function createReadFileTool(src: Pick<SourceRuntime, 'readFile'>, cwd: string): AgentTool {
-  return {
+  return defineTool({
     description: 'Read a source file by its path (relative to the project root) and return its full text.',
     execute: async (input) => {
       const { path } = input as { path: string }
@@ -31,7 +33,7 @@ export function createReadFileTool(src: Pick<SourceRuntime, 'readFile'>, cwd: st
         return file.text
       }
       catch (error) {
-        return `Could not read "${path}": ${error instanceof Error ? error.message : String(error)}`
+        return `Could not read "${path}": ${errorMessageFrom(error) ?? String(error)}`
       }
     },
     name: 'read_file',
@@ -43,7 +45,7 @@ export function createReadFileTool(src: Pick<SourceRuntime, 'readFile'>, cwd: st
       required: ['path'],
       type: 'object',
     },
-  }
+  })
 }
 
 export function createReinventedHelperRule(adapter: AgentAdapter): RuleDefinition {
@@ -80,7 +82,7 @@ export function createReinventedHelperRule(adapter: AgentAdapter): RuleDefinitio
 }
 
 export function createReportFindingTool(findings: ReinventedHelperFinding[]): AgentTool {
-  return {
+  return defineTool({
     description: 'Report one helper function that duplicates a utility already available in the repo or a dependency. Call once per finding.',
     execute: (input) => {
       const finding = input as ReinventedHelperFinding
@@ -104,7 +106,7 @@ export function createReportFindingTool(findings: ReinventedHelperFinding[]): Ag
       required: ['line', 'message', 'suggestion'],
       type: 'object',
     },
-  }
+  })
 }
 
 function buildPrompt(file: SourceFile): string {

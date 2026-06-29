@@ -1,8 +1,7 @@
+import type { AgentAdapter, AgentRequest, AgentResult, AgentTool } from '@alint-js/agent'
 import type { ResolvedModel } from '@alint-js/core'
 import type { AgentTool as PiTool } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
-
-import type { AgentAdapter, AgentRequest, AgentResult, AgentTool } from './types'
 
 import { Agent } from '@earendil-works/pi-agent-core'
 import { Type } from '@earendil-works/pi-ai'

@@ -1,13 +1,13 @@
 /// Super WIP
 /// Usage: test.mts <cwd> <targetFile> <apeira|pi>
 
+import type { AgentAdapter } from '@alint-js/agent'
 import type { SetupConfig } from '@alint-js/core'
-
-import type { AgentAdapter } from './src/agent/types'
 
 import process from 'node:process'
 
 import { definePlugin, runAlint } from '@alint-js/core'
+import { errorMessageFrom } from '@moeru/std/error'
 
 import { createApeiraAdapter } from './src/agent/apeira'
 import { createPiAdapter } from './src/agent/pi'
@@ -54,27 +54,31 @@ const plugin = definePlugin({
   scope: '@alint-js/plugin-example',
 })
 
-console.error(`[test] running reinvented-helper via ${which} on ${cwd}/${target} ...`)
+async function main() {
+  console.error(`[test] running reinvented-helper via ${which} on ${cwd}/${target} ...`)
 
-try {
-  const result = await runAlint({
-    config: {
-      plugins: [plugin],
-      rules: { '@alint-js/plugin-example/reinvented-helper': 'warn' },
-    },
-    cwd,
-    files: [target],
-    setupConfig,
-  })
+  try {
+    const result = await runAlint({
+      config: {
+        plugins: [plugin],
+        rules: { '@alint-js/plugin-example/reinvented-helper': 'warn' },
+      },
+      cwd,
+      files: [target],
+      setupConfig,
+    })
 
-  console.log('=== diagnostics ===')
-  console.log(JSON.stringify(result.diagnostics, null, 2))
-}
-catch (error) {
-  console.error('[test] runAlint threw:', error instanceof Error ? error.message : error)
+    console.info('=== diagnostics ===')
+    console.info(JSON.stringify(result.diagnostics, null, 2))
+  }
+  catch (error) {
+    console.error('[test] runAlint threw:', errorMessageFrom(error) ?? String(error))
 
-  if (error && typeof error === 'object' && 'result' in error) {
-    console.log('=== partial result ===')
-    console.log(JSON.stringify((error as { result: unknown }).result, null, 2))
+    if (error && typeof error === 'object' && 'result' in error) {
+      console.info('=== partial result ===')
+      console.info(JSON.stringify((error as { result: unknown }).result, null, 2))
+    }
   }
 }
+
+void main()

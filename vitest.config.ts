@@ -7,6 +7,7 @@ export default defineConfig({
       'packages/core',
       'packages/config',
       'packages/cli',
+      'packages/agent',
       'packages/plugin-example',
     ],
   },

@@ -1,6 +1,6 @@
+import type { AgentAdapter, AgentRequest } from '@alint-js/agent'
 import type { DiagnosticDescriptor, ResolvedModel, RuleContext, SourceFile, SourceRuntime } from '@alint-js/core'
 
-import type { AgentAdapter, AgentRequest } from '../agent/types'
 import type { ReinventedHelperFinding } from './reinvented-helper'
 
 import { describe, expect, it } from 'vitest'

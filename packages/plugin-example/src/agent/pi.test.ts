@@ -1,4 +1,4 @@
-import type { AgentTool } from './types'
+import type { AgentTool } from '@alint-js/agent'
 
 import { describe, expect, it } from 'vitest'
 

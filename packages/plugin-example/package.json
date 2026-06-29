@@ -17,9 +17,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@alint-js/agent": "workspace:*",
     "@alint-js/core": "workspace:*",
     "@earendil-works/pi-agent-core": "catalog:",
     "@earendil-works/pi-ai": "catalog:",
+    "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
     "apeira": "catalog:",
     "valibot": "catalog:",

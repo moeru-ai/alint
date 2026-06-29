@@ -1,5 +1,3 @@
-/// Super WIP
-
 import type { ResolvedModel } from '@alint-js/core'
 
 export type AgentAdapter = (request: AgentRequest) => Promise<AgentResult>
@@ -17,7 +15,7 @@ export interface AgentResult {
   usage?: AgentUsage
 }
 
-/** Agent-agnostic tool definition */
+/** Agent-agnostic tool definition. Each adapter translates it to its framework's tool format. */
 export interface AgentTool {
   description: string
   execute: (input: unknown) => Promise<unknown> | unknown
@@ -29,4 +27,8 @@ export interface AgentUsage {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
+}
+
+export function defineTool(tool: AgentTool): AgentTool {
+  return tool
 }
