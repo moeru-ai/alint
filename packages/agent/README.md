@@ -49,8 +49,8 @@ The adapter itself comes from a framework package (e.g. an adapter for Apeira ag
 
 ## When to use
 
-- A rule that needs to explore (read files, search, call tools) across multiple steps before reporting, not a single one-shot judgement.
+- You run rules that need to explore (read files, search, call tools) across multiple steps before reporting, not single one-shot "judge" rules.
 
 ## When not to use
 
-- One-shot, no-tool "judge" rules. They don't need an agent. Keep them on the plain `@alint-js/core` rule DSL. If you don't write tool-using rules, you may not need this.
+- You run one-shot, no-tool "judge" rules. They don't need an agent. Keep them on the plain `@alint-js/core` rule DSL. If you don't write tool-using rules, you may not need this.

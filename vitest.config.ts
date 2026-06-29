@@ -8,6 +8,7 @@ export default defineConfig({
       'packages/config',
       'packages/cli',
       'packages/agent',
+      'packages/agent-apeira',
       'packages/plugin-example',
     ],
   },

@@ -1,7 +1,7 @@
 {
-  "name": "@alint-js/plugin-example",
+  "name": "@alint-js/agent-apeira",
   "type": "module",
-  "private": true,
+  "version": "0.0.3",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -14,21 +14,19 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
     "@alint-js/agent": "workspace:*",
-    "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
-    "@earendil-works/pi-agent-core": "catalog:",
-    "@earendil-works/pi-ai": "catalog:",
-    "@moeru/std": "catalog:",
-    "@valibot/to-json-schema": "catalog:",
-    "valibot": "catalog:",
+    "apeira": "catalog:",
     "xsai": "catalog:"
   },
   "devDependencies": {
+    "@types/node": "catalog:",
     "tsdown": "catalog:",
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "vitest": "catalog:vitest"
   }
 }

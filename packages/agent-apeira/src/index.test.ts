@@ -4,7 +4,7 @@ import type { RunnerContext } from 'apeira'
 
 import { describe, expect, it } from 'vitest'
 
-import { createApeiraAdapter } from './apeira'
+import { createApeiraAdapter } from './index'
 
 function fakeModel(): ResolvedModel {
   return {

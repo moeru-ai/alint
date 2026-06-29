@@ -6,10 +6,10 @@ import type { SetupConfig } from '@alint-js/core'
 
 import process from 'node:process'
 
+import { createApeiraAdapter } from '@alint-js/agent-apeira'
 import { definePlugin, runAlint } from '@alint-js/core'
 import { errorMessageFrom } from '@moeru/std/error'
 
-import { createApeiraAdapter } from './src/agent/apeira'
 import { createPiAdapter } from './src/agent/pi'
 import { createReinventedHelperRule } from './src/rules/reinvented-helper'
 
