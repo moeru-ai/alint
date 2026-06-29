@@ -290,6 +290,34 @@ importers:
         specifier: catalog:vitest
         version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
+  packages/agent-pi:
+    dependencies:
+      '@alint-js/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@earendil-works/pi-agent-core':
+        specifier: 'catalog:'
+        version: 0.80.2(ws@8.21.0)(zod@4.4.3)
+      '@earendil-works/pi-ai':
+        specifier: 'catalog:'
+        version: 0.80.2(ws@8.21.0)(zod@4.4.3)
+    devDependencies:
+      '@types/node':
+        specifier: 'catalog:'
+        version: 26.0.1
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+      vitest:
+        specifier: catalog:vitest
+        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+
   packages/cli:
     dependencies:
       '@alint-js/config':
@@ -403,15 +431,12 @@ importers:
       '@alint-js/agent-apeira':
         specifier: workspace:*
         version: link:../agent-apeira
+      '@alint-js/agent-pi':
+        specifier: workspace:*
+        version: link:../agent-pi
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
-      '@earendil-works/pi-agent-core':
-        specifier: 'catalog:'
-        version: 0.80.2(ws@8.21.0)(zod@4.4.3)
-      '@earendil-works/pi-ai':
-        specifier: 'catalog:'
-        version: 0.80.2(ws@8.21.0)(zod@4.4.3)
       '@moeru/std':
         specifier: 'catalog:'
         version: 0.1.0-beta.18

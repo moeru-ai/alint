@@ -15,6 +15,14 @@ interface PiMessage {
   role?: unknown
 }
 
+/** Pi authenticates with a key string, while alint models carry auth in provider headers; bridge the two. */
+export function apiKeyFromModel(model: ResolvedModel): string {
+  const auth = model.provider.headers.Authorization ?? model.provider.headers.authorization
+
+  // Fall back to a placeholder for keyless local servers (e.g. LM Studio), which ignore the value.
+  return auth?.replace(/^Bearer\s+/i, '') ?? 'unused'
+}
+
 export function createPiAdapter(options: Partial<PiAdapterOptions> = {}): AgentAdapter {
   const run = options.run ?? runPiAgent
 
@@ -84,7 +92,7 @@ function isTextPart(part: unknown): part is { text: string, type: 'text' } {
 
 async function runPiAgent(request: AgentRequest): Promise<PiMessage[]> {
   const agent = new Agent({
-    getApiKey: () => 'lmstudio',
+    getApiKey: () => apiKeyFromModel(request.model),
     initialState: {
       model: createPiModel(request.model),
       systemPrompt: request.instructions,

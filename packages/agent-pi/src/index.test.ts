@@ -1,8 +1,20 @@
 import type { AgentTool } from '@alint-js/agent'
+import type { ResolvedModel } from '@alint-js/core'
 
 import { describe, expect, it } from 'vitest'
 
-import { extractPiText, toPiTools } from './pi'
+import { apiKeyFromModel, extractPiText, toPiTools } from './index'
+
+function fakeModel(headers: Record<string, string>): ResolvedModel {
+  return {
+    aliases: [],
+    capabilities: [],
+    id: 'gpt-4o-mini',
+    name: 'gpt-4o-mini',
+    params: {},
+    provider: { endpoint: 'https://api.openai.com/v1', headers, id: 'openai', type: 'openai-compatible' },
+  }
+}
 
 describe('pi adapter helpers', () => {
   it('joins the text parts of an assistant message', () => {
@@ -38,5 +50,15 @@ describe('pi adapter helpers', () => {
 
     expect(calls).toEqual([{ query: 'clamp' }])
     expect(result.content).toEqual([{ text: 'matches', type: 'text' }])
+  })
+})
+
+describe('apiKeyFromModel', () => {
+  it('extracts the bearer token from the provider Authorization header', () => {
+    expect(apiKeyFromModel(fakeModel({ Authorization: 'Bearer sk-test-123' }))).toBe('sk-test-123')
+  })
+
+  it('falls back to a placeholder when there is no auth header', () => {
+    expect(apiKeyFromModel(fakeModel({}))).toBe('unused')
   })
 })

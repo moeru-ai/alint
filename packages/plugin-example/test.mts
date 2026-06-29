@@ -7,10 +7,10 @@ import type { SetupConfig } from '@alint-js/core'
 import process from 'node:process'
 
 import { createApeiraAdapter } from '@alint-js/agent-apeira'
+import { createPiAdapter } from '@alint-js/agent-pi'
 import { definePlugin, runAlint } from '@alint-js/core'
 import { errorMessageFrom } from '@moeru/std/error'
 
-import { createPiAdapter } from './src/agent/pi'
 import { createReinventedHelperRule } from './src/rules/reinvented-helper'
 
 const cwd = process.argv[2]
@@ -37,12 +37,15 @@ function withDebug(adapter: AgentAdapter): AgentAdapter {
   }
 }
 
+const apiKey = process.env.OPENAI_API_KEY ?? process.env.ALINT_API_KEY ?? ''
+
 const setupConfig: SetupConfig = {
   providers: [
     {
-      endpoint: 'http://127.0.0.1:1234/v1',
-      id: 'lmstudio',
-      models: [{ id: 'zai-org/glm-4.6v-flash' }],
+      endpoint: process.env.ALINT_ENDPOINT ?? 'https://api.openai.com/v1',
+      headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : {},
+      id: 'openai',
+      models: [{ id: process.env.ALINT_MODEL ?? 'gpt-4o-mini' }],
       type: 'openai-compatible',
     },
   ],
@@ -68,14 +71,14 @@ async function main() {
       setupConfig,
     })
 
-    console.info('=== diagnostics ===')
+    console.info('diagnostics:')
     console.info(JSON.stringify(result.diagnostics, null, 2))
   }
   catch (error) {
     console.error('[test] runAlint threw:', errorMessageFrom(error) ?? String(error))
 
     if (error && typeof error === 'object' && 'result' in error) {
-      console.info('=== partial result ===')
+      console.info('partial result:')
       console.info(JSON.stringify((error as { result: unknown }).result, null, 2))
     }
   }

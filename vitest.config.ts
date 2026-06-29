@@ -9,6 +9,7 @@ export default defineConfig({
       'packages/cli',
       'packages/agent',
       'packages/agent-apeira',
+      'packages/agent-pi',
       'packages/plugin-example',
     ],
   },
