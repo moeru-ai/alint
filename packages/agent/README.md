@@ -1,5 +1,8 @@
 # `@alint-js/agent`
 
+> [!IMPORTANT]
+> This package is a WIP. APIs may subject to major changes.
+
 **BYOA** — **B**ring **Y**our **O**wn **A**gent.
 
 The agent-agnostic contract for tool-using alint rules. Optional layer on top of

@@ -1,5 +1,8 @@
 # `@alint-js/agent-pi`
 
+> [!IMPORTANT]
+> This package is a WIP. APIs may subject to major changes.
+
 A [Pi](https://github.com/earendil-works/pi)-backed `AgentAdapter` for alint. One of the swappable vendor adapters behind `@alint-js/agent`.
 
 ## What it does

@@ -1,5 +1,8 @@
 # `@alint-js/agent-apeira`
 
+> [!IMPORTANT]
+> This package is a WIP. APIs may subject to major changes.
+
 An [Apeira](https://github.com/moeru-ai/apeira)-backed `AgentAdapter` for alint. One of the swappable vendor adapters behind `@alint-js/agent`.
 
 ## What it does

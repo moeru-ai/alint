@@ -15,11 +15,10 @@ interface PiMessage {
   role?: unknown
 }
 
-/** Pi authenticates with a key string, while alint models carry auth in provider headers; bridge the two. */
+// NOTE(Makito): May extend this when necessary
 export function apiKeyFromModel(model: ResolvedModel): string {
   const auth = model.provider.headers.Authorization ?? model.provider.headers.authorization
-
-  // Fall back to a placeholder for keyless local servers (e.g. LM Studio), which ignore the value.
+  // Extract the key from header or fallback to a placeholder (no auth)
   return auth?.replace(/^Bearer\s+/i, '') ?? 'unused'
 }
 

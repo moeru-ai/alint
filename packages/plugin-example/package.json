@@ -17,12 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@alint-js/agent": "workspace:*",
-    "@alint-js/agent-apeira": "workspace:*",
-    "@alint-js/agent-pi": "workspace:*",
     "@alint-js/core": "workspace:*",
-    "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
+    "apeira": "catalog:",
     "valibot": "catalog:",
     "xsai": "catalog:"
   },
