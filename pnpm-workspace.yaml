@@ -9,7 +9,9 @@ packages:
   - '!**/dist/**'
 
 allowBuilds:
+  '@google/genai': true
   esbuild: true
+  protobufjs: true
   simple-git-hooks: true
 
 overrides:
@@ -27,8 +29,11 @@ catalog:
   '@antfu/eslint-config': ^9.1.0
   '@arethetypeswrong/core': ^0.18.4
   '@clack/prompts': ^1.6.0
+  '@earendil-works/pi-agent-core': ^0.80.2
+  '@earendil-works/pi-ai': ^0.80.2
   '@moeru/eslint-config': ^0.1.0-beta.18
   '@moeru/std': ^0.1.0-beta.18
+  '@smithy/node-http-handler': ^4.9.1
   '@types/node': ^26.0.1
   '@valibot/to-json-schema': ^1.7.1
   apeira: ^0.0.6
