@@ -28,6 +28,7 @@
     "@moeru/std": "catalog:",
     "cac": "catalog:",
     "cli-spinners": "catalog:",
+    "gitignore-fs": "catalog:",
     "pathe": "catalog:",
     "table": "catalog:",
     "tinyrainbow": "catalog:"

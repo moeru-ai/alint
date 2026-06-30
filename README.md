@@ -177,6 +177,11 @@ import yourPlugin from '@your-alint-config/your-rules'
 import { defineConfig } from '@alint-js/core'
 
 export default defineConfig({
+  ignore: {
+    // Reads applicable nested .gitignore files when selecting lint targets.
+    // This is powered by gitignore-fs.
+    gitignore: true,
+  },
   plugins: [
     yourPlugin
   ],

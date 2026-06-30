@@ -48,6 +48,7 @@ export type {
   DiagnosticDescriptor,
   DiagnosticLocation,
   EnabledRule,
+  IgnoreConfig,
   PluginDefinition,
   RuleConfigEntry,
   RuleContext,

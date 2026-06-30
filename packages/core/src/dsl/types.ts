@@ -3,6 +3,7 @@ import type { ClassUnit, FunctionUnit, SourceFile, SourceRuntime } from '../core
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 
 export interface AlintConfig {
+  ignore?: IgnoreConfig
   plugins?: PluginDefinition[]
   rules?: Record<string, RuleConfigEntry>
   runner?: RunnerConfig
@@ -28,6 +29,10 @@ export interface EnabledRule {
   rule: RuleDefinition
   scope: string
   severity: Exclude<RuleSeverity, 'off'>
+}
+
+export interface IgnoreConfig {
+  gitignore?: boolean
 }
 
 export interface PluginDefinition {

@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -731,6 +731,108 @@ export default {
     expect(exitCode).toBe(1)
     expect(io.stdoutText).toContain('Problem found')
     expect(io.stdoutText).toContain('company/prefer-load')
+  })
+
+  it('lints gitignored positional files when gitignore filtering is not enabled', async () => {
+    const io = await createTestIo()
+
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/.gitignore'), 'generated.ts\n')
+    await writeFile(join(io.cwd, 'src/included.ts'), 'export const included = 1\n')
+    await writeFile(join(io.cwd, 'src/generated.ts'), 'export const generated = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default {
+  plugins: [
+    {
+      scope: 'company',
+      rules: {
+        'visit-file': {
+          create: (ctx) => ({
+            onFile: async (file) => {
+              ctx.report({
+                filePath: file.path,
+                message: 'visited ' + file.path,
+              })
+            },
+          }),
+        },
+      },
+    },
+  ],
+  rules: {
+    'company/visit-file': 'warn',
+  },
+}
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'src/included.ts',
+      'src/generated.ts',
+    ], io)
+
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(exitCode).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath).sort()).toEqual([
+      join(io.cwd, 'src/generated.ts'),
+      join(io.cwd, 'src/included.ts'),
+    ])
+  })
+
+  it('skips gitignored positional files when gitignore filtering is enabled', async () => {
+    const io = await createTestIo()
+
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/.gitignore'), 'generated.ts\n')
+    await writeFile(join(io.cwd, 'src/included.ts'), 'export const included = 1\n')
+    await writeFile(join(io.cwd, 'src/generated.ts'), 'export const generated = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default {
+  ignore: {
+    gitignore: true,
+  },
+  plugins: [
+    {
+      scope: 'company',
+      rules: {
+        'visit-file': {
+          create: (ctx) => ({
+            onFile: async (file) => {
+              ctx.report({
+                filePath: file.path,
+                message: 'visited ' + file.path,
+              })
+            },
+          }),
+        },
+      },
+    },
+  ],
+  rules: {
+    'company/visit-file': 'warn',
+  },
+}
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'src/included.ts',
+      'src/generated.ts',
+    ], io)
+
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(exitCode).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'src/included.ts'),
+    ])
   })
 
   it('does not let rule console output corrupt json reporter stdout', async () => {
