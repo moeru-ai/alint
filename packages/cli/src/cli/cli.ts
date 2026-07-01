@@ -1,6 +1,7 @@
 import type { InspectOptions } from 'node:util'
 
 import type { RunnerConfig, SetupConfig } from '@alint-js/config'
+import type { AlintConfig } from '@alint-js/core'
 
 import type { SetupCommandOptions } from './commands/setup'
 import type { ReporterName } from './reporters'
@@ -10,6 +11,7 @@ import process from 'node:process'
 import { stat } from 'node:fs/promises'
 import { inspect } from 'node:util'
 
+import Gitignore from 'gitignore-fs'
 import c from 'tinyrainbow'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadAlintConfig, loadSetupConfig, mergeSetupConfigs } from '@alint-js/config'
@@ -236,6 +238,25 @@ function parsePositiveIntegerOption(value: string | undefined, label: string): n
   return parsed
 }
 
+async function resolveLintFiles(files: string[], config: AlintConfig, cwd: string): Promise<string[]> {
+  if (config.ignore?.gitignore !== true || files.length === 0) {
+    return files
+  }
+
+  const gitignore = new Gitignore()
+  const lintFiles: string[] = []
+
+  for (const file of files) {
+    if (await gitignore.ignores(resolve(cwd, file))) {
+      continue
+    }
+
+    lintFiles.push(file)
+  }
+
+  return lintFiles
+}
+
 function resolveRunnerCacheConfig(
   setupCache: RunnerConfig['cache'],
   configCache: RunnerConfig['cache'],
@@ -325,6 +346,7 @@ async function runDefaultCommand(
     loadMergedSetupConfig(io),
     loadAlintConfig(io.cwd, options.config),
   ])
+  const lintFiles = await resolveLintFiles(files, config, io.cwd)
   const runner = resolveRunnerConfig(setupConfig, config, options)
   const progress = shouldEnableProgress(options, io)
     ? createCliProgressReporter({
@@ -344,7 +366,7 @@ async function runDefaultCommand(
     result = await runAlint({
       config,
       cwd: io.cwd,
-      files,
+      files: lintFiles,
       modelOverride: options.model,
       progress: progress?.reporter,
       runner,
