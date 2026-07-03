@@ -891,6 +891,48 @@ export default [
     expect(io.stdoutText).not.toContain('README.md')
   })
 
+  it('passes --output-language to rule context', async () => {
+    const io = await createTestIo()
+    await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    plugins: {
+      review: {
+        rules: {
+          language: {
+            create: ctx => ({
+              onTarget: target => {
+                if (target.kind !== 'file') return
+                ctx.report({
+                  filePath: target.file.path,
+                  message: 'answer in ' + ctx.outputLanguage,
+                })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/language': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      '--output-language',
+      '日本語',
+      'demo.ts',
+    ], io)
+
+    expect(code).toBe(1)
+    expect(io.stdoutText).toContain('answer in 日本語')
+  })
+
   it('discovers files from nested AND files patterns when no positional files are passed', async () => {
     const io = await createTestIo()
     await mkdir(join(io.cwd, 'src'), { recursive: true })

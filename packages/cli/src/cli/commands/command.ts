@@ -6,6 +6,9 @@ export type CommandAction = (
 ) => number | Promise<number>
 
 export interface CommandContext {
+  globalOptions: {
+    outputLanguage?: string
+  }
   interceptConsoleOutput: (stdout: CliWritable) => () => void
   io: CliIo
   setupNoInteractive: boolean

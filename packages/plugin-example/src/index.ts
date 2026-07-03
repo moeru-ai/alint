@@ -170,7 +170,7 @@ export const examplePlugin = definePlugin({
 
 export default examplePlugin
 
-export function createJudgeMessages(source: string, previousError: string | undefined) {
+export function createJudgeMessages(source: string, previousError: string | undefined, outputLanguage?: string) {
   return [
     {
       content: inlineMiniatureNormalizerPrompt,
@@ -189,7 +189,10 @@ export function createJudgeMessages(source: string, previousError: string | unde
         ]
       : []),
     {
-      content: `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
+      content: [
+        formatOutputLanguageInstruction(outputLanguage),
+        `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
+      ].filter(Boolean).join('\n\n'),
       role: 'user' as const,
     },
   ]
@@ -203,6 +206,12 @@ function asRecord(value: unknown): Record<string, unknown> | undefined {
 
 function createReportFindingsToolParameters(): JsonSchema {
   return normalizeToolJsonSchema(toJsonSchema(judgeResponseSchema))
+}
+
+function formatOutputLanguageInstruction(outputLanguage: string | undefined): string | undefined {
+  return outputLanguage
+    ? `Write all human-readable finding messages and suggestions in this language: ${outputLanguage}.`
+    : undefined
 }
 
 function formatSourceWithLineNumbers(source: string): string {
@@ -236,7 +245,7 @@ async function judgeInlineMiniatureNormalizers(
       response = await generateText({
         baseURL: model.provider.endpoint,
         headers: model.provider.headers,
-        messages: createJudgeMessages(source, previousError),
+        messages: createJudgeMessages(source, previousError, ctx.outputLanguage),
         model: model.id,
         parallelToolCalls: false,
         temperature: 0,

@@ -102,6 +102,7 @@ export interface RuleContext {
     recordUsage: (usage: RuleInferenceUsageRecord) => void
   }
   model: (selector?: ModelRequirement | string) => Promise<ResolvedModel>
+  outputLanguage?: string
   report: (diagnostic: DiagnosticDescriptor) => void
   settings: Record<string, unknown>
   src: SourceRuntime

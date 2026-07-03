@@ -102,6 +102,7 @@ export interface RunOptions {
   cwd?: string
   files?: string[]
   modelOverride?: string
+  outputLanguage?: string
   progress?: ProgressReporter
   runner?: RunnerOptions
   setupConfig?: SetupConfig

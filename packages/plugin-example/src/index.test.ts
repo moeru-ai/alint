@@ -1,8 +1,7 @@
 import type { RuleContext, SourceTarget } from '@alint-js/core'
 
+import { getDescription } from 'valibot'
 import { describe, expect, it } from 'vitest'
-
-import * as v from 'valibot'
 
 import { createJudgeMessages, createReportFindingsToolParameters, examplePlugin, inlineMiniatureNormalizerPrompt, judgeFindingSchema, judgeResponseSchema } from './index'
 
@@ -138,6 +137,12 @@ describe('createJudgeMessages', () => {
     ].join('\n'))
   })
 
+  it('includes output language instructions when provided', () => {
+    const messages = createJudgeMessages('alpha\n', undefined, '繁體中文')
+
+    expect(messages.at(-1)?.content).toContain('Write all human-readable finding messages and suggestions in this language: 繁體中文.')
+  })
+
   it('instructs the judge to report both tiny leaf helpers and normalizer orchestrators', () => {
     expect(inlineMiniatureNormalizerPrompt).toContain('Report tiny leaf helpers')
     expect(inlineMiniatureNormalizerPrompt).toContain('Report orchestration functions')
@@ -149,10 +154,10 @@ describe('createJudgeMessages', () => {
   })
 
   it('stores finding output requirements in schema descriptions', () => {
-    expect(v.getDescription(judgeResponseSchema.entries.findings)).toContain('empty array')
-    expect(v.getDescription(judgeFindingSchema.pipe[0].entries.line)).toContain('function declaration line')
-    expect(v.getDescription(judgeFindingSchema.pipe[0].entries.message)).toContain('specific helper function')
-    expect(v.getDescription(judgeFindingSchema.pipe[0].entries.suggestion)).toContain('under 35 words')
+    expect(getDescription(judgeResponseSchema.entries.findings)).toContain('empty array')
+    expect(getDescription(judgeFindingSchema.pipe[0].entries.line)).toContain('function declaration line')
+    expect(getDescription(judgeFindingSchema.pipe[0].entries.message)).toContain('specific helper function')
+    expect(getDescription(judgeFindingSchema.pipe[0].entries.suggestion)).toContain('under 35 words')
   })
 
   it('normalizes nested tool object schemas for strict function calling', () => {

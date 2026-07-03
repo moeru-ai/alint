@@ -103,6 +103,45 @@ describe('runAlint', () => {
     ])
   })
 
+  it('exposes outputLanguage on rule context', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-output-language-'))
+    const filePath = join(root, 'demo.ts')
+
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTarget: (target) => {
+          if (target.kind !== 'file') {
+            return
+          }
+
+          ctx.report({
+            message: `output language: ${ctx.outputLanguage}`,
+          })
+        },
+      }),
+    })
+
+    const result = await runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+      ),
+      cwd: root,
+      files: [filePath],
+      outputLanguage: '简体中文',
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.diagnostics).toMatchObject([
+      {
+        filePath,
+        message: 'output language: 简体中文',
+      },
+    ])
+  })
+
   it('does not run plugin rules that are registered but not enabled', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-plugin-disabled-'))
     const filePath = join(root, 'demo.ts')
@@ -683,6 +722,64 @@ describe('runAlint', () => {
 
       expect(result.diagnostics[0]?.message).toBe('second')
       expect(ruleEndEvents).toEqual([
+        'miss',
+      ])
+    })
+
+    it('invalidates cached entries when output language changes', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-output-language-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const ruleEndEvents: string[] = []
+      let calls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTarget: (target) => {
+            if (target.kind !== 'function') {
+              return
+            }
+
+            calls += 1
+            ctx.report({
+              message: `checked in ${ctx.outputLanguage}`,
+            })
+          },
+        }),
+      })
+      const config = createConfig({ language: rule }, { 'company/language': 'warn' })
+
+      await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        outputLanguage: 'English',
+        runner: {
+          cache: { location: cachePath },
+        },
+        setupConfig: createSetupConfig(),
+      })
+
+      const result = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        outputLanguage: '日本語',
+        progress: {
+          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+        },
+        runner: {
+          cache: { location: cachePath },
+        },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(calls).toBe(2)
+      expect(result.diagnostics[0]?.message).toBe('checked in 日本語')
+      expect(ruleEndEvents).toEqual([
+        'miss',
         'miss',
       ])
     })

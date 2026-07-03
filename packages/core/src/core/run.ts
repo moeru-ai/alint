@@ -157,7 +157,11 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     cwd,
     enabled: normalizedCacheConfig.enabled,
     fileEntryKeys: new Map(),
-    modelHash: stableHash({ modelOverride: options.modelOverride, setupConfig }),
+    modelHash: stableHash({
+      modelOverride: options.modelOverride,
+      outputLanguage: options.outputLanguage,
+      setupConfig,
+    }),
     store: cacheStore,
   }
   const files = (await Promise.all(
@@ -527,6 +531,7 @@ function createRuleRuntimes(options: {
 
         return resolvedModel
       },
+      outputLanguage: options.options.outputLanguage,
       report: (descriptor) => {
         const state = executionState.getStore()
         const filePath = descriptor.filePath ?? state?.activeFilePath

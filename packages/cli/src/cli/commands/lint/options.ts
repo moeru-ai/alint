@@ -5,6 +5,7 @@ export interface LintCommandOptions {
   fileConcurrency?: string
   format: string
   model?: string
+  outputLanguage?: string
   progress?: boolean
   ruleConcurrency?: string
   timeoutMs?: string

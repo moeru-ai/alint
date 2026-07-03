@@ -18,12 +18,26 @@ import { resolveConfigRunner, resolveRunnerConfig } from './runner'
 
 export const lint = defineCommand({
   action: (context, files: string[] = [], options: LintCommandOptions) =>
-    runLintCommand(files, options, context.io, context.interceptConsoleOutput),
+    runLintCommand(
+      files,
+      {
+        ...options,
+        outputLanguage: options.outputLanguage ?? context.globalOptions.outputLanguage,
+      },
+      context.io,
+      context.interceptConsoleOutput,
+    ),
   alias: ['!'],
   arguments: '[...files]',
   default: true,
   description: 'Run alint',
   name: 'lint',
+  options: [
+    {
+      description: 'Ask model-backed rules to write diagnostics in this language',
+      flags: '--output-language <language>',
+    },
+  ],
 })
 
 async function assertConfigExists(cwd: string, configPath: string): Promise<void> {
@@ -85,6 +99,7 @@ async function runLintCommand(
       cwd: io.cwd,
       files: lintFiles,
       modelOverride: options.model,
+      outputLanguage: options.outputLanguage,
       progress: progress?.reporter,
       runner,
       setupConfig,
