@@ -4,8 +4,8 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
-import { loadSetupConfig, mergeSetupConfigs } from './setup-load'
-import { writeSetupConfig } from './setup-write'
+import { loadSetupConfig, mergeSetupConfigs } from './load'
+import { writeSetupConfig } from './write'
 
 describe('setup config loading and merging', () => {
   it('loads missing config files as an empty versioned config', async () => {

@@ -16,7 +16,7 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋', '⠙'],
     })
     const firstPath = {
-      file: { index: 1, path: '/repo/src/config/setup-toml.ts', planned: 1, total: 3 },
+      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 3 },
       rule: { id: '@alint-js/plugin-example/inline-miniature-normalizer', index: 1, total: 1 },
       target: { index: 1, kind: 'file' as const, total: 1 },
     }
@@ -47,7 +47,7 @@ describe('createSummaryProgressReporter', () => {
 
     const rows = reporter.getRows()
 
-    expect(rows[0]).toMatch(/^⠙ src\/config\/setup-toml\.ts\s+0\/0\/0\/1$/)
+    expect(rows[0]).toMatch(/^⠙ src\/setup\/toml\.ts\s+0\/0\/0\/1$/)
     expect(rows[1]).toBe('    file > @alint-js/plugin-example/inline-miniature-normalizer (4.2s, ~?)')
     expect(rows[2]).toMatch(/^⠙ src\/config\/file-2\.ts\s+0\/0\/0\/1$/)
     expect(rows[3]).toBe('    function load > @alint-js/plugin-example/inline-miniature-normalizer (1.8s, ~?)')
@@ -65,7 +65,7 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋'],
     })
     const path = {
-      file: { index: 1, path: '/repo/src/config/setup-toml.ts', planned: 3, total: 1 },
+      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 3, total: 1 },
       rule: { id: 'company/problem', index: 1, total: 1 },
       target: { index: 1, kind: 'file' as const, total: 1 },
     }
@@ -133,7 +133,7 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋'],
     })
     const path = {
-      file: { index: 1, path: '/repo/src/config/setup-toml.ts', planned: 1, total: 1 },
+      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 1 },
       rule: { id: 'company/problem', index: 1, total: 1 },
       target: { index: 1, kind: 'function' as const, name: 'load', total: 1 },
     }
@@ -187,7 +187,7 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋'],
     })
     const path = {
-      file: { index: 1, path: '/repo/src/config/setup-toml.ts', planned: 1, total: 1 },
+      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 1 },
       rule: { id: '@alint-js/plugin-example/inline-miniature-normalizer', index: 1, total: 1 },
       target: { index: 1, kind: 'file' as const, total: 1 },
     }
@@ -241,7 +241,7 @@ describe('createSummaryProgressReporter', () => {
     const firstRow = rows[0]!
     const footer = rows.at(-1)!
 
-    expect(stripAnsi(firstRow)).toContain('src/config/setup-toml.ts')
+    expect(stripAnsi(firstRow)).toContain('src/setup/toml.ts')
     expect(firstRow).toContain('\u001B[36m⠋')
     expect(firstRow).toContain('\u001B[31m0/0/1/1')
     expect(footer).toContain('\u001B[33m1 warn')

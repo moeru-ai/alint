@@ -4,7 +4,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 import { dirname } from 'pathe'
 
-import { stringifySetupConfigToml } from './setup-toml'
+import { stringifySetupConfigToml } from './toml'
 
 export async function writeSetupConfig(
   filePath: string,

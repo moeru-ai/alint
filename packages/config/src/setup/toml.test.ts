@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseSetupConfigToml, stringifySetupConfigToml } from './setup-toml'
+import { parseSetupConfigToml, stringifySetupConfigToml } from './toml'
 
 describe('setup TOML registry', () => {
   it('parses provider model fields from snake_case TOML', () => {

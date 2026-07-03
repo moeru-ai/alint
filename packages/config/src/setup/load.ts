@@ -6,7 +6,7 @@ import type {
 
 import { readFile } from 'node:fs/promises'
 
-import { parseSetupConfigToml } from './setup-toml'
+import { parseSetupConfigToml } from './toml'
 
 export const emptySetupConfig: SetupConfig = { providers: [], version: 1 }
 
