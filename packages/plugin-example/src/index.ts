@@ -1,33 +1,33 @@
 import type { RuleContext } from '@alint-js/core'
 import type { JsonSchema } from '@valibot/to-json-schema'
+import type { InferOutput } from 'valibot'
 import type { GenerateTextResult } from 'xsai'
 
 import { definePlugin, defineRule } from '@alint-js/core'
 import { toJsonSchema } from '@valibot/to-json-schema'
+import { array, description, getDescription, number, object, parse, picklist, pipe, string } from 'valibot'
 import { generateText, rawTool } from 'xsai'
-
-import * as v from 'valibot'
 
 const reportFindingsToolName = 'reportFindings'
 const maxJudgeAttempts = 3
 
-const judgeFindingSchema = v.pipe(
-  v.object({
-    confidence: v.pipe(
-      v.picklist(['high', 'medium', 'low']),
-      v.description('Confidence in this finding. Use exactly "low", "medium", or "high" without punctuation.'),
+const judgeFindingSchema = pipe(
+  object({
+    confidence: pipe(
+      picklist(['high', 'medium', 'low']),
+      description('Confidence in this finding. Use exactly "low", "medium", or "high" without punctuation.'),
     ),
-    line: v.pipe(
-      v.number(),
-      v.description([
+    line: pipe(
+      number(),
+      description([
         'Use the function declaration line of the specific helper being reported.',
         'Use the left-column line number from the numbered code block.',
         'Do not use the caller parser/normalizer line just because it orchestrates the helpers.',
       ].join(' ')),
     ),
-    message: v.pipe(
-      v.string(),
-      v.description([
+    message: pipe(
+      string(),
+      description([
         'Mention the specific helper function being reported.',
         'Mention the target object/type/value category if visible.',
         'Explain that it is part of a private parsing toolkit.',
@@ -35,9 +35,9 @@ const judgeFindingSchema = v.pipe(
         'Keep the message short.',
       ].join(' ')),
     ),
-    suggestion: v.pipe(
-      v.string(),
-      v.description([
+    suggestion: pipe(
+      string(),
+      description([
         'Provide one concrete remediation direction.',
         'Prefer a schema validation library or shared parsing utility.',
         'Do not propose a code patch.',
@@ -46,20 +46,20 @@ const judgeFindingSchema = v.pipe(
       ].join(' ')),
     ),
   }),
-  v.description('One warning-level report for a helper function that belongs to the private parsing toolkit.'),
+  description('One warning-level report for a helper function that belongs to the private parsing toolkit.'),
 )
 
-const judgeResponseSchema = v.pipe(
-  v.object({
-    findings: v.pipe(
-      v.array(judgeFindingSchema),
-      v.description('All warning-level findings. Return an empty array when there is no qualifying private reader/narrowing toolkit.'),
+const judgeResponseSchema = pipe(
+  object({
+    findings: pipe(
+      array(judgeFindingSchema),
+      description('All warning-level findings. Return an empty array when there is no qualifying private reader/narrowing toolkit.'),
     ),
   }),
-  v.description('Report findings for this TypeScript file.'),
+  description('Report findings for this TypeScript file.'),
 )
 
-type JudgeFinding = v.InferOutput<typeof judgeFindingSchema>
+type JudgeFinding = InferOutput<typeof judgeFindingSchema>
 
 interface NormalizedUsage {
   inputTokens?: number
@@ -119,7 +119,7 @@ Return warnings only. If uncertain, use medium or low confidence instead of forc
 `.trim()
 
 const reportFindingsTool = rawTool({
-  description: v.getDescription(judgeResponseSchema),
+  description: getDescription(judgeResponseSchema),
   execute: input => asRecord(input) ?? {},
   name: reportFindingsToolName,
   parameters: createReportFindingsToolParameters(),
@@ -408,7 +408,7 @@ function parseFindingsFromJudgeResponse(response: GenerateTextResult):
 
   try {
     return {
-      findings: v.parse(judgeResponseSchema, toolResults[0].result).findings,
+      findings: parse(judgeResponseSchema, toolResults[0].result).findings,
       ok: true,
     }
   }
