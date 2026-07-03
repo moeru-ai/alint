@@ -14,7 +14,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
   const cli = cac('alint')
   const setupNoInteractive = argv.includes('-N') || argv.includes('--no-interactive')
   const globalOptions = {
-    outputLanguage: parseStringOption(argv, '--output-language'),
+    outputLanguage: parseStringOption(argv, ['--lang', '-l']),
   }
   let pendingResult: Promise<number> | undefined
   const setPendingResult = (result: Promise<number>) => {
@@ -29,7 +29,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('--file-concurrency <count>', 'Number of files to lint concurrently')
     .option('--format <format>', 'Reporter format', { default: 'stylish' })
     .option('--model <model>', 'Force a model override')
-    .option('--output-language <language>', 'Ask model-backed rules to write diagnostics in this language')
+    .option('-l, --lang <language>', 'Ask model-backed rules to write diagnostics in this language')
     .option('--progress', 'Show run progress')
     .option('--rule-concurrency <count>', 'Number of rules to run concurrently within a file')
     .option('--timeout-ms <ms>', 'Rule execution timeout in milliseconds')
@@ -80,18 +80,20 @@ function interceptConsoleOutput(stdout: CliWritable): () => void {
   }
 }
 
-function parseStringOption(argv: readonly string[], flag: string): string | undefined {
-  const equalsPrefix = `${flag}=`
-
+function parseStringOption(argv: readonly string[], flags: readonly string[]): string | undefined {
   for (let index = 0; index < argv.length; index += 1) {
     const value = argv[index]
 
-    if (value?.startsWith(equalsPrefix)) {
-      return value.slice(equalsPrefix.length)
-    }
+    for (const flag of flags) {
+      const equalsPrefix = `${flag}=`
 
-    if (value === flag) {
-      return argv[index + 1]
+      if (value?.startsWith(equalsPrefix)) {
+        return value.slice(equalsPrefix.length)
+      }
+
+      if (value === flag) {
+        return argv[index + 1]
+      }
     }
   }
 

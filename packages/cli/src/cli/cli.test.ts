@@ -117,6 +117,36 @@ export default [
 `)
 }
 
+async function writeOutputLanguageFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    plugins: {
+      review: {
+        rules: {
+          language: {
+            create: ctx => ({
+              onTarget: target => {
+                if (target.kind !== 'file') return
+                ctx.report({
+                  filePath: target.file.path,
+                  message: 'answer in ' + ctx.outputLanguage,
+                })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/language': 'warn',
+    },
+  },
+]
+`)
+}
+
 async function writeProgressFixture(cwd: string): Promise<void> {
   await writeFile(join(cwd, 'demo.ts'), [
     'export function load() {',
@@ -750,7 +780,10 @@ export default [
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('alint')
     expect(io.stdoutText).toContain('--no-cache')
+    expect(io.stdoutText).toContain('-l, --lang <language>')
     expect(io.stdoutText).not.toMatch(/(^|\n)\s*--cache(?:\s|,)/)
+    expect(io.stdoutText).not.toContain('-L')
+    expect(io.stdoutText).not.toContain('--output-language')
   })
 
   it('returns 2 when non-interactive setup is missing provider endpoint', async () => {
@@ -891,46 +924,36 @@ export default [
     expect(io.stdoutText).not.toContain('README.md')
   })
 
-  it('passes --output-language to rule context', async () => {
+  it('passes --lang to rule context', async () => {
     const io = await createTestIo()
-    await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
-    await writeFile(join(io.cwd, 'alint.config.ts'), `
-export default [
-  {
-    plugins: {
-      review: {
-        rules: {
-          language: {
-            create: ctx => ({
-              onTarget: target => {
-                if (target.kind !== 'file') return
-                ctx.report({
-                  filePath: target.file.path,
-                  message: 'answer in ' + ctx.outputLanguage,
-                })
-              },
-            }),
-          },
-        },
-      },
-    },
-    rules: {
-      'review/language': 'warn',
-    },
-  },
-]
-`)
+    await writeOutputLanguageFixture(io.cwd)
 
     const code = await executeCli([
       'node',
       'alint',
-      '--output-language',
+      '--lang',
       '日本語',
       'demo.ts',
     ], io)
 
     expect(code).toBe(1)
     expect(io.stdoutText).toContain('answer in 日本語')
+  })
+
+  it('passes short language flag to rule context', async () => {
+    const io = await createTestIo()
+    await writeOutputLanguageFixture(io.cwd)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      '-l',
+      'English',
+      'demo.ts',
+    ], io)
+
+    expect(code).toBe(1)
+    expect(io.stdoutText).toContain('answer in English')
   })
 
   it('discovers files from nested AND files patterns when no positional files are passed', async () => {

@@ -22,7 +22,7 @@ export const lint = defineCommand({
       files,
       {
         ...options,
-        outputLanguage: options.outputLanguage ?? context.globalOptions.outputLanguage,
+        outputLanguage: options.lang ?? context.globalOptions.outputLanguage,
       },
       context.io,
       context.interceptConsoleOutput,
@@ -35,7 +35,7 @@ export const lint = defineCommand({
   options: [
     {
       description: 'Ask model-backed rules to write diagnostics in this language',
-      flags: '--output-language <language>',
+      flags: '-l, --lang <language>',
     },
   ],
 })

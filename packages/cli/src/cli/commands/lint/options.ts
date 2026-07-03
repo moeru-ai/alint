@@ -4,6 +4,7 @@ export interface LintCommandOptions {
   config?: string
   fileConcurrency?: string
   format: string
+  lang?: string
   model?: string
   outputLanguage?: string
   progress?: boolean
