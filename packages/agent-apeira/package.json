@@ -17,13 +17,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
+  "peerDependencies": {
+    "@alint-js/core": "workspace:*"
+  },
   "dependencies": {
     "@alint-js/agent": "workspace:*",
-    "@alint-js/core": "workspace:*",
     "apeira": "catalog:",
     "xsai": "catalog:"
   },
   "devDependencies": {
+    "@alint-js/core": "workspace:*",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

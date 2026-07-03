@@ -17,10 +17,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@alint-js/core": "workspace:*"
   },
   "devDependencies": {
+    "@alint-js/core": "workspace:*",
     "@types/node": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
