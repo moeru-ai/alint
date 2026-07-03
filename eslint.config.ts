@@ -49,6 +49,10 @@ export default defineConfig({
         message: 'Avoid hand-written clamp logic. Use `clamp(value, lower, upper)` from `es-toolkit` instead.',
         selector: 'FunctionDeclaration[id.name=/clamp/i] ReturnStatement CallExpression[callee.object.name=\'Math\'][callee.property.name=\'max\'] > CallExpression[callee.object.name=\'Math\'][callee.property.name=\'min\']:first-child',
       },
+      {
+        message: 'Do not use namespace imports from `valibot`. Import the used Valibot APIs by name instead.',
+        selector: 'ImportDeclaration[source.value=\'valibot\'] ImportNamespaceSpecifier',
+      },
       'TSEnumDeclaration[const=true]',
       'TSExportAssignment',
     ],
