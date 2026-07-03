@@ -1,0 +1,11 @@
+export interface LintCommandOptions {
+  cache?: boolean
+  cacheLocation?: string
+  config?: string
+  fileConcurrency?: string
+  format: string
+  model?: string
+  progress?: boolean
+  ruleConcurrency?: string
+  timeoutMs?: string
+}

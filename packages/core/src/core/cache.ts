@@ -81,6 +81,7 @@ export interface NormalizedRunnerCacheConfig {
 
 export interface TargetIdentityInput {
   filePath?: string
+  identity?: string
   kind: ProgressTargetKind
   name?: string
   range?: {
@@ -109,7 +110,7 @@ const CacheFileSchema = pipe(
       target: pipe(object({
         hash: pipe(string(), description('Cached target hash.')),
         identity: pipe(string(), description('Stable cached target identity.')),
-        kind: pipe(union([literal('file'), literal('class'), literal('function')]), description('Cached target kind.')),
+        kind: pipe(string(), description('Cached target kind.')),
       }), description('Cached target metadata.')),
       usage: pipe(array(object({
         inputTokens: pipe(optional(number()), description('Optional input token count.')),
@@ -255,6 +256,12 @@ export function stableHash(value: unknown): string {
 }
 
 function createBaseTargetIdentity(target: TargetIdentityInput): string {
+  if (target.identity && (target.kind !== 'file' || target.identity !== 'file')) {
+    return target.filePath
+      ? `${target.kind}:${target.filePath}:${target.identity}`
+      : `${target.kind}:${target.identity}`
+  }
+
   if (target.kind === 'file') {
     return target.filePath ? `file:${target.filePath}` : 'file'
   }

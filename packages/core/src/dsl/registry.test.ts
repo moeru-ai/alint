@@ -1,111 +1,129 @@
 import { describe, expect, it } from 'vitest'
 
-import { defineConfig, definePlugin, defineRule } from './define'
+import { definePlugin, defineRule } from './define'
 import { buildRuleRegistry } from './registry'
 
 describe('rule registry', () => {
-  it('enables plugin rules as warn by default', () => {
-    const registry = buildRuleRegistry(defineConfig({
-      plugins: [
-        definePlugin({
+  it('registers plugin rules without implicitly enabling them', () => {
+    const rule = defineRule({ create: () => ({}) })
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
           rules: {
-            'model-smoke': defineRule({ create: () => ({}) }),
+            review: rule,
           },
-          scope: 'company',
         }),
-      ],
-    }))
-
-    expect(registry.enabledRules.map(entry => ({
-      id: entry.id,
-      severity: entry.severity,
-    }))).toEqual([
-      {
-        id: 'company/model-smoke',
-        severity: 'warn',
       },
-    ])
+      rules: {},
+    })
+
+    expect(registry.rules.get('company/review')).toBe(rule)
+    expect(registry.enabledRules).toEqual([])
   })
 
-  it('lets config rules override plugin rule defaults', () => {
-    const registry = buildRuleRegistry(defineConfig({
-      plugins: [
-        definePlugin({
+  it('enables only configured rules by flat plugin alias', () => {
+    const reviewRule = defineRule({ create: () => ({}) })
+    const namingRule = defineRule({ create: () => ({}) })
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
           rules: {
-            'off-by-config': defineRule({ create: () => ({}) }),
-            'promoted-by-config': defineRule({ create: () => ({}) }),
+            naming: namingRule,
+            review: reviewRule,
           },
-          scope: 'company',
         }),
-      ],
-      rules: {
-        'company/off-by-config': 'off',
-        'company/promoted-by-config': 'error',
       },
-    }))
+      rules: {
+        'company/review': 'error',
+      },
+    })
 
-    expect(registry.enabledRules.map(entry => ({
-      id: entry.id,
-      severity: entry.severity,
-    }))).toEqual([
+    expect(registry.enabledRules).toEqual([
       {
-        id: 'company/promoted-by-config',
+        id: 'company/review',
+        localId: 'review',
+        rule: reviewRule,
         severity: 'error',
       },
     ])
   })
 
-  it('registers plugin scoped rule ids', () => {
-    const rule = defineRule({
-      create: () => ({}),
-    })
-    const plugin = definePlugin({
-      rules: { 'error-handling': rule },
-      scope: 'company',
-    })
-    const registry = buildRuleRegistry(defineConfig({
-      plugins: [plugin],
-      rules: {
-        'company/error-handling': 'warn',
-      },
-    }))
-
-    expect(registry.enabledRules.map(entry => entry.id)).toEqual(['company/error-handling'])
-    expect(registry.enabledRules[0]?.localId).toBe('error-handling')
-    expect(registry.enabledRules[0]?.scope).toBe('company')
-    expect(registry.enabledRules[0]?.severity).toBe('warn')
-  })
-
-  it('rejects duplicate scoped rule ids', () => {
-    const rule = defineRule({ create: () => ({}) })
-    const pluginA = definePlugin({ rules: { same: rule }, scope: 'company' })
-    const pluginB = definePlugin({ rules: { same: rule }, scope: 'company' })
-
-    expect(() => buildRuleRegistry(defineConfig({
-      plugins: [pluginA, pluginB],
-      rules: {},
-    }))).toThrow('Duplicate rule id "company/same".')
-  })
-
-  it('preserves npm-scoped plugin names when splitting rule ids', () => {
-    const registry = buildRuleRegistry(defineConfig({
-      plugins: [
-        definePlugin({
+  it('rejects configured rules that are not registered by plugins', () => {
+    expect(() => buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
           rules: {
-            'model-smoke': defineRule({ create: () => ({}) }),
+            review: defineRule({ create: () => ({}) }),
           },
-          scope: '@alint-js/plugin-example',
         }),
-      ],
-      rules: {
-        '@alint-js/plugin-example/model-smoke': 'warn',
       },
-    }))
+      rules: {
+        'company/missing': 'warn',
+      },
+    })).toThrow('Unknown rule "company/missing".')
+  })
 
-    expect(registry.enabledRules[0]).toMatchObject({
-      id: '@alint-js/plugin-example/model-smoke',
-      localId: 'model-smoke',
-      scope: '@alint-js/plugin-example',
+  it('does not enable rules configured with off severity', () => {
+    const rule = defineRule({ create: () => ({}) })
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': 'off',
+      },
     })
+
+    expect(registry.rules.get('company/review')).toBe(rule)
+    expect(registry.enabledRules).toEqual([])
+  })
+
+  it('uses tuple severity entries when enabling configured rules', () => {
+    const rule = defineRule({ create: () => ({}) })
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn'],
+      },
+    })
+
+    expect(registry.enabledRules).toEqual([
+      {
+        id: 'company/review',
+        localId: 'review',
+        rule,
+        severity: 'warn',
+      },
+    ])
+  })
+
+  it('rejects duplicate rule ids across flat plugin aliases', () => {
+    const rule = defineRule({ create: () => ({}) })
+
+    expect(() => buildRuleRegistry({
+      plugins: {
+        'company': definePlugin({
+          rules: {
+            'review/task': rule,
+          },
+        }),
+        'company/review': definePlugin({
+          rules: {
+            task: rule,
+          },
+        }),
+      },
+      rules: {},
+    })).toThrow('Duplicate rule id "company/review/task".')
   })
 })

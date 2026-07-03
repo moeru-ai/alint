@@ -85,7 +85,7 @@ alint --model qwen:8b demo.ts
 
 ### Cache
 
-`alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged files, classes, functions, and methods.
+`alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged source targets.
 
 > [!NOTE] `.alintcache` should not be committed to Git repository.
 >
@@ -107,7 +107,7 @@ For Rule authors, you can opt out of caching when they depend on external state:
 defineRule({
   cache: false,
   create: ctx => ({
-    onFunction(fn) {
+    onTarget(target) {
       // Always reruns.
     },
   }),
@@ -172,28 +172,47 @@ You can also use `--local` to write the config in the current project:
 Similar to `eslint`,
 
 ```ts
-import yourPlugin from '@your-alint-config/your-rules'
+import { defineConfig } from '@alint-js/core'
+import { examplePlugin } from '@alint-js/plugin-example'
+
+export default defineConfig([
+  {
+    files: ['**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'],
+    ignore: {
+      // Reads applicable nested .gitignore files when selecting lint targets.
+      // This is powered by gitignore-fs.
+      gitignore: true,
+    },
+    plugins: {
+      example: examplePlugin,
+    },
+    rules: {
+      // The `example` prefix is the local alias configured above.
+      'example/inline-miniature-normalizer': 'warn',
+    },
+  },
+])
+```
+
+Flat configs can also analyze non-JavaScript files by selecting `text/plain`:
+
+```ts
+import docsPlugin from '@your-alint-config/docs-rules'
 
 import { defineConfig } from '@alint-js/core'
 
-export default defineConfig({
-  ignore: {
-    // Reads applicable nested .gitignore files when selecting lint targets.
-    // This is powered by gitignore-fs.
-    gitignore: true,
+export default defineConfig([
+  {
+    files: ['docs/**/*.md', '**/*.txt'],
+    language: 'text/plain',
+    plugins: {
+      docs: docsPlugin,
+    },
+    rules: {
+      'docs/review-copy': 'warn',
+    },
   },
-  plugins: [
-    yourPlugin
-  ],
-  rules: {
-    // If you need to override the rule severity, you can do it here.
-    // Default severity is `warn` if not specified.
-    //
-    // Note the `example` prefix is defined by the `scope` in the plugin,
-    // not the package name of the plugin.
-    'example/review-load': 'warn',
-  },
-})
+])
 ```
 
 
@@ -212,12 +231,16 @@ However, be careful with the token cost, since `alint` is designed to be a code 
 #### Example rule
 
 ```ts
-// packages/your-rule/src/rules/review-load/rule.ts
+// packages/your-rule/src/rules/check-function/rule.ts
 import { defineRule } from '@alint-js/core'
 
-const reviewLoad = defineRule({
+const checkFunction = defineRule({
   create: ctx => ({
-    onFunction: async (fn) => {
+    onTarget: async (target) => {
+      if (target.kind !== 'function') {
+        return
+      }
+
       // You can request a model without any arguments when calling `ctx.model(...)`
       // So that
       //
@@ -227,10 +250,10 @@ const reviewLoad = defineRule({
       const model = await ctx.model({ capabilities: ['tool-call'], size: 'small' })
 
       ctx.report({
-        filePath: fn.file.path,
-        loc: fn.loc,
+        filePath: target.file.path,
+        loc: target.loc,
         // Here for better demonstration, we just report a message with the model id and function name.
-        message: `checked ${fn.name} with ${model.id}`,
+        message: `checked ${target.name} with ${model.id}`,
       })
     },
   }),
@@ -243,21 +266,18 @@ And export it as a plugin:
 // packages/your-rule/src/plugin.ts
 import { definePlugin } from '@alint-js/core'
 
-// If you want to use the package name as the scope, you can import the package.json and use it as the scope.
-// import * as packageJSON from '../package.json'
-
 export default definePlugin({
-  rules: {
-    'review-load': reviewLoad,
+  configs: {
+    recommended: [
+      {
+        rules: {
+          'custom/check-function': 'warn',
+        },
+      },
+    ],
   },
-  // Note here you need to specify a scope for your plugin,
-  // this prevents rule name conflicts with other plugins.
-  //
-  // And it's not limited to use single word, or npm package scope without /,
-  // you can use any string as the scope, for example, `@your-alint-config/your-rules` or `@your-alint-config/your-rules/v1`.
-  //
-  // But we recommend to use your package name as the scope for better user experience.
-  scope: 'example',
-  // scope: packageJSON.name,
+  rules: {
+    'check-function': checkFunction,
+  },
 })
 ```

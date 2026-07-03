@@ -238,7 +238,7 @@ describe('cache helpers', () => {
     expect(store.get('bad')).toBeUndefined()
   })
 
-  it('resets cache files with invalid target kinds', async () => {
+  it('keeps cache files with custom string target kinds', async () => {
     const root = join(tmpdir(), `alint-cache-invalid-target-${Date.now()}`)
     const cachePath = join(root, '.alintcache')
 
@@ -259,6 +259,41 @@ describe('cache helpers', () => {
             hash: hashText('target'),
             identity: 'method:demo',
             kind: 'method',
+          },
+          usage: [],
+        },
+      },
+      files: {},
+      schemaVersion: 1,
+      updatedAt: '2000-01-01T00:00:00.000Z',
+    }))
+
+    const store = await createCacheStore({ cwd: root, enabled: true, location: cachePath })
+
+    expect(store.get('bad')).toBeTruthy()
+  })
+
+  it('resets cache files with non-string target kinds', async () => {
+    const root = join(tmpdir(), `alint-cache-invalid-target-${Date.now()}`)
+    const cachePath = join(root, '.alintcache')
+
+    await mkdir(root, { recursive: true })
+    await writeFile(cachePath, JSON.stringify({
+      createdAt: '2000-01-01T00:00:00.000Z',
+      entries: {
+        bad: {
+          diagnostics: [],
+          filePath: 'demo.ts',
+          fingerprint: {
+            alintVersion: '0.0.1',
+            configHash: hashText('config'),
+            modelHash: hashText('model'),
+            ruleHash: hashText('rule'),
+          },
+          target: {
+            hash: hashText('target'),
+            identity: 'method:demo',
+            kind: 1,
           },
           usage: [],
         },

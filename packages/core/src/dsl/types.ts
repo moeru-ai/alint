@@ -1,12 +1,41 @@
 import type { RunnerConfig } from '../config/types'
-import type { ClassUnit, FunctionUnit, SourceFile, SourceRuntime } from '../core/source/types'
+import type {
+  LanguageContext,
+  ProcessedSource,
+  ProcessorContext,
+  ProcessorPostprocessContext,
+  SourceFile,
+  SourceRuntime,
+  SourceTarget,
+} from '../core/source/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 
-export interface AlintConfig {
+export type AlintConfig = readonly AlintConfigInput[]
+
+export type AlintConfigExtends = AlintConfigInput | string
+
+export type AlintConfigInput = AlintConfigItem | readonly AlintConfigInput[]
+
+export interface AlintConfigItem {
+  basePath?: string
+  extends?: readonly AlintConfigExtends[]
+  files?: readonly (readonly string[] | string)[]
   ignore?: IgnoreConfig
-  plugins?: PluginDefinition[]
+  ignores?: readonly string[]
+  language?: string
+  languageOptions?: Record<string, unknown>
+  linterOptions?: AlintLinterOptions
+  name?: string
+  plugins?: Record<string, PluginDefinition>
+  processor?: ProcessorDefinition | string
   rules?: Record<string, RuleConfigEntry>
   runner?: RunnerConfig
+  settings?: Record<string, unknown>
+}
+
+export interface AlintLinterOptions {
+  noInlineConfig?: boolean
+  reportUnusedDisableDirectives?: RuleSeverity
 }
 
 export type Awaitable<T> = Promise<T> | T
@@ -27,7 +56,6 @@ export interface EnabledRule {
   id: string
   localId: string
   rule: RuleDefinition
-  scope: string
   severity: Exclude<RuleSeverity, 'off'>
 }
 
@@ -35,9 +63,28 @@ export interface IgnoreConfig {
   gitignore?: boolean
 }
 
+export interface LanguageDefinition {
+  extensions?: readonly string[]
+  extract: (file: SourceFile, context: LanguageContext) => Awaitable<SourceTarget[]>
+  name: string
+}
+
 export interface PluginDefinition {
-  rules: Record<string, RuleDefinition>
-  scope: string
+  configs?: Record<string, AlintConfigInput>
+  languages?: Record<string, LanguageDefinition>
+  processors?: Record<string, ProcessorDefinition>
+  rules?: Record<string, RuleDefinition>
+}
+
+export interface ProcessorDefinition {
+  postprocess?: (
+    diagnostics: DiagnosticDescriptor[],
+    context: ProcessorPostprocessContext,
+  ) => Awaitable<DiagnosticDescriptor[]>
+  preprocess: (
+    file: SourceFile,
+    context: ProcessorContext,
+  ) => Awaitable<ProcessedSource[]>
 }
 
 export type RuleCacheConfig = boolean | { level?: 'target' }
@@ -56,20 +103,19 @@ export interface RuleContext {
   }
   model: (selector?: ModelRequirement | string) => Promise<ResolvedModel>
   report: (diagnostic: DiagnosticDescriptor) => void
-  scope: string
+  settings: Record<string, unknown>
   src: SourceRuntime
 }
 
 export interface RuleDefinition {
   cache?: RuleCacheConfig
   create: (context: RuleContext) => RuleHandlers
+  // TODO: Add `meta.languages` so rules can opt into specific alint languages.
   model?: ModelRequirement
 }
 
 export interface RuleHandlers {
-  onClass?: (classNode: ClassUnit) => Awaitable<void>
-  onFile?: (file: SourceFile) => Awaitable<void>
-  onFunction?: (functionNode: FunctionUnit) => Awaitable<void>
+  onTarget?: (target: SourceTarget) => Awaitable<void>
 }
 
 export interface RuleInferenceUsageRecord {

@@ -20,6 +20,7 @@
   "dependencies": {
     "@moeru/std": "catalog:",
     "es-toolkit": "catalog:",
+    "minimatch": "catalog:",
     "oxc-parser": "catalog:",
     "pathe": "catalog:",
     "valibot": "catalog:"

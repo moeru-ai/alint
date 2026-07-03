@@ -47,6 +47,7 @@ catalog:
   eslint-plugin-oxlint: ^1.71.0
   gitignore-fs: ^2.2.3
   knip: ^6.21.0
+  minimatch: ^10.2.5
   nano-staged: ^1.0.2
   oxc-minify: ^0.137.0
   oxc-parser: ^0.137.0

@@ -1,6 +1,6 @@
-import type { AlintConfig, PluginDefinition, RuleDefinition } from './types'
+import type { AlintConfig, AlintConfigInput, PluginDefinition, RuleDefinition } from './types'
 
-export function defineConfig(config: AlintConfig): AlintConfig {
+export function defineConfig(config: readonly AlintConfigInput[]): AlintConfig {
   return config
 }
 

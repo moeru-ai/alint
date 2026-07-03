@@ -1,3 +1,5 @@
+export { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolveConfigForFile } from './config/config-array'
+export type { EffectiveAlintConfig, ResolveConfigResult } from './config/config-array'
 export type {
   ModelSize,
   ProviderDefinition,
@@ -6,20 +8,31 @@ export type {
   SetupConfig,
   SetupModelDefinition,
 } from './config/types'
+export {
+  createBuiltInLanguageRegistry,
+  registerLanguage,
+  resolveLanguage,
+} from './core/languages'
+export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
+export { extractJsSourceTargets } from './core/languages/js/extract'
 export { AlintRunError, runAlint } from './core/run'
-export { extractJsSourceUnits } from './core/source/js'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
 export type {
-  ClassUnit,
-  FunctionUnit,
+  LanguageContext,
   LineRange,
+  ProcessedSource,
+  ProcessedSourceOrigin,
+  ProcessorContext,
+  ProcessorPostprocessContext,
   SourceFile,
   SourceLocation,
   SourcePosition,
   SourceRange,
   SourceRuntime,
+  SourceTarget,
+  SourceTargetKind,
+  SourceTargetOrigin,
   SourceText,
-  SourceUnit,
 } from './core/source/types'
 export type {
   Diagnostic,
@@ -44,12 +57,19 @@ export { defineConfig, definePlugin, defineRule } from './dsl/define'
 export { buildRuleRegistry } from './dsl/registry'
 export type {
   AlintConfig,
+  AlintConfigExtends,
+  AlintConfigInput,
+  AlintConfigItem,
+  AlintLinterOptions,
   Awaitable,
   DiagnosticDescriptor,
   DiagnosticLocation,
   EnabledRule,
   IgnoreConfig,
+  LanguageDefinition,
   PluginDefinition,
+  ProcessorDefinition,
+  RuleCacheConfig,
   RuleConfigEntry,
   RuleContext,
   RuleDefinition,

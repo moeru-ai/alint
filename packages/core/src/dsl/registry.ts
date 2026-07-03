@@ -1,36 +1,43 @@
-import type { AlintConfig, EnabledRule, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
+import type { EffectiveAlintConfig } from '../config/config-array'
+import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
 
-export function buildRuleRegistry(config: AlintConfig): RuleRegistry {
+export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' | 'rules'>): RuleRegistry {
   const rules = new Map<string, RuleDefinition>()
+  const localIds = new Map<string, string>()
   const enabledRules: EnabledRule[] = []
 
-  for (const plugin of config.plugins ?? []) {
-    for (const [localId, rule] of Object.entries(plugin.rules)) {
-      const id = `${plugin.scope}/${localId}`
+  for (const [alias, plugin] of Object.entries(config.plugins)) {
+    for (const [localId, rule] of Object.entries(plugin.rules ?? {})) {
+      const id = `${alias}/${localId}`
 
       if (rules.has(id)) {
         throw new Error(`Duplicate rule id "${id}".`)
       }
 
       rules.set(id, rule)
-      const severity = normalizeSeverity(config.rules?.[id])
-
-      if (severity !== 'off') {
-        enabledRules.push({
-          id,
-          localId,
-          rule,
-          scope: plugin.scope,
-          severity,
-        })
-      }
+      localIds.set(id, localId)
     }
   }
 
-  for (const id of Object.keys(config.rules ?? {})) {
-    if (!rules.has(id)) {
+  for (const [id, entry] of Object.entries(config.rules)) {
+    const rule = rules.get(id)
+
+    if (!rule) {
       throw new Error(`Unknown rule "${id}".`)
     }
+
+    const severity = normalizeSeverity(entry)
+
+    if (severity === 'off') {
+      continue
+    }
+
+    enabledRules.push({
+      id,
+      localId: localIds.get(id) ?? id,
+      rule,
+      severity,
+    })
   }
 
   return {
@@ -39,7 +46,7 @@ export function buildRuleRegistry(config: AlintConfig): RuleRegistry {
   }
 }
 
-function normalizeSeverity(entry: RuleConfigEntry | undefined): RuleSeverity {
+function normalizeSeverity(entry: RuleConfigEntry): RuleSeverity {
   if (Array.isArray(entry)) {
     return entry[0] ?? 'warn'
   }

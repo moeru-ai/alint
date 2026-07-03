@@ -1,13 +1,8 @@
-import type { ClassUnit, FunctionUnit, SourceFile, SourceRange } from './types'
+import type { SourceFile, SourceRange, SourceTarget } from '../../source/types'
 
 import { parseSync } from 'oxc-parser'
 
-import { sliceRange } from './runtime'
-
-export interface JsSourceUnits {
-  classes: ClassUnit[]
-  functions: FunctionUnit[]
-}
+import { sliceRange } from '../../source/runtime'
 
 interface AstNode {
   [key: string]: unknown
@@ -24,29 +19,27 @@ interface AstNode {
 
 interface VisitState {
   bindingNodes: Map<string, AstNode>
-  classes: ClassUnit[]
   exportedNodes: Set<AstNode>
   file: SourceFile
-  functions: FunctionUnit[]
   inferredNames: Map<AstNode, string>
   seenClasses: Set<AstNode>
   seenFunctions: Set<AstNode>
+  targets: SourceTarget[]
   visited: Set<AstNode>
 }
 
-export function extractJsSourceUnits(file: SourceFile): JsSourceUnits {
+export function extractJsSourceTargets(file: SourceFile): SourceTarget[] {
   const result = parseSync(file.path, file.text, {
     sourceType: 'module',
   })
   const state: VisitState = {
     bindingNodes: new Map(),
-    classes: [],
     exportedNodes: new Set(),
     file,
-    functions: [],
     inferredNames: new Map(),
     seenClasses: new Set(),
     seenFunctions: new Set(),
+    targets: [],
     visited: new Set(),
   }
 
@@ -54,40 +47,42 @@ export function extractJsSourceUnits(file: SourceFile): JsSourceUnits {
   collectExportedBindings(result.program as unknown as AstNode, state)
   visit(result.program as unknown as AstNode, state)
 
-  return {
-    classes: state.classes,
-    functions: state.functions,
-  }
+  const sortedTargets = [...state.targets].sort((left, right) => (left.range?.start ?? 0) - (right.range?.start ?? 0))
+
+  return [
+    createFileTarget(file),
+    ...withStableIdentities(sortedTargets),
+  ]
 }
 
-function addClassUnit(node: AstNode, state: VisitState): void {
+function addClassTarget(node: AstNode, state: VisitState): void {
   if (state.seenClasses.has(node)) {
     return
   }
 
-  const unit = createClassUnit(node, state)
+  const target = createClassTarget(node, state)
 
-  if (!unit) {
+  if (!target) {
     return
   }
 
   state.seenClasses.add(node)
-  state.classes.push(unit)
+  state.targets.push(target)
 }
 
-function addFunctionUnit(node: AstNode, state: VisitState): void {
+function addFunctionTarget(node: AstNode, state: VisitState): void {
   if (state.seenFunctions.has(node)) {
     return
   }
 
-  const unit = createFunctionUnit(node, state)
+  const target = createFunctionTarget(node, state)
 
-  if (!unit) {
+  if (!target) {
     return
   }
 
   state.seenFunctions.add(node)
-  state.functions.push(unit)
+  state.targets.push(target)
 }
 
 function asAstNode(value: unknown): AstNode | undefined {
@@ -184,7 +179,7 @@ function collectModuleBindings(program: AstNode, state: VisitState): void {
   }
 }
 
-function createClassUnit(node: AstNode, state: VisitState): ClassUnit | undefined {
+function createClassTarget(node: AstNode, state: VisitState): SourceTarget | undefined {
   const range = getRange(node)
 
   if (!range) {
@@ -192,19 +187,41 @@ function createClassUnit(node: AstNode, state: VisitState): ClassUnit | undefine
   }
 
   const source = sliceRange(state.file, range)
+  const name = getNodeName(node) ?? state.inferredNames.get(node)
 
   return {
-    exported: isExportedUnit(node, state),
     file: state.file,
+    identity: createRangeIdentity('class', name, range),
     kind: 'class',
+    language: state.file.language,
     loc: source.loc,
-    name: getNodeName(node) ?? state.inferredNames.get(node),
+    metadata: {
+      exported: isExportedTarget(node, state),
+    },
+    name,
+    origin: {
+      physicalPath: state.file.path,
+      range,
+    },
     range,
     text: source.text,
   }
 }
 
-function createFunctionUnit(node: AstNode, state: VisitState): FunctionUnit | undefined {
+function createFileTarget(file: SourceFile): SourceTarget {
+  return {
+    file,
+    identity: 'file',
+    kind: 'file',
+    language: file.language,
+    origin: {
+      physicalPath: file.path,
+    },
+    text: file.text,
+  }
+}
+
+function createFunctionTarget(node: AstNode, state: VisitState): SourceTarget | undefined {
   const range = getRange(node)
 
   if (!range) {
@@ -213,17 +230,38 @@ function createFunctionUnit(node: AstNode, state: VisitState): FunctionUnit | un
 
   const source = sliceRange(state.file, range)
   const functionNode = node.type === 'MethodDefinition' ? asAstNode(node.value) : node
+  const name = getNodeName(node) ?? getNodeName(functionNode) ?? state.inferredNames.get(node)
 
   return {
-    async: functionNode?.async === true,
-    exported: isExportedUnit(node, state),
     file: state.file,
+    identity: createRangeIdentity('function', name, range),
     kind: 'function',
+    language: state.file.language,
     loc: source.loc,
-    name: getNodeName(node) ?? getNodeName(functionNode) ?? state.inferredNames.get(node),
+    metadata: {
+      async: functionNode?.async === true,
+      exported: isExportedTarget(node, state),
+    },
+    name,
+    origin: {
+      physicalPath: state.file.path,
+      range,
+    },
     range,
     text: source.text,
   }
+}
+
+function createRangeIdentity(kind: 'class' | 'function', name: string | undefined, range: SourceRange): string {
+  return `${kind}:${name ?? 'anonymous'}:${range.start}:${range.end}`
+}
+
+function createSemanticIdentity(target: SourceTarget): string | undefined {
+  if ((target.kind !== 'class' && target.kind !== 'function') || !target.name) {
+    return undefined
+  }
+
+  return `${target.kind}:${target.name}`
 }
 
 function getNodeName(node: AstNode | null | undefined): string | undefined {
@@ -306,7 +344,7 @@ function isExportDeclaration(node: AstNode): boolean {
   return node.type === 'ExportDefaultDeclaration' || node.type === 'ExportNamedDeclaration'
 }
 
-function isExportedUnit(node: AstNode, state: VisitState): boolean {
+function isExportedTarget(node: AstNode, state: VisitState): boolean {
   return state.exportedNodes.has(node)
 }
 
@@ -374,10 +412,10 @@ function visit(node: AstNode | AstNode[] | null | undefined, state: VisitState):
   }
 
   if (isClassNode(node)) {
-    addClassUnit(node, state)
+    addClassTarget(node, state)
   }
   else if (isFunctionNode(node) || node.type === 'MethodDefinition') {
-    addFunctionUnit(node, state)
+    addFunctionTarget(node, state)
 
     const methodValue = node.type === 'MethodDefinition' ? asAstNode(node.value) : undefined
 
@@ -408,4 +446,29 @@ function visitChildren(node: AstNode, state: VisitState, skippedKeys = new Set<s
       visit(value, state)
     }
   }
+}
+
+function withStableIdentities(targets: SourceTarget[]): SourceTarget[] {
+  const semanticIdentityCounts = new Map<string, number>()
+
+  for (const target of targets) {
+    const semanticIdentity = createSemanticIdentity(target)
+
+    if (semanticIdentity) {
+      semanticIdentityCounts.set(semanticIdentity, (semanticIdentityCounts.get(semanticIdentity) ?? 0) + 1)
+    }
+  }
+
+  return targets.map((target) => {
+    const semanticIdentity = createSemanticIdentity(target)
+
+    if (!semanticIdentity || semanticIdentityCounts.get(semanticIdentity) !== 1) {
+      return target
+    }
+
+    return {
+      ...target,
+      identity: semanticIdentity,
+    }
+  })
 }

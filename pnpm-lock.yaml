@@ -69,6 +69,9 @@ catalogs:
     knip:
       specifier: ^6.21.0
       version: 6.21.0
+    minimatch:
+      specifier: ^10.2.5
+      version: 10.2.5
     nano-staged:
       specifier: ^1.0.2
       version: 1.0.2
@@ -350,6 +353,9 @@ importers:
       gitignore-fs:
         specifier: 'catalog:'
         version: 2.2.3
+      minimatch:
+        specifier: 'catalog:'
+        version: 10.2.5
       pathe:
         specifier: 'catalog:'
         version: 2.0.3
@@ -412,6 +418,9 @@ importers:
       es-toolkit:
         specifier: 'catalog:'
         version: 1.49.0
+      minimatch:
+        specifier: 'catalog:'
+        version: 10.2.5
       oxc-parser:
         specifier: 'catalog:'
         version: 0.137.0
@@ -3946,12 +3955,13 @@ packages:
     resolution: {integrity: sha512-vkcDPrRZo1QZLbn5RLGPpg/WmIQ65qoWWhcGKf/b5eplkkarX0m9z8ppCat4mlOqUsWpyNuYgO3VRyrYHSzX5g==}
     engines: {node: '>= 0.8.0'}
 
-  protobufjs@7.6.4:
-    resolution: {integrity: sha512-RJJPTTpvFfHcWLkIa2JFWK4XvtSzS0yEWDmunqHXli1h3JlkbcQZXDZdcWxv+JK3Xsl5/UFDPZ0iGm7DAengYw==}
-    engines: {node: '>=12.0.0'}
   promisify-child-process@4.1.2:
     resolution: {integrity: sha512-APnkIgmaHNJpkAn7k+CrJSi9WMuff5ctYFbD0CO2XIPkM8yO7d/ShouU2clywbpHV/DUsyc4bpJCsNgddNtx4g==}
     engines: {node: '>=8'}
+
+  protobufjs@7.6.4:
+    resolution: {integrity: sha512-RJJPTTpvFfHcWLkIa2JFWK4XvtSzS0yEWDmunqHXli1h3JlkbcQZXDZdcWxv+JK3Xsl5/UFDPZ0iGm7DAengYw==}
+    engines: {node: '>=12.0.0'}
 
   publint@0.3.21:
     resolution: {integrity: sha512-OqejcnMV6E9zel2oCrUOJEiiFkGiAAni0A6ibfQNh1k9Gu5z4F+Yso8lllam7AzmV6Do0vp7u3UpZNRBwuXaHQ==}
@@ -8183,6 +8193,8 @@ snapshots:
 
   prelude-ls@1.2.1: {}
 
+  promisify-child-process@4.1.2: {}
+
   protobufjs@7.6.4:
     dependencies:
       '@protobufjs/aspromise': 1.1.2
@@ -8196,7 +8208,6 @@ snapshots:
       '@protobufjs/utf8': 1.1.1
       '@types/node': 26.0.1
       long: 5.3.2
-  promisify-child-process@4.1.2: {}
 
   publint@0.3.21:
     dependencies:

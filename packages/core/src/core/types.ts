@@ -1,5 +1,6 @@
 import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
+import type { SourceTargetKind } from './source/types'
 
 export interface Diagnostic {
   evidence?: unknown
@@ -66,7 +67,7 @@ export interface ProgressReporter {
   onUsage?: (payload: UsageProgressPayload) => void
 }
 
-export type ProgressTargetKind = 'class' | 'file' | 'function'
+export type ProgressTargetKind = SourceTargetKind
 
 export interface RuleEndPayload {
   cache: 'hit' | 'miss'

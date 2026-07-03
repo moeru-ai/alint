@@ -1,4 +1,4 @@
-import type { LineRange, SourceFile, SourcePosition, SourceRange, SourceRuntime, SourceText } from './types'
+import type { LineRange, SourceFile, SourcePosition, SourceRange, SourceRuntime, SourceTarget, SourceText } from './types'
 
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
@@ -16,11 +16,15 @@ export function createSourceFile(path: string, text: string): SourceFile {
 
 export function createSourceRuntime(): SourceRuntime {
   return {
-    getText: target => target.text,
+    getText,
     readFile: async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8')),
     sliceLines,
     sliceRange,
   }
+}
+
+export function getText(target: SourceFile | SourceTarget): string {
+  return target.text
 }
 
 export function sliceLines(file: SourceFile, range: LineRange): SourceText {

@@ -127,11 +127,24 @@ const reportFindingsTool = rawTool({
 })
 
 export const examplePlugin = definePlugin({
+  configs: {
+    recommended: [
+      {
+        rules: {
+          'example/inline-miniature-normalizer': 'warn',
+        },
+      },
+    ],
+  },
   rules: {
     'inline-miniature-normalizer': defineRule({
       create: ctx => ({
-        async onFile(file) {
-          const findings = await judgeInlineMiniatureNormalizers(ctx, file.text)
+        async onTarget(target) {
+          if (target.kind !== 'file') {
+            return
+          }
+
+          const findings = await judgeInlineMiniatureNormalizers(ctx, ctx.src.getText(target))
 
           for (const finding of findings) {
             ctx.report({
@@ -139,7 +152,7 @@ export const examplePlugin = definePlugin({
                 confidence: finding.confidence,
                 suggestion: finding.suggestion,
               },
-              filePath: file.path,
+              filePath: target.file.path,
               loc: {
                 start: {
                   column: 0,
@@ -153,7 +166,6 @@ export const examplePlugin = definePlugin({
       }),
     }),
   },
-  scope: '@alint-js/plugin-example',
 })
 
 export default examplePlugin

@@ -2,8 +2,7 @@ import type { SetupConfig } from '../config/types'
 import type { Awaitable, EnabledRule, RuleContext, RuleHandlers } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 import type { CacheEntry, CacheStore } from './cache'
-import type { JsSourceUnits } from './source/js'
-import type { SourceFile } from './source/types'
+import type { SourceFile, SourceTarget } from './source/types'
 import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunOptions, RunResult, RunUsage } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -14,6 +13,7 @@ import { resolve } from 'pathe'
 
 import packageJson from '../../package.json'
 
+import { resolveConfigForFile } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
 import {
@@ -25,7 +25,7 @@ import {
   normalizeRunnerCacheConfig,
   stableHash,
 } from './cache'
-import { extractJsSourceUnits } from './source/js'
+import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
 import { createSourceRuntime } from './source/runtime'
 
 export interface AlintRunFailure {
@@ -39,7 +39,6 @@ export interface AlintRunFailure {
 }
 
 interface CacheRunContext {
-  configHash: string
   cwd: string
   enabled: boolean
   fileEntryKeys: Map<string, Set<string>>
@@ -60,18 +59,24 @@ interface ExecutionPlanEntry {
 }
 
 interface ExecutionTarget {
+  configHash: string
   executions: RuleTargetExecution[]
   identity: string
   kind: ProgressTargetKind
+  language: string
   loc?: CacheEntry['target']['loc']
+  metadata?: Record<string, unknown>
   name?: string
+  origin?: SourceTarget['origin']
   range?: CacheEntry['target']['range']
   text: string
 }
 
 interface PreparedFile {
+  configHash: string
   file: SourceFile
-  units: JsSourceUnits | undefined
+  ruleRuntimes: RuleRuntime[]
+  targets: SourceTarget[]
 }
 
 interface PreparedFileExecutionPlan {
@@ -136,12 +141,11 @@ export class AlintRunError extends Error {
 
 export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? processCwd()
-  const config = options.config ?? {}
+  const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
   const clock = options.runner?.clock ?? Date.now
   const diagnostics: Diagnostic[] = []
   const usage = createUsageAccumulator()
-  const registry = buildRuleRegistry(config)
   const src = createSourceRuntime()
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
@@ -150,26 +154,65 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     location: normalizedCacheConfig.location,
   })
   const cacheContext: CacheRunContext = {
-    configHash: stableHash({ rules: config.rules ?? {} }),
     cwd,
     enabled: normalizedCacheConfig.enabled,
     fileEntryKeys: new Map(),
     modelHash: stableHash({ modelOverride: options.modelOverride, setupConfig }),
     store: cacheStore,
   }
-  const files = await Promise.all(
-    (options.files ?? []).map(async (filePath) => {
+  const files = (await Promise.all(
+    (options.files ?? []).map(async (filePath): Promise<PreparedFile | undefined> => {
       const file = await src.readFile(resolve(cwd, filePath))
-      const units = file.language === 'javascript' || file.language === 'typescript'
-        ? extractJsSourceUnits(file)
-        : undefined
+      const resolvedConfig = resolveConfigForFile(file.path, config, { cwd })
+
+      if (resolvedConfig.ignored) {
+        return undefined
+      }
+
+      const effectiveConfig = resolvedConfig.config
+      const languageRegistry = createBuiltInLanguageRegistry()
+
+      for (const plugin of Object.values(effectiveConfig.plugins)) {
+        for (const language of Object.values(plugin.languages ?? {})) {
+          registerLanguage(languageRegistry, language)
+        }
+      }
+
+      const language = resolveLanguage(file, languageRegistry, {
+        language: effectiveConfig.language,
+      })
+      const targets = await language.extract(file, {
+        cwd,
+        languageOptions: effectiveConfig.languageOptions,
+        src,
+      })
+      const registry = buildRuleRegistry(effectiveConfig)
+      const ruleRuntimes = createRuleRuntimes({
+        cwd,
+        diagnostics,
+        effectiveSettings: effectiveConfig.settings,
+        options,
+        registry,
+        setupConfig,
+        src,
+        usage,
+      })
 
       return {
+        configHash: stableHash({
+          language: effectiveConfig.language,
+          languageOptions: effectiveConfig.languageOptions,
+          processor: effectiveConfig.processor,
+          resolvedLanguage: language.name,
+          rules: effectiveConfig.rules,
+          settings: effectiveConfig.settings,
+        }),
         file,
-        units,
+        ruleRuntimes,
+        targets,
       }
     }),
-  )
+  )).filter((file): file is PreparedFile => file !== undefined)
   let planned = 0
   const counters = createRuleEndCounters()
   const primaryError = createPrimaryErrorState()
@@ -178,106 +221,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   let runError: unknown
 
   try {
-    const ruleRuntimes = registry.enabledRules.map((enabledRule) => {
-      const executionState = new AsyncLocalStorage<RuleRuntimeState>()
-      const context: RuleContext = {
-        cwd,
-        id: enabledRule.id,
-        localId: enabledRule.localId,
-        logger: {
-          debug: () => {},
-        },
-        metering: {
-          recordUsage: (record) => {
-            const usageRecord = usage.record({
-              ...record,
-              ruleId: record.ruleId ?? enabledRule.id,
-            })
-            const state = executionState.getStore()
-
-            state?.cacheUsage?.push(usageRecord)
-
-            options.progress?.onUsage?.({
-              path: state?.progressPath,
-              record: usageRecord,
-              total: usage.toJSON(),
-            })
-          },
-        },
-        model: async (selector) => {
-          const request = options.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
-          const requirement = mergeModelRequirement(
-            enabledRule.rule.model,
-            typeof selector === 'string' ? undefined : selector,
-          )
-          const resolvedModel = resolveModel(setupConfig, {
-            request,
-            requirement,
-            ruleId: enabledRule.id,
-          })
-
-          const state = executionState.getStore()
-
-          if (state) {
-            state.currentModel = toDiagnosticModel(resolvedModel, request)
-          }
-
-          return resolvedModel
-        },
-        report: (descriptor) => {
-          const state = executionState.getStore()
-          const filePath = descriptor.filePath ?? state?.activeFilePath
-
-          if (!filePath) {
-            throw new Error(`Diagnostic for rule "${enabledRule.id}" is missing filePath.`)
-          }
-
-          const diagnosticModel = state?.currentModel ? { ...state.currentModel } : undefined
-
-          if (state) {
-            state.currentModel = undefined
-          }
-
-          const diagnostic = {
-            evidence: descriptor.evidence,
-            filePath,
-            loc: descriptor.loc,
-            message: descriptor.message,
-            model: diagnosticModel,
-            ruleId: enabledRule.id,
-            severity: enabledRule.severity,
-          } satisfies Diagnostic
-
-          diagnostics.push(diagnostic)
-          state?.cacheDiagnostics?.push(diagnostic)
-          options.progress?.onDiagnostic?.({
-            diagnostic,
-            diagnostics: [...diagnostics],
-            path: state?.progressPath,
-          })
-        },
-        scope: enabledRule.scope,
-        src,
-      }
-
-      return {
-        cacheable: enabledRule.rule.cache !== false,
-        enabledRule,
-        executionState,
-        handlers: enabledRule.rule.create(context),
-        ruleHash: stableHash({
-          cache: enabledRule.rule.cache ?? true,
-          create: String(enabledRule.rule.create),
-          id: enabledRule.id,
-          localId: enabledRule.localId,
-          model: enabledRule.rule.model,
-          scope: enabledRule.scope,
-          severity: enabledRule.severity,
-        }),
-      }
-    })
-
-    filePlans = createPreparedFileExecutionPlans(ruleRuntimes, files, cwd)
+    filePlans = createPreparedFileExecutionPlans(files, cwd)
     planned = calculatePlannedExecutions(filePlans)
     runStartedAt = clock()
 
@@ -285,7 +229,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       files: filePlans.map(filePlan => toProgressFilePath(filePlan, files.length)),
       filesTotal: files.length,
       planned,
-      rulesTotal: registry.enabledRules.length,
+      rulesTotal: countEnabledRuleIds(files),
       startedAt: runStartedAt,
     })
 
@@ -343,86 +287,56 @@ function calculatePlannedExecutions(
 }
 
 function collectExecutionTargets(
-  ruleRuntimes: RuleRuntime[],
   preparedFile: PreparedFile,
 ): ExecutionTarget[] {
   const targets: ExecutionTarget[] = []
-  const fileExecutions = ruleRuntimes
-    .map((runtime): RuleTargetExecution | undefined => {
-      if (!runtime.handlers.onFile)
-        return undefined
 
-      return {
-        run: () => runtime.handlers.onFile?.(preparedFile.file),
-        runtime,
-      }
-    })
-    .filter((execution): execution is RuleTargetExecution => execution !== undefined)
+  for (const sourceTarget of preparedFile.targets) {
+    const executions = preparedFile.ruleRuntimes
+      .map((runtime): RuleTargetExecution | undefined => {
+        if (!runtime.handlers.onTarget) {
+          return undefined
+        }
 
-  if (fileExecutions.length > 0) {
+        return {
+          run: () => runtime.handlers.onTarget?.(sourceTarget),
+          runtime,
+        }
+      })
+      .filter((execution): execution is RuleTargetExecution => execution !== undefined)
+
+    if (executions.length === 0) {
+      continue
+    }
+
     targets.push({
-      executions: fileExecutions,
-      identity: '',
-      kind: 'file',
-      text: preparedFile.file.text,
+      configHash: preparedFile.configHash,
+      executions,
+      identity: sourceTarget.identity,
+      kind: sourceTarget.kind,
+      language: sourceTarget.language,
+      loc: sourceTarget.loc,
+      metadata: sourceTarget.metadata,
+      name: sourceTarget.name,
+      origin: sourceTarget.origin,
+      range: sourceTarget.range,
+      text: sourceTarget.text,
     })
-  }
-
-  if (preparedFile.units) {
-    for (const classNode of preparedFile.units.classes) {
-      const executions = ruleRuntimes
-        .map((runtime): RuleTargetExecution | undefined => {
-          if (!runtime.handlers.onClass)
-            return undefined
-
-          return {
-            run: () => runtime.handlers.onClass?.(classNode),
-            runtime,
-          }
-        })
-        .filter((execution): execution is RuleTargetExecution => execution !== undefined)
-
-      if (executions.length > 0) {
-        targets.push({
-          executions,
-          identity: '',
-          kind: 'class',
-          loc: classNode.loc,
-          name: classNode.name,
-          range: classNode.range,
-          text: classNode.text,
-        })
-      }
-    }
-
-    for (const functionNode of preparedFile.units.functions) {
-      const executions = ruleRuntimes
-        .map((runtime): RuleTargetExecution | undefined => {
-          if (!runtime.handlers.onFunction)
-            return undefined
-
-          return {
-            run: () => runtime.handlers.onFunction?.(functionNode),
-            runtime,
-          }
-        })
-        .filter((execution): execution is RuleTargetExecution => execution !== undefined)
-
-      if (executions.length > 0) {
-        targets.push({
-          executions,
-          identity: '',
-          kind: 'function',
-          loc: functionNode.loc,
-          name: functionNode.name,
-          range: functionNode.range,
-          text: functionNode.text,
-        })
-      }
-    }
   }
 
   return targets
+}
+
+function countEnabledRuleIds(files: PreparedFile[]): number {
+  const ids = new Set<string>()
+
+  for (const file of files) {
+    for (const runtime of file.ruleRuntimes) {
+      ids.add(runtime.enabledRule.id)
+    }
+  }
+
+  return ids.size
 }
 
 function createAlintRunError(error: unknown, result: RunResult): AlintRunError {
@@ -454,24 +368,23 @@ function createExecutionCacheKey(
 
   return createCacheKey({
     alintVersion: packageJson.version,
-    configHash: cacheContext.configHash,
+    configHash: target.configHash,
     filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
     modelHash: cacheContext.modelHash,
     ruleHash: runtime.ruleHash,
     schemaVersion: 1,
-    targetHash: hashText(target.text),
+    targetHash: createTargetHash(target),
     targetIdentity: target.identity,
     targetKind: target.kind,
   })
 }
 
 function createPreparedFileExecutionPlans(
-  ruleRuntimes: RuleRuntime[],
   files: PreparedFile[],
   cwd: string,
 ): PreparedFileExecutionPlan[] {
   return files.map((preparedFile, fileOffset) => {
-    const targets = collectExecutionTargets(ruleRuntimes, preparedFile)
+    const targets = collectExecutionTargets(preparedFile)
     const resolveTargetIdentity = createTargetIdentityResolver(
       targets.map(target => toTargetIdentityInput(cwd, preparedFile.file.path, target)),
     )
@@ -556,6 +469,127 @@ function createRuleEndCounters() {
       }
     },
   }
+}
+
+function createRuleRuntimes(options: {
+  cwd: string
+  diagnostics: Diagnostic[]
+  effectiveSettings: Record<string, unknown>
+  options: RunOptions
+  registry: ReturnType<typeof buildRuleRegistry>
+  setupConfig: SetupConfig
+  src: ReturnType<typeof createSourceRuntime>
+  usage: ReturnType<typeof createUsageAccumulator>
+}): RuleRuntime[] {
+  return options.registry.enabledRules.map((enabledRule) => {
+    const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+    const context: RuleContext = {
+      cwd: options.cwd,
+      id: enabledRule.id,
+      localId: enabledRule.localId,
+      logger: {
+        debug: () => {},
+      },
+      metering: {
+        recordUsage: (record) => {
+          const usageRecord = options.usage.record({
+            ...record,
+            ruleId: record.ruleId ?? enabledRule.id,
+          })
+          const state = executionState.getStore()
+
+          state?.cacheUsage?.push(usageRecord)
+
+          options.options.progress?.onUsage?.({
+            path: state?.progressPath,
+            record: usageRecord,
+            total: options.usage.toJSON(),
+          })
+        },
+      },
+      model: async (selector) => {
+        const request = options.options.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
+        const requirement = mergeModelRequirement(
+          enabledRule.rule.model,
+          typeof selector === 'string' ? undefined : selector,
+        )
+        const resolvedModel = resolveModel(options.setupConfig, {
+          request,
+          requirement,
+          ruleId: enabledRule.id,
+        })
+
+        const state = executionState.getStore()
+
+        if (state) {
+          state.currentModel = toDiagnosticModel(resolvedModel, request)
+        }
+
+        return resolvedModel
+      },
+      report: (descriptor) => {
+        const state = executionState.getStore()
+        const filePath = descriptor.filePath ?? state?.activeFilePath
+
+        if (!filePath) {
+          throw new Error(`Diagnostic for rule "${enabledRule.id}" is missing filePath.`)
+        }
+
+        const diagnosticModel = state?.currentModel ? { ...state.currentModel } : undefined
+
+        if (state) {
+          state.currentModel = undefined
+        }
+
+        const diagnostic = {
+          evidence: descriptor.evidence,
+          filePath,
+          loc: descriptor.loc,
+          message: descriptor.message,
+          model: diagnosticModel,
+          ruleId: enabledRule.id,
+          severity: enabledRule.severity,
+        } satisfies Diagnostic
+
+        options.diagnostics.push(diagnostic)
+        state?.cacheDiagnostics?.push(diagnostic)
+        options.options.progress?.onDiagnostic?.({
+          diagnostic,
+          diagnostics: [...options.diagnostics],
+          path: state?.progressPath,
+        })
+      },
+      settings: options.effectiveSettings,
+      src: options.src,
+    }
+
+    return {
+      cacheable: enabledRule.rule.cache !== false,
+      enabledRule,
+      executionState,
+      handlers: enabledRule.rule.create(context),
+      ruleHash: stableHash({
+        cache: enabledRule.rule.cache ?? true,
+        create: String(enabledRule.rule.create),
+        id: enabledRule.id,
+        localId: enabledRule.localId,
+        model: enabledRule.rule.model,
+        severity: enabledRule.severity,
+      }),
+    }
+  })
+}
+
+function createTargetHash(target: ExecutionTarget): string {
+  return stableHash({
+    language: target.language,
+    loc: target.loc,
+    metadata: target.metadata,
+    name: target.name,
+    origin: target.origin,
+    range: target.range,
+    text: target.text,
+  })
 }
 
 function createUsageAccumulator() {
@@ -793,12 +827,12 @@ async function executeProgressTarget(
         filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
         fingerprint: {
           alintVersion: packageJson.version,
-          configHash: cacheContext.configHash,
+          configHash: target.configHash,
           modelHash: cacheContext.modelHash,
           ruleHash: execution.runtime.ruleHash,
         },
         target: {
-          hash: hashText(target.text),
+          hash: createTargetHash(target),
           identity: target.identity,
           kind: target.kind,
           loc: target.loc,
@@ -1017,6 +1051,7 @@ function toTargetIdentityInput(
 ) {
   return {
     filePath: target.kind === 'file' ? normalizeCachePath(cwd, filePath) : undefined,
+    identity: target.identity,
     kind: target.kind,
     name: target.name,
     range: target.range,

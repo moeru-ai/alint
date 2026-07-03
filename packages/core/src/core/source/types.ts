@@ -1,12 +1,7 @@
-export interface ClassUnit extends SourceUnit {
-  exported: boolean
-  kind: 'class'
-}
-
-export interface FunctionUnit extends SourceUnit {
-  async: boolean
-  exported: boolean
-  kind: 'function'
+export interface LanguageContext {
+  cwd: string
+  languageOptions: Record<string, unknown>
+  src: SourceRuntime
 }
 
 export interface LineRange {
@@ -14,8 +9,33 @@ export interface LineRange {
   startLine: number
 }
 
+export interface ProcessedSource {
+  identity: string
+  language?: string
+  origin?: ProcessedSourceOrigin
+  path: string
+  text: string
+}
+
+export interface ProcessedSourceOrigin {
+  physicalPath: string
+  range?: SourceRange
+  virtualPath?: string
+}
+
+export interface ProcessorContext {
+  cwd: string
+  options: Record<string, unknown>
+  src: SourceRuntime
+}
+
+export interface ProcessorPostprocessContext extends ProcessorContext {
+  file: SourceFile
+  processedSources: ProcessedSource[]
+}
+
 export interface SourceFile {
-  language: 'javascript' | 'typescript' | 'unknown'
+  language: string
   lines: string[]
   path: string
   text: string
@@ -37,23 +57,35 @@ export interface SourceRange {
 }
 
 export interface SourceRuntime {
-  getText: (target: SourceFile | SourceUnit) => string
+  getText: (target: SourceFile | SourceTarget) => string
   readFile: (filePath: string) => Promise<SourceFile>
   sliceLines: (file: SourceFile, range: LineRange) => SourceText
   sliceRange: (file: SourceFile, range: SourceRange) => SourceText
 }
 
-export interface SourceText {
-  filePath: string
-  loc: SourceLocation
+export interface SourceTarget {
+  file: SourceFile
+  identity: string
+  kind: SourceTargetKind
+  language: string
+  loc?: SourceLocation
+  metadata?: Record<string, unknown>
+  name?: string
+  origin?: SourceTargetOrigin
+  range?: SourceRange
   text: string
 }
 
-export interface SourceUnit {
-  file: SourceFile
-  kind: 'class' | 'function'
+export type SourceTargetKind = 'class' | 'file' | 'fragment' | 'function' | 'symbol' | (string & {})
+
+export interface SourceTargetOrigin {
+  physicalPath: string
+  range?: SourceRange
+  virtualPath?: string
+}
+
+export interface SourceText {
+  filePath: string
   loc: SourceLocation
-  name?: string
-  range: SourceRange
   text: string
 }
