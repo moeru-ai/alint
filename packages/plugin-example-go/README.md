@@ -4,22 +4,42 @@ Example `alint` plugin for semantic Go responsibility-boundary review.
 
 ## What It Does
 
-This package demonstrates how to review Go files before `alint` has a Go AST extractor. The recommended config targets `**/*.go` as `text/plain`, sends the whole file to a model-backed rule, and asks the model to report responsibility-boundary smells that are hard to express with syntax-only checks.
+This package demonstrates how to review Go files before `alint` has a Go AST extractor. The example config targets `**/*.go` as `text/plain`, sends the whole file to a model-backed rule, and asks the model to report responsibility-boundary smells that are hard to express with syntax-only checks.
 
 The example rule focuses on semantic Go design issues: files with too many unrelated reasons to change, constructors that are split away from the lifecycle work that makes their values safe, generic wiring files that absorb domain policy, and small helper chains that obscure a missing cohesive owner.
 
 ## How To Use
 
 ```ts
-import goBoundary from '@alint-js/plugin-example-go'
+import goPlugin from '@alint-js/plugin-example-go'
 
 export default [
   {
     plugins: {
-      go: goBoundary,
+      go: goPlugin,
     },
   },
-  ...goBoundary.configs.recommended,
+  ...goPlugin.configs.example,
+]
+```
+
+The rule also uses an internal tool-using context scout to inspect nearby files before
+the final responsibility-boundary judgment. The scout can read files, list Go files,
+and search Go files under the project root. If the scout fails, the rule falls back to
+deterministic local context collection.
+
+```ts
+import { createGoPlugin } from '@alint-js/plugin-example-go'
+
+const goPlugin = createGoPlugin()
+
+export default [
+  {
+    plugins: {
+      go: goPlugin,
+    },
+  },
+  ...goPlugin.configs.example,
 ]
 ```
 

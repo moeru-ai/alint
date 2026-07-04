@@ -17,9 +17,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
+    "tinyglobby": "catalog:",
     "valibot": "catalog:",
     "xsai": "catalog:"
   },
