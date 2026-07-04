@@ -1,5 +1,5 @@
-import type { AgentTool } from '@alint-js/agent'
 import type { ResolvedModel } from '@alint-js/core'
+import type { AgentTool } from '@alint-js/core/agent'
 import type { RunnerContext } from 'apeira'
 
 import { describe, expect, it } from 'vitest'

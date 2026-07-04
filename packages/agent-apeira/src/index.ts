@@ -1,7 +1,7 @@
 /// Super WIP
 
-import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from '@alint-js/agent'
 import type { ResolvedModel } from '@alint-js/core'
+import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from '@alint-js/core/agent'
 import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
 import { chat, stepCountAtLeast, user } from 'apeira'

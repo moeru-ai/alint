@@ -1,4 +1,4 @@
-import type { ResolvedModel } from '@alint-js/core'
+import type { ResolvedModel } from '../models/types'
 
 export type AgentAdapter = (request: AgentRequest) => Promise<AgentResult>
 
@@ -27,8 +27,4 @@ export interface AgentUsage {
   inputTokens?: number
   outputTokens?: number
   totalTokens?: number
-}
-
-export function defineTool(tool: AgentTool): AgentTool {
-  return tool
 }

@@ -21,7 +21,6 @@
     "@alint-js/core": "workspace:*"
   },
   "dependencies": {
-    "@alint-js/agent": "workspace:*",
     "@earendil-works/pi-agent-core": "catalog:",
     "@earendil-works/pi-ai": "catalog:",
     "@smithy/node-http-handler": "catalog:"
