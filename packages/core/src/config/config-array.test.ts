@@ -253,6 +253,18 @@ describe('config array resolution', () => {
     expect(result.config.settings).toEqual({ review: { depth: 'strict' }, shared: true })
   })
 
+  it('resolves the agent adapter as a last-write-wins scalar field', () => {
+    const firstAgent = async () => ({ answer: 'first' })
+    const secondAgent = async () => ({ answer: 'second' })
+
+    const result = resolveConfigForFile('/repo/main.ts', [
+      { agent: firstAgent },
+      { agent: secondAgent },
+    ], { cwd: '/repo' })
+
+    expect(result.config.agent).toBe(secondAgent)
+  })
+
   it('does not copy matching and provenance fields into the effective config', () => {
     const result = resolveConfigForFile('/repo/main.go', [
       {

@@ -1,3 +1,4 @@
+import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig } from '../config/types'
 import type {
   LanguageContext,
@@ -17,6 +18,7 @@ export type AlintConfigExtends = AlintConfigInput | string
 export type AlintConfigInput = AlintConfigItem | readonly AlintConfigInput[]
 
 export interface AlintConfigItem {
+  agent?: AgentAdapter
   basePath?: string
   extends?: readonly AlintConfigExtends[]
   files?: readonly (readonly string[] | string)[]
@@ -92,6 +94,7 @@ export type RuleCacheConfig = boolean | { level?: 'target' }
 export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
 
 export interface RuleContext {
+  agent: AgentAdapter
   cwd: string
   id: string
   localId: string

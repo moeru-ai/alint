@@ -13,6 +13,7 @@ const effectiveBasePathSymbol = Symbol('effectiveBasePath')
 const inheritedMatcherScopesSymbol = Symbol('inheritedMatcherScopes')
 
 export interface EffectiveAlintConfig {
+  agent?: AlintConfigItem['agent']
   language?: string
   languageOptions: Record<string, unknown>
   linterOptions: Record<string, unknown>
@@ -315,6 +316,10 @@ function mergeConfig(config: EffectiveAlintConfig, item: AlintConfigItem): void 
   Object.assign(config.settings, item.settings)
   Object.assign(config.languageOptions, item.languageOptions)
   Object.assign(config.linterOptions, item.linterOptions)
+
+  if (item.agent !== undefined) {
+    config.agent = item.agent
+  }
 
   if (item.language !== undefined) {
     config.language = item.language

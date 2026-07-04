@@ -210,6 +210,82 @@ describe('runAlint', () => {
     expect(result.diagnostics[0]?.message).toBe('from effective config')
   })
 
+  it('wires ctx.agent from the configured agent adapter', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-agent-'))
+    const filePath = join(root, 'demo.txt')
+
+    await writeFile(filePath, 'hello\n')
+
+    let called = 0
+    const adapter = async () => {
+      called += 1
+
+      return { answer: 'from the adapter' }
+    }
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTarget: async (target) => {
+          const { answer } = await ctx.agent({
+            instructions: 'review',
+            model: await ctx.model('default'),
+            prompt: target.text,
+            tools: [],
+          })
+
+          ctx.report({ message: answer })
+        },
+      }),
+    })
+
+    const result = await runAlint({
+      config: createConfig(
+        { boundary: rule },
+        { 'company/boundary': 'warn' },
+        {},
+        { agent: adapter, files: ['**/*.txt'], language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(called).toBe(1)
+    expect(result.diagnostics[0]?.message).toBe('from the adapter')
+  })
+
+  it('ctx.agent throws a clear error when no agent is configured', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-agent-missing-'))
+    const filePath = join(root, 'demo.txt')
+
+    await writeFile(filePath, 'hello\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTarget: async (target) => {
+          await ctx.agent({
+            instructions: 'review',
+            model: await ctx.model('default'),
+            prompt: target.text,
+            tools: [],
+          })
+        },
+      }),
+    })
+
+    await expect(runAlint({
+      config: createConfig(
+        { boundary: rule },
+        { 'company/boundary': 'warn' },
+        {},
+        { files: ['**/*.txt'], language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })).rejects.toThrow(/requires an agent/i)
+  })
+
   it('skips ignored files after resolving effective config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-ignore-'))
     const ignoredPath = join(root, 'ignored.ts')

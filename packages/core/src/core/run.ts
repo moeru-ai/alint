@@ -1,3 +1,4 @@
+import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
 import type { Awaitable, EnabledRule, RuleContext, RuleHandlers } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
@@ -194,6 +195,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       const ruleRuntimes = createRuleRuntimes({
         cwd,
         diagnostics,
+        effectiveAgent: effectiveConfig.agent,
         effectiveSettings: effectiveConfig.settings,
         options,
         registry,
@@ -478,6 +480,7 @@ function createRuleEndCounters() {
 function createRuleRuntimes(options: {
   cwd: string
   diagnostics: Diagnostic[]
+  effectiveAgent: AgentAdapter | undefined
   effectiveSettings: Record<string, unknown>
   options: RunOptions
   registry: ReturnType<typeof buildRuleRegistry>
@@ -488,6 +491,7 @@ function createRuleRuntimes(options: {
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const context: RuleContext = {
+      agent: options.effectiveAgent ?? createUndefinedAgent(enabledRule.id),
       cwd: options.cwd,
       id: enabledRule.id,
       localId: enabledRule.localId,
@@ -595,6 +599,14 @@ function createTargetHash(target: ExecutionTarget): string {
     range: target.range,
     text: target.text,
   })
+}
+
+function createUndefinedAgent(ruleId: string): AgentAdapter {
+  return () => {
+    throw new TypeError(
+      `Rule "${ruleId}" requires an agent, but none is configured. Set "agent" in alint config (e.g. agent: createApeiraAdapter()).`,
+    )
+  }
 }
 
 function createUsageAccumulator() {
