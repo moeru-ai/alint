@@ -1,17 +1,40 @@
-import type { RuleContext, SourceTarget } from '@alint-js/core'
+import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/core'
+
+import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 import { getDescription } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import {
-  createGoBoundaryMessages,
+  collectResponsibilityBoundaryContext,
+  createGoPlugin,
   createReportFindingsToolParameters,
-  goBoundaryFindingSchema,
-  goBoundaryPlugin,
-  goBoundaryPrompt,
-  goBoundaryResponseSchema,
-  reportGoBoundaryFindings,
+  createResponsibilityBoundaryMessages,
+  createTools,
+  goPlugin,
+  reportResponsibilityBoundaryFindings,
+  responsibilityBoundaryFindingSchema,
+  responsibilityBoundaryPrompt,
+  responsibilityBoundaryResponseSchema,
 } from './index'
+
+function createResolvedModel(): ResolvedModel {
+  return {
+    aliases: [],
+    capabilities: ['tool-call'],
+    id: 'model',
+    name: 'model',
+    params: {},
+    provider: {
+      endpoint: 'http://localhost:11434/v1',
+      headers: {},
+      id: 'provider',
+      type: 'openai-compatible',
+    },
+  }
+}
 
 function createRuleContext(): RuleContext {
   return {
@@ -24,19 +47,7 @@ function createRuleContext(): RuleContext {
     metering: {
       recordUsage: () => {},
     },
-    model: async () => ({
-      aliases: [],
-      capabilities: ['tool-call'],
-      id: 'model',
-      name: 'model',
-      params: {},
-      provider: {
-        endpoint: 'http://localhost:11434/v1',
-        headers: {},
-        id: 'provider',
-        type: 'openai-compatible',
-      },
-    }),
+    model: async () => createResolvedModel(),
     report: () => {},
     settings: {},
     src: {
@@ -85,7 +96,7 @@ function createSourceTarget(kind: SourceTarget['kind'], path = '/repo/internal/b
 }
 
 function getResponsibilityBoundaryRule() {
-  const rule = goBoundaryPlugin.rules?.['responsibility-boundary']
+  const rule = goPlugin.rules?.['responsibility-boundary']
 
   if (!rule) {
     throw new Error('Expected Go boundary plugin to expose responsibility-boundary rule')
@@ -94,10 +105,17 @@ function getResponsibilityBoundaryRule() {
   return rule
 }
 
-describe('goBoundaryPlugin', () => {
+describe('goPlugin', () => {
+  it('creates the Go boundary plugin without requiring callers to inject an agent adapter', () => {
+    const plugin = createGoPlugin()
+
+    expect(plugin.rules?.['responsibility-boundary']).toBeDefined()
+    expect(plugin.configs?.example).toEqual(goPlugin.configs?.example)
+  })
+
   it('uses flat plugin shape with a generic Go responsibility-boundary config alias', () => {
-    expect('scope' in goBoundaryPlugin).toBe(false)
-    expect(goBoundaryPlugin.configs?.recommended).toEqual([
+    expect('scope' in goPlugin).toBe(false)
+    expect(goPlugin.configs?.example).toEqual([
       {
         files: ['**/*.go'],
         language: 'text/plain',
@@ -144,9 +162,9 @@ describe('goBoundaryPlugin', () => {
   })
 })
 
-describe('createGoBoundaryMessages', () => {
+describe('createResponsibilityBoundaryMessages', () => {
   it('sends Go source code to the judge with stable line numbers', () => {
-    const messages = createGoBoundaryMessages('package billing\nfunc NewInvoiceService() {}\n', undefined)
+    const messages = createResponsibilityBoundaryMessages('package billing\nfunc NewInvoiceService() {}\n', undefined)
 
     expect(messages.at(-1)?.content).toContain([
       'Go code with line numbers:',
@@ -158,45 +176,80 @@ describe('createGoBoundaryMessages', () => {
   })
 
   it('includes output language instructions when provided', () => {
-    const messages = createGoBoundaryMessages('package billing\n', undefined, 'Portuguese')
+    const messages = createResponsibilityBoundaryMessages('package billing\n', undefined, 'Portuguese')
 
     expect(messages.at(-1)?.content).toContain('Write all human-readable finding messages and suggestions in this language: Portuguese.')
   })
 
+  it('includes supplemental project context when provided', () => {
+    const messages = createResponsibilityBoundaryMessages(
+      'package billing\n',
+      undefined,
+      undefined,
+      [
+        'Same-package files:',
+        '- internal/billing/wire.go',
+        '',
+        'Reference snippets:',
+        '- internal/billing/module.go:12: fx.Invoke(RunBillingServer)',
+      ].join('\n'),
+    )
+
+    expect(messages.at(-1)?.content).toContain('Supplemental project context:')
+    expect(messages.at(-1)?.content).toContain('Same-package files:')
+    expect(messages.at(-1)?.content).toContain('fx.Invoke(RunBillingServer)')
+  })
+
   it('describes generic Go responsibility smells without datastore-specific trigger terms', () => {
-    expect(goBoundaryPrompt).toContain('You are reviewing one Go source file.')
-    expect(goBoundaryPrompt).toContain('single responsibility')
-    expect(goBoundaryPrompt).toContain('cohesive constructor')
-    expect(goBoundaryPrompt).toContain('few-shot examples')
-    expect(goBoundaryPrompt).toContain('Report fragmented orchestration separately')
-    expect(goBoundaryPrompt).toContain('Report cohesive misplaced domain clusters once')
-    expect(goBoundaryPrompt).toContain('relatedDeclarations')
-    expect(goBoundaryPrompt).toContain('Avoid file-level summary findings when they only repeat more specific cluster findings')
-    expect(goBoundaryPrompt).toContain('Lazy setup and per-operation resource lifecycles are valid')
-    expect(goBoundaryPrompt).toContain('opens short-lived connections lazily')
-    expect(goBoundaryPrompt).toContain('Do not treat example names, domains, packages, or technologies as trigger terms')
-    expect(goBoundaryPrompt).not.toContain('You are reviewing one Go source file from an internal datastore package')
-    expect(goBoundaryPrompt).not.toContain('OAuth, OIDC, provider, seed, cache, Redis, S3, and schema-contract concerns are colocated')
-    expect(goBoundaryPrompt).not.toContain('migrateSchema')
-    expect(goBoundaryPrompt).not.toContain('RegisterBootstrapLifecycle')
-    expect(goBoundaryPrompt).not.toContain('NewBootstrapRedisClient')
-    expect(goBoundaryPrompt).not.toContain('Redis')
-    expect(goBoundaryPrompt).not.toContain('meter')
-    expect(goBoundaryPrompt).not.toContain('flux')
-    expect(goBoundaryPrompt).not.toContain('debt')
-    expect(goBoundaryPrompt).not.toContain('rate-limit')
-    expect(goBoundaryPrompt).not.toContain('unitsPerFlux')
-    expect(goBoundaryPrompt).not.toContain('OIDC')
-    expect(goBoundaryPrompt).not.toContain('Ent')
-    expect(goBoundaryPrompt).not.toContain('datastore')
+    expect(responsibilityBoundaryPrompt).toContain('You are reviewing one Go source file.')
+    expect(responsibilityBoundaryPrompt).toContain('single responsibility')
+    expect(responsibilityBoundaryPrompt).toContain('cohesive constructor')
+    expect(responsibilityBoundaryPrompt).toContain('few-shot examples')
+    expect(responsibilityBoundaryPrompt).toContain('Report fragmented orchestration separately')
+    expect(responsibilityBoundaryPrompt).toContain('Report cohesive misplaced domain clusters once')
+    expect(responsibilityBoundaryPrompt).toContain('Uber Fx lifecycle code often intentionally separates constructors from invoked runner functions')
+    expect(responsibilityBoundaryPrompt).toContain('grpc-gateway registration commonly bridges generated gRPC handlers into an HTTP router')
+    expect(responsibilityBoundaryPrompt).toContain('Do not report log.Fatal solely because it is inside a serve goroutine')
+    expect(responsibilityBoundaryPrompt).toContain('Do not report a constructor solely because no Close/Stop lifecycle hook is visible in the same file')
+    expect(responsibilityBoundaryPrompt).toContain('Do not report isolated resource-leak, missing Close-on-error, retry, timeout, or error-handling bugs under this rule')
+    expect(responsibilityBoundaryPrompt).toContain('Do not report unused functions, dead wiring, missing module registration, or zero callers under this rule')
+    expect(responsibilityBoundaryPrompt).toContain('Generic Redis lock helpers are acceptable inside a focused Redis adapter')
+    expect(responsibilityBoundaryPrompt).toContain('even when reference context shows no current callers')
+    expect(responsibilityBoundaryPrompt).toContain('Redis key constants belong in Redis key packages')
+    expect(responsibilityBoundaryPrompt).toContain('A focused infrastructure adapter may expose a thin integration factory')
+    expect(responsibilityBoundaryPrompt).toContain('session/cache/store wrappers')
+    expect(responsibilityBoundaryPrompt).toContain('Generic utility files are not automatically responsibility-boundary findings')
+    expect(responsibilityBoundaryPrompt).toContain('Misleading names such as encryption-vs-hashing may be naming/API-design concerns')
+    expect(responsibilityBoundaryPrompt).toContain('Similar method names on different response or error types are not duplication by themselves')
+    expect(responsibilityBoundaryPrompt).toContain('one may intentionally keep the first violation while the aggregate collects all violations')
+    expect(responsibilityBoundaryPrompt).toContain('API error packages may own adapters from validation frameworks into the project')
+    expect(responsibilityBoundaryPrompt).toContain('Use supplemental context when present')
+    expect(responsibilityBoundaryPrompt).toContain('relatedDeclarations')
+    expect(responsibilityBoundaryPrompt).toContain('Avoid file-level summary findings when they only repeat more specific cluster findings')
+    expect(responsibilityBoundaryPrompt).toContain('Lazy setup and per-operation resource lifecycles are valid')
+    expect(responsibilityBoundaryPrompt).toContain('opens short-lived connections lazily')
+    expect(responsibilityBoundaryPrompt).toContain('a thin storage-backed session/cache/store factory inside the storage adapter file')
+    expect(responsibilityBoundaryPrompt).toContain('Do not treat example names, domains, packages, or technologies as trigger terms')
+    expect(responsibilityBoundaryPrompt).not.toContain('You are reviewing one Go source file from an internal datastore package')
+    expect(responsibilityBoundaryPrompt).not.toContain('OAuth, OIDC, provider, seed, cache, Redis, S3, and schema-contract concerns are colocated')
+    expect(responsibilityBoundaryPrompt).not.toContain('migrateSchema')
+    expect(responsibilityBoundaryPrompt).not.toContain('RegisterBootstrapLifecycle')
+    expect(responsibilityBoundaryPrompt).not.toContain('NewBootstrapRedisClient')
+    expect(responsibilityBoundaryPrompt).not.toContain('flux')
+    expect(responsibilityBoundaryPrompt).not.toContain('debt')
+    expect(responsibilityBoundaryPrompt).not.toContain('rate-limit')
+    expect(responsibilityBoundaryPrompt).not.toContain('unitsPerFlux')
+    expect(responsibilityBoundaryPrompt).not.toContain('OIDC')
+    expect(responsibilityBoundaryPrompt).not.toContain('Ent')
+    expect(responsibilityBoundaryPrompt).not.toContain('datastore')
   })
 
   it('stores finding output requirements in schema descriptions', () => {
-    expect(getDescription(goBoundaryResponseSchema.entries.findings)).toContain('Go responsibility boundary')
-    expect(getDescription(goBoundaryFindingSchema.pipe[0].entries.line)).toContain('left-column line number')
-    expect(getDescription(goBoundaryFindingSchema.pipe[0].entries.category)).toContain('responsibility-boundary')
-    expect(getDescription(goBoundaryFindingSchema.pipe[0].entries.relatedDeclarations.wrapped)).toContain('same cohesive issue cluster')
-    expect(getDescription(goBoundaryFindingSchema.pipe[0].entries.suggestion)).toContain('design direction')
+    expect(getDescription(responsibilityBoundaryResponseSchema.entries.findings)).toContain('Go responsibility boundary')
+    expect(getDescription(responsibilityBoundaryFindingSchema.pipe[0].entries.line)).toContain('left-column line number')
+    expect(getDescription(responsibilityBoundaryFindingSchema.pipe[0].entries.category)).toContain('responsibility-boundary')
+    expect(getDescription(responsibilityBoundaryFindingSchema.pipe[0].entries.relatedDeclarations.wrapped)).toContain('same cohesive issue cluster')
+    expect(getDescription(responsibilityBoundaryFindingSchema.pipe[0].entries.suggestion)).toContain('design direction')
   })
 
   it('normalizes nested tool object schemas for strict function calling', () => {
@@ -215,13 +268,64 @@ describe('createGoBoundaryMessages', () => {
   })
 })
 
-describe('reportGoBoundaryFindings', () => {
+describe('collectResponsibilityBoundaryContext', () => {
+  it('exposes generic project tools for the internal scout to list, read, and search files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-go-scout-'))
+    const cwd = join(root, 'project')
+    const filePath = join(cwd, 'internal/billing/service.go')
+    const modulePath = join(cwd, 'internal/billing/module.go')
+    const outsidePath = join(root, 'outside.txt')
+    const source = 'package billing\n\nfunc RunBillingServer() {}\n'
+    const context = createRuleContext()
+    context.cwd = cwd
+
+    await mkdir(join(cwd, 'internal/billing'), { recursive: true })
+    await mkdir(join(cwd, 'vendor/generated'), { recursive: true })
+    await writeFile(filePath, source)
+    await writeFile(modulePath, 'package billing\n\nfunc Module() {\n\tfx.Invoke(RunBillingServer)\n}\n')
+    await writeFile(join(cwd, 'README.md'), '# Billing\n')
+    await writeFile(join(cwd, 'vendor/generated/ignored.go'), 'package generated\n\nfunc RunBillingServer() {}\n')
+    await writeFile(outsidePath, 'outside project root\n')
+
+    const tools = createTools(cwd)
+    const listFiles = tools.find(tool => tool.name === 'list_files')
+    const readFile = tools.find(tool => tool.name === 'read_file')
+    const searchFiles = tools.find(tool => tool.name === 'search_files')
+    const searchInFiles = tools.find(tool => tool.name === 'search_in_files')
+
+    if (!listFiles || !readFile || !searchFiles || !searchInFiles) {
+      throw new Error('Expected scout project tools')
+    }
+
+    const listed = await listFiles.execute({
+      ignore: ['vendor/**'],
+      patterns: ['**/*.go', '**/*.md'],
+    })
+    const outside = await readFile.execute({ path: outsidePath })
+    const fileMatches = await searchFiles.execute({ patterns: '**/*.go', query: 'module' })
+    const contentMatches = await searchInFiles.execute({ patterns: '**/*.go', query: 'RunBillingServer' })
+    const supplemental = await collectResponsibilityBoundaryContext(context, filePath, source)
+
+    expect(String(listed)).toContain('internal/billing/module.go')
+    expect(String(listed)).toContain('README.md')
+    expect(String(listed)).not.toContain('vendor/generated/ignored.go')
+    expect(String(outside)).toContain('outside project root')
+    expect(String(fileMatches)).toContain('internal/billing/module.go')
+    expect(String(contentMatches)).toContain('internal/billing/module.go')
+    expect(String(contentMatches)).not.toContain('vendor/generated/ignored.go')
+    expect(supplemental).toContain('Same-package files:')
+    expect(supplemental).toContain('internal/billing/module.go')
+    expect(supplemental).toContain('RunBillingServer')
+  })
+})
+
+describe('reportResponsibilityBoundaryFindings', () => {
   it('maps semantic Go boundary findings into diagnostics with design evidence', () => {
     const diagnostics: Parameters<RuleContext['report']>[0][] = []
     const context = createRuleContext()
     context.report = diagnostic => diagnostics.push(diagnostic)
 
-    reportGoBoundaryFindings(context, '/repo/internal/billing/service.go', [
+    reportResponsibilityBoundaryFindings(context, '/repo/internal/billing/service.go', [
       {
         category: 'constructor-cohesion',
         confidence: 'high',
@@ -255,7 +359,7 @@ describe('reportGoBoundaryFindings', () => {
     const context = createRuleContext()
     context.report = diagnostic => diagnostics.push(diagnostic)
 
-    reportGoBoundaryFindings(context, '/repo/internal/billing/service.go', [
+    reportResponsibilityBoundaryFindings(context, '/repo/internal/billing/service.go', [
       {
         category: 'domain-placement',
         confidence: 'medium',
