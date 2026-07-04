@@ -212,6 +212,269 @@ describe('interactive setup navigation', () => {
 })
 
 describe('executeCli', () => {
+  async function writeRunOutputFixture(cwd: string, fileName = 'alint-output.json'): Promise<string> {
+    const outputPath = join(cwd, fileName)
+
+    await writeFile(outputPath, JSON.stringify({
+      diagnostics: [
+        {
+          filePath: '/repo/src/demo.ts',
+          loc: { start: { column: 3, line: 12 } },
+          message: 'Problem found',
+          ruleId: 'company/problem',
+          severity: 'warn',
+        },
+      ],
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        records: [],
+        totalTokens: 15,
+      },
+    }, null, 2))
+
+    return outputPath
+  }
+
+  it('renders saved output with the stylish reporter by default', async () => {
+    const io = await createTestIo()
+    const outputPath = await writeRunOutputFixture(io.cwd)
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
+
+    expect(exitCode).toBe(1)
+    expect(io.stdoutText).toContain('/repo/src/demo.ts')
+    expect(io.stdoutText).toContain('12:3')
+    expect(io.stdoutText).toContain('warning')
+    expect(io.stdoutText).toContain('Problem found')
+    expect(io.stdoutText).toContain('company/problem')
+    expect(io.stdoutText).toContain('1 warn / 0 error | 15 tokens')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('reprints saved output with the json reporter', async () => {
+    const io = await createTestIo()
+    const outputPath = await writeRunOutputFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'output',
+      'inspect',
+      outputPath,
+      '--format',
+      'json',
+    ], io)
+
+    expect(exitCode).toBe(1)
+    expect(JSON.parse(io.stdoutText)).toEqual({
+      diagnostics: [
+        {
+          filePath: '/repo/src/demo.ts',
+          loc: { start: { column: 3, line: 12 } },
+          message: 'Problem found',
+          ruleId: 'company/problem',
+          severity: 'warn',
+        },
+      ],
+      usage: {
+        inputTokens: 10,
+        outputTokens: 5,
+        records: [],
+        totalTokens: 15,
+      },
+    })
+    expect(io.stderrText).toBe('')
+  })
+
+  it('returns 2 for unknown output inspect formats', async () => {
+    const io = await createTestIo()
+    const outputPath = await writeRunOutputFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'output',
+      'inspect',
+      outputPath,
+      '--format',
+      'compact',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toContain('Unknown reporter "compact".')
+  })
+
+  it('returns 2 for invalid output json', async () => {
+    const io = await createTestIo()
+    const outputPath = join(io.cwd, 'broken.json')
+    await writeFile(outputPath, '{')
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toContain('Could not parse output file')
+  })
+
+  it('returns 2 for structurally invalid alint output', async () => {
+    const io = await createTestIo()
+    const outputPath = join(io.cwd, 'invalid-output.json')
+    await writeFile(outputPath, JSON.stringify({ diagnostics: {} }))
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toContain('Invalid alint output')
+  })
+
+  it('returns 2 when the output file cannot be read', async () => {
+    const io = await createTestIo()
+    const outputPath = join(io.cwd, 'missing.json')
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toContain('Could not read output file')
+  })
+
+  it('prints a generic unknown command message for command groups', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'output'], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toBe('unknown command: output\n')
+  })
+
+  it('prints output inspect in output command help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'output', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Inspect saved alint run outputs without rerunning rules or model calls.')
+    expect(io.stdoutText).toContain('Use this when you already have JSON from `alint --format json`')
+    expect(io.stdoutText).toContain('Usage:')
+    expect(io.stdoutText).toContain('$ alint output')
+    expect(io.stdoutText).toContain('Commands:')
+    expect(io.stdoutText).toContain('output inspect <file>')
+    expect(io.stdoutText).toContain('Inspect saved alint JSON output')
+    expect(io.stdoutText).not.toContain('--cache-location')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints output inspect usage and options in output inspect help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Read a saved alint JSON run result and render it with a reporter.')
+    expect(io.stdoutText).toContain('Defaults to the human-friendly stylish reporter')
+    expect(io.stdoutText).toContain('Examples:')
+    expect(io.stdoutText).toContain('# Pretty-print saved JSON output')
+    expect(io.stdoutText).toContain('alint output inspect alint-output.json')
+    expect(io.stdoutText).toContain('# Validate and reprint normalized JSON')
+    expect(io.stdoutText).toContain('alint output inspect alint-output.json --format json')
+    expect(io.stdoutText).toContain('Usage:')
+    expect(io.stdoutText).toContain('$ alint output inspect <file>')
+    expect(io.stdoutText).toContain('Options:')
+    expect(io.stdoutText).toContain('-f, --format <format>')
+    expect(io.stdoutText).not.toContain('--cache-location')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints only direct config subcommands in config command help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Inspect and update alint setup/configuration state.')
+    expect(io.stdoutText).toContain('Examples:')
+    expect(io.stdoutText).toContain('alint config inspect src/index.ts')
+    expect(io.stdoutText).toContain('alint config providers list')
+    expect(io.stdoutText).toContain('alint config models list')
+    expect(io.stdoutText).toContain('alint config models probe --endpoint https://openrouter.ai/api/v1')
+    expect(io.stdoutText).toContain('Commands:')
+    expect(io.stdoutText).toContain('config inspect <file>')
+    expect(io.stdoutText).toContain('config models')
+    expect(io.stdoutText).toContain('config providers')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints description for config inspect help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', 'inspect', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Inspect resolved config for a file')
+    expect(io.stdoutText).toContain('Usage:')
+    expect(io.stdoutText).toContain('$ alint config inspect <file>')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints contextual help when global options come before the command', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--config',
+      'alint.config.ts',
+      'config',
+      'inspect',
+      '--help',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Inspect resolved config for a file')
+    expect(io.stdoutText).toContain('Usage:')
+    expect(io.stdoutText).toContain('$ alint config inspect <file>')
+    expect(io.stdoutText).not.toContain('$ alint [...files]')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints only direct nested config subcommands in config models help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', 'models', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Inspect, list, and probe model entries from alint setup configuration.')
+    expect(io.stdoutText).toContain('Commands:')
+    expect(io.stdoutText).toContain('config models probe')
+    expect(io.stdoutText).toContain('config models list')
+    expect(io.stdoutText).toContain('config models show <model>')
+    expect(io.stdoutText).not.toContain('config providers')
+    expect(io.stdoutText).not.toContain('--provider-header')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints nested command usage and options in config models probe help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', 'models', 'probe', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Probe an OpenAI-compatible models endpoint before saving it in setup config.')
+    expect(io.stdoutText).toContain('Examples:')
+    expect(io.stdoutText).toContain('alint config models probe --endpoint https://openrouter.ai/api/v1')
+    expect(io.stdoutText).toContain('Usage:')
+    expect(io.stdoutText).toContain('$ alint config models probe')
+    expect(io.stdoutText).toContain('Options:')
+    expect(io.stdoutText).toContain('--endpoint <url>')
+    expect(io.stdoutText).toContain('--provider-header <Key=Value>')
+    expect(io.stdoutText).not.toContain('--cache-location')
+    expect(io.stderrText).toBe('')
+  })
+
   it('writes local setup config and returns 0 for non-interactive setup', async () => {
     const io = await createTestIo()
 
@@ -779,11 +1042,31 @@ export default [
 
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('alint')
+    expect(io.stdoutText).toContain('Examples:')
+    expect(io.stdoutText).toContain('alint setup')
+    expect(io.stdoutText).toContain('alint src')
+    expect(io.stdoutText).toContain('alint --format json src > alint-output.json')
+    expect(io.stdoutText).toContain('alint output inspect alint-output.json')
+    expect(io.stdoutText).toContain('alint config inspect src/index.ts')
     expect(io.stdoutText).toContain('--no-cache')
     expect(io.stdoutText).toContain('-l, --lang <language>')
     expect(io.stdoutText).not.toMatch(/(^|\n)\s*--cache(?:\s|,)/)
     expect(io.stdoutText).not.toContain('-L')
     expect(io.stdoutText).not.toContain('--output-language')
+  })
+
+  it('prints setup examples in setup help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'setup', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Examples:')
+    expect(io.stdoutText).toContain('alint setup')
+    expect(io.stdoutText).toContain('alint setup --local -N --provider-id openrouter')
+    expect(io.stdoutText).toContain('--provider-model z-ai/glm-5.2')
+    expect(io.stdoutText).toContain('--provider-header "Authorization=Bearer $OPENROUTER_API_KEY"')
+    expect(io.stderrText).toBe('')
   })
 
   it('returns 2 when non-interactive setup is missing provider endpoint', async () => {

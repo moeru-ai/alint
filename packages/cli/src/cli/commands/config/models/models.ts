@@ -10,5 +10,9 @@ export const models = defineCommand({
     show,
   ],
   description: 'Manage configured models',
+  help: [
+    'Inspect, list, and probe model entries from alint setup configuration.',
+    'Model entries describe the provider/model ids alint can use for model-backed rules. Probe endpoints before saving them when you want to verify what model ids a provider exposes.',
+  ].join('\n\n'),
   name: 'models',
 })
