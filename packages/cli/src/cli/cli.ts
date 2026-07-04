@@ -40,7 +40,36 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     interceptConsoleOutput,
     io,
     setupNoInteractive,
-  }, setPendingResult)
+  }, setPendingResult, {
+    examples: [
+      [
+        '# Configure a provider interactively',
+        'alint setup',
+      ].join('\n'),
+      [
+        '# Run alint on source files with the default stylish reporter',
+        'alint src',
+      ].join('\n'),
+      [
+        '# Run alint and save machine-readable JSON for later inspection',
+        'alint --format json src > alint-output.json',
+        'alint output inspect alint-output.json',
+      ].join('\n'),
+      [
+        '# Inspect the effective config that applies to a file',
+        'alint config inspect src/index.ts',
+      ].join('\n'),
+      [
+        '# List configured providers and models',
+        'alint config providers list',
+        'alint config models list',
+      ].join('\n'),
+    ],
+    help: [
+      'AI-assisted linting for source files, saved run outputs, and provider/model setup.',
+      'Start with `alint setup` to configure a model provider, run `alint <files>` to analyze files, and use `alint output inspect` to read saved JSON output without rerunning rules.',
+    ].join('\n\n'),
+  })
 
   const restoreConsole = interceptConsoleOutput(shouldCaptureHelp(argv) ? io.stdout : io.stderr)
 

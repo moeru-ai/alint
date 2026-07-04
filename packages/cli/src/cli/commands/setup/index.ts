@@ -32,6 +32,24 @@ export const setup = defineCommand({
       noInteractive: context.setupNoInteractive,
     }, context.io),
   description: 'Write alint provider configuration',
+  examples: [
+    [
+      '# Configure a provider interactively',
+      'alint setup',
+    ].join('\n'),
+    [
+      '# Write a project-local provider config without prompts',
+      'alint setup --local -N --provider-id openrouter --provider-endpoint https://openrouter.ai/api/v1 --provider-model z-ai/glm-5.2',
+    ].join('\n'),
+    [
+      '# Add an authorization header for an OpenAI-compatible provider',
+      'alint setup --local -N --provider-id openrouter --provider-endpoint https://openrouter.ai/api/v1 --provider-model z-ai/glm-5.2 --provider-header "Authorization=Bearer $OPENROUTER_API_KEY"',
+    ].join('\n'),
+  ],
+  help: [
+    'Write alint provider and model configuration.',
+    'Run without flags for interactive setup, or use `-N` with provider flags in scripts and CI. Use `--local` when the provider config should live with the current project instead of the user-level setup file.',
+  ].join('\n\n'),
   name: 'setup',
   options: [
     { description: 'Write project-local config', flags: '--local' },

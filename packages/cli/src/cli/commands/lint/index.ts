@@ -32,12 +32,6 @@ export const lint = defineCommand({
   default: true,
   description: 'Run alint',
   name: 'lint',
-  options: [
-    {
-      description: 'Ask model-backed rules to write diagnostics in this language',
-      flags: '-l, --lang <language>',
-    },
-  ],
 })
 
 async function assertConfigExists(cwd: string, configPath: string): Promise<void> {

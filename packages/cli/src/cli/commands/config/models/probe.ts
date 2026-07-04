@@ -24,6 +24,20 @@ export const probe = defineCommand({
     }
   },
   description: 'Probe OpenAI-compatible models',
+  examples: [
+    [
+      '# Probe a provider endpoint and print available model ids',
+      'alint config models probe --endpoint https://openrouter.ai/api/v1',
+    ].join('\n'),
+    [
+      '# Probe an endpoint that requires an authorization header',
+      'alint config models probe --endpoint https://api.example.com/v1 --provider-header "Authorization=Bearer $TOKEN"',
+    ].join('\n'),
+  ],
+  help: [
+    'Probe an OpenAI-compatible models endpoint before saving it in setup config.',
+    'The command calls the provider models endpoint using the supplied endpoint and optional headers, then prints the model ids returned by that provider.',
+  ].join('\n\n'),
   name: 'probe',
   options: [
     { description: 'Provider endpoint', flags: '--endpoint <url>' },
