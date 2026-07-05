@@ -8,6 +8,10 @@ export default defineConfig({
       'packages/config',
       'packages/cli',
       'packages/plugin-example',
+      'packages/plugin-example-agent',
+      'packages/plugin-example-go',
+      'packages/agent-apeira',
+      'packages/agent-pi',
     ],
   },
 })

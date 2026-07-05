@@ -36,6 +36,18 @@ export function createApeiraRunner(model: ResolvedModel): Runner {
   })
 }
 
+export function toRunnerTools(tools: AgentTool[]): Tool[] {
+  return tools.map(agentTool => rawTool({
+    description: agentTool.description,
+    execute: async (input) => {
+      const result = await agentTool.execute(input)
+      return (result ?? '') as object | string | unknown[]
+    },
+    name: agentTool.name,
+    parameters: agentTool.parameters,
+  }))
+}
+
 function buildRunnerContext(request: AgentRequest): RunnerContext {
   return {
     channel: noopChannel(),
@@ -75,16 +87,4 @@ function noopChannel(): AgentChannel {
     emit: () => {},
     subscribe: () => () => {},
   }
-}
-
-function toRunnerTools(tools: AgentTool[]): Tool[] {
-  return tools.map(agentTool => rawTool({
-    description: agentTool.description,
-    execute: async (input) => {
-      const result = await agentTool.execute(input)
-      return (result ?? '') as object | string | unknown[]
-    },
-    name: agentTool.name,
-    parameters: agentTool.parameters,
-  }))
 }

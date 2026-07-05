@@ -491,7 +491,7 @@ function createRuleRuntimes(options: {
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const context: RuleContext = {
-      agent: options.effectiveAgent ?? createUndefinedAgent(enabledRule.id),
+      agent: options.effectiveAgent,
       cwd: options.cwd,
       id: enabledRule.id,
       localId: enabledRule.localId,
@@ -599,14 +599,6 @@ function createTargetHash(target: ExecutionTarget): string {
     range: target.range,
     text: target.text,
   })
-}
-
-function createUndefinedAgent(ruleId: string): AgentAdapter {
-  return () => {
-    throw new TypeError(
-      `Rule "${ruleId}" requires an agent, but none is configured. Set "agent" in alint config (e.g. agent: createApeiraAdapter()).`,
-    )
-  }
 }
 
 function createUsageAccumulator() {

@@ -94,7 +94,7 @@ export type RuleCacheConfig = boolean | { level?: 'target' }
 export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
 
 export interface RuleContext {
-  agent: AgentAdapter
+  agent?: AgentAdapter
   cwd: string
   id: string
   localId: string

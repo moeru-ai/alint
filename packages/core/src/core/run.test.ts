@@ -7,6 +7,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { requireAgent } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
 import { AlintRunError, runAlint } from './run'
 
@@ -226,7 +227,8 @@ describe('runAlint', () => {
     const rule = defineRule({
       create: ctx => ({
         onTarget: async (target) => {
-          const { answer } = await ctx.agent({
+          const agent = requireAgent(ctx)
+          const { answer } = await agent({
             instructions: 'review',
             model: await ctx.model('default'),
             prompt: target.text,
@@ -263,7 +265,9 @@ describe('runAlint', () => {
     const rule = defineRule({
       create: ctx => ({
         onTarget: async (target) => {
-          await ctx.agent({
+          const agent = requireAgent(ctx)
+
+          await agent({
             instructions: 'review',
             model: await ctx.model('default'),
             prompt: target.text,

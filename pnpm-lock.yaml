@@ -447,6 +447,28 @@ importers:
         specifier: 'catalog:'
         version: 6.0.3
 
+  packages/plugin-example-agent:
+    dependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.18
+    devDependencies:
+      '@alint-js/agent-apeira':
+        specifier: workspace:*
+        version: link:../agent-apeira
+      '@alint-js/agent-pi':
+        specifier: workspace:*
+        version: link:../agent-pi
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
   packages/plugin-example-go:
     dependencies:
       '@alint-js/agent-apeira':

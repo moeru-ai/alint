@@ -4,7 +4,7 @@ import type { RunnerContext } from 'apeira'
 
 import { describe, expect, it } from 'vitest'
 
-import { createApeiraAdapter } from './index'
+import { createApeiraAdapter, toRunnerTools } from './index'
 
 function fakeModel(): ResolvedModel {
   return {
@@ -86,5 +86,44 @@ describe('apeira adapter', () => {
     expect(captured?.instructions).toBe('be careful')
     expect(JSON.stringify(captured?.input)).toContain('find duplicates')
     expect(captured?.tools.map(tool => tool.function.name)).toEqual(['grep'])
+  })
+})
+
+describe('apeira tool translation', () => {
+  it('runs the underlying AgentTool.execute and returns its result', async () => {
+    const calls: unknown[] = []
+    const agentTool: AgentTool = {
+      description: 'search the repo',
+      execute: (input) => {
+        calls.push(input)
+
+        return 'matches'
+      },
+      name: 'grep',
+      parameters: { properties: {}, type: 'object' },
+    }
+
+    const [runnerTool] = toRunnerTools([agentTool])
+
+    expect(runnerTool.function.name).toBe('grep')
+
+    const result = await runnerTool.execute({ query: 'clamp' }, { messages: [], toolCallId: 'call-1' })
+
+    expect(calls).toEqual([{ query: 'clamp' }])
+    expect(result).toBe('matches')
+  })
+
+  it('coerces an undefined tool result to an empty string', async () => {
+    const agentTool: AgentTool = {
+      description: 'record a finding',
+      execute: () => undefined,
+      name: 'report_finding',
+      parameters: { properties: {}, type: 'object' },
+    }
+
+    const [runnerTool] = toRunnerTools([agentTool])
+    const result = await runnerTool.execute({}, { messages: [], toolCallId: 'call-1' })
+
+    expect(result).toBe('')
   })
 })
