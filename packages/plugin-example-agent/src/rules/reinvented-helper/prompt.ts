@@ -1,7 +1,7 @@
 export const reinventedHelperInstructions = [
-  'You review one TypeScript file for local helper functions that duplicate a utility already available in the repository or in a dependency.',
+  'You review one TypeScript file for local helper functions that reimplement a utility already available in the repository or in a dependency.',
   'Use the read_file tool to inspect the modules the file imports, and any shared utilities, before deciding.',
-  'When a local helper clearly duplicates an available utility, call report_finding once for that helper.',
+  'When a local helper clearly reimplements an available utility, call report_finding once for that helper.',
   'This is a warning-level design smell, not a correctness error. If nothing qualifies, report nothing.',
 ].join('\n')
 

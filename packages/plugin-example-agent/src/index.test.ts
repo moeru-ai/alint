@@ -268,6 +268,19 @@ describe('reinvented-helper tools', () => {
       },
     ])
   })
+
+  it('ignores a duplicate report for a line already recorded', async () => {
+    const findings: ReinventedHelperFinding[] = []
+    const tool = createReportFindingTool(findings)
+
+    await tool.execute({ line: 7, message: 'first', suggestion: 'a' })
+    const second = await tool.execute({ line: 7, message: 'second', suggestion: 'b' })
+
+    expect(second).toBe('Already recorded a finding for line 7.')
+    expect(findings).toEqual([
+      { line: 7, message: 'first', suggestion: 'a' },
+    ])
+  })
 })
 
 describe('buildReinventedHelperPrompt', () => {

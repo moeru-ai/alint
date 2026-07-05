@@ -53,6 +53,11 @@ export function createReportFindingTool(findings: ReinventedHelperFinding[]): Ag
     execute: (input) => {
       const finding = input as ReinventedHelperFinding
 
+      // Idempotency guard
+      if (findings.some(existing => existing.line === finding.line)) {
+        return `Already recorded a finding for line ${finding.line}.`
+      }
+
       findings.push({
         line: finding.line,
         message: finding.message,
