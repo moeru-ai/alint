@@ -9,5 +9,6 @@ export interface LintCommandOptions {
   outputLanguage?: string
   progress?: boolean
   ruleConcurrency?: string
+  stats?: boolean
   timeoutMs?: string
 }

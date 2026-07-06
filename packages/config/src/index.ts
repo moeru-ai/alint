@@ -1,5 +1,5 @@
 export { loadAlintConfig } from './config/load'
-export { getGlobalSetupConfigPath, getProjectSetupConfigPath } from './paths'
+export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
@@ -10,6 +10,7 @@ export type {
   ProviderDefinition,
   ProviderType,
   RunnerConfig,
+  RunnerStatsConfig,
   SetupConfig,
   SetupModelDefinition,
 } from '@alint-js/core'

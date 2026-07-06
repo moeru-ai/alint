@@ -3,7 +3,7 @@ import { homedir } from 'node:os'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
-import { getGlobalSetupConfigPath, getProjectSetupConfigPath } from './paths'
+import { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 
 describe('setup config paths', () => {
   it('uses XDG_CONFIG_HOME when explicitly provided', () => {
@@ -26,5 +26,25 @@ describe('setup config paths', () => {
 
   it('uses project-local config under .alint', () => {
     expect(getProjectSetupConfigPath('/repo')).toBe('/repo/.alint/config.toml')
+  })
+})
+
+describe('stats dir', () => {
+  it('shares the alint home base with the global config', () => {
+    expect(getStatsDir({ XDG_CONFIG_HOME: '/tmp/alint-config' }, { isMacOS: true })).toBe(
+      '/tmp/alint-config/alint/stats',
+    )
+  })
+
+  it('uses ~/.config on macOS by default', () => {
+    expect(getStatsDir({}, { isMacOS: true, xdgConfig: '/xdg/config' })).toBe(
+      join(homedir(), '.config', 'alint', 'stats'),
+    )
+  })
+
+  it('uses xdg-basedir config path outside macOS', () => {
+    expect(getStatsDir({}, { isMacOS: false, xdgConfig: '/xdg/config' })).toBe(
+      '/xdg/config/alint/stats',
+    )
   })
 })

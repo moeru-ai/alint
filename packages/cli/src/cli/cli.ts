@@ -32,6 +32,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('-l, --lang <language>', 'Ask model-backed rules to write diagnostics in this language')
     .option('--progress', 'Show run progress')
     .option('--rule-concurrency <count>', 'Number of rules to run concurrently within a file')
+    .option('--no-stats', 'Do not record run stats for this run')
     .option('--timeout-ms <ms>', 'Rule execution timeout in milliseconds')
     .help()
 

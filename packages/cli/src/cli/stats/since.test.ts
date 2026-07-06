@@ -1,0 +1,32 @@
+import { describe, expect, it } from 'vitest'
+
+import { parseSince } from './since'
+
+const NOW = Date.UTC(2026, 0, 15)
+
+describe('parseSince', () => {
+  it('returns undefined for an empty value', () => {
+    expect(parseSince(undefined, NOW)).toBeUndefined()
+    expect(parseSince('', NOW)).toBeUndefined()
+  })
+
+  it('parses day offsets', () => {
+    expect(parseSince('7d', NOW)).toBe(NOW - 7 * 86_400_000)
+  })
+
+  it('parses hour offsets', () => {
+    expect(parseSince('24h', NOW)).toBe(NOW - 24 * 3_600_000)
+  })
+
+  it('parses YYYY-MM as UTC month start', () => {
+    expect(parseSince('2025-03', NOW)).toBe(Date.UTC(2025, 2, 1))
+  })
+
+  it('parses YYYY-MM-DD as UTC day start', () => {
+    expect(parseSince('2025-03-10', NOW)).toBe(Date.UTC(2025, 2, 10))
+  })
+
+  it('throws on an unrecognized value', () => {
+    expect(() => parseSince('paw', NOW)).toThrow(/Invalid --since/u)
+  })
+})

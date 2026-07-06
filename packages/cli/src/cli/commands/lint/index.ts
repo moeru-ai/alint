@@ -15,6 +15,7 @@ import { loadMergedSetupConfig } from '../config/setup-config'
 import { resolveLintFiles } from './discovery'
 import { formatRunError } from './errors'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
+import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
 
 export const lint = defineCommand({
   action: (context, files: string[] = [], options: LintCommandOptions) =>
@@ -85,6 +86,8 @@ async function runLintCommand(
   const restoreProgressConsole = progress
     ? interceptConsoleOutput({ write: progress.write })
     : undefined
+  const statsTarget = resolveStatsWrite(runner?.stats, io.env)
+  const statsCollector = statsTarget ? createStatsCollector() : undefined
   let result: Awaited<ReturnType<typeof runAlint>>
 
   try {
@@ -94,7 +97,7 @@ async function runLintCommand(
       files: lintFiles,
       modelOverride: options.model,
       outputLanguage: options.outputLanguage,
-      progress: progress?.reporter,
+      progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
       runner,
       setupConfig,
     })
@@ -113,6 +116,10 @@ async function runLintCommand(
 
   restoreProgressConsole?.()
   progress?.dispose()
+
+  if (statsTarget && statsCollector) {
+    await writeRunStats(statsTarget, statsCollector, result, io.cwd)
+  }
 
   io.stdout.write(formatDiagnostics(options.format as ReporterName, result, {
     color: io.stdout.isTTY === true,

@@ -5,6 +5,7 @@ export type {
   ProviderDefinition,
   ProviderType,
   RunnerConfig,
+  RunnerStatsConfig,
   SetupConfig,
   SetupModelDefinition,
 } from './config/types'

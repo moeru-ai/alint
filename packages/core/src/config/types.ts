@@ -19,7 +19,14 @@ export interface RunnerConfig {
   cache?: boolean | RunnerCacheConfig
   fileConcurrency?: number
   ruleConcurrency?: number
+  stats?: boolean | RunnerStatsConfig
   timeoutMs?: number
+}
+
+export interface RunnerStatsConfig {
+  enabled?: boolean
+  location?: string
+  retentionMonths?: number
 }
 
 export interface SetupConfig {

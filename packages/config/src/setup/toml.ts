@@ -28,7 +28,14 @@ interface StringifiableRunnerConfig {
   cache?: boolean | StringifiableRunnerCacheConfig
   file_concurrency?: number
   rule_concurrency?: number
+  stats?: boolean | StringifiableRunnerStatsConfig
   timeout_ms?: number
+}
+
+interface StringifiableRunnerStatsConfig {
+  enabled?: boolean
+  location?: string
+  retention_months?: number
 }
 
 interface StringifiableSetupConfig {
@@ -64,7 +71,14 @@ interface TomlRunnerConfig {
   cache?: unknown
   file_concurrency?: unknown
   rule_concurrency?: unknown
+  stats?: unknown
   timeout_ms?: unknown
+}
+
+interface TomlRunnerStatsConfig {
+  enabled?: unknown
+  location?: unknown
+  retention_months?: unknown
 }
 
 interface TomlSetupConfig {
@@ -241,6 +255,10 @@ function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
     )
   }
 
+  if (runner.stats !== undefined) {
+    parsedRunner.stats = parseRunnerStats(runner.stats)
+  }
+
   if (runner.timeout_ms !== undefined) {
     parsedRunner.timeoutMs = parsePositiveInteger(
       runner.timeout_ms,
@@ -279,6 +297,43 @@ function parseRunnerCache(cache: unknown): RunnerConfig['cache'] {
   }
 
   return parsedCache
+}
+
+function parseRunnerStats(stats: unknown): RunnerConfig['stats'] {
+  if (typeof stats === 'boolean') {
+    return stats
+  }
+
+  if (!isPlainObject(stats)) {
+    throw new TypeError('Invalid runner stats: must be a boolean or an object.')
+  }
+
+  const tomlStats = stats as TomlRunnerStatsConfig
+  const parsedStats: Exclude<RunnerConfig['stats'], boolean | undefined> = {}
+
+  if (tomlStats.enabled !== undefined) {
+    if (typeof tomlStats.enabled !== 'boolean') {
+      throw new TypeError('Invalid runner stats enabled: must be a boolean.')
+    }
+
+    parsedStats.enabled = tomlStats.enabled
+  }
+
+  if (tomlStats.location !== undefined) {
+    parsedStats.location = readNonEmptyString(
+      tomlStats.location,
+      'runner stats location',
+    )
+  }
+
+  if (tomlStats.retention_months !== undefined) {
+    parsedStats.retentionMonths = parsePositiveInteger(
+      tomlStats.retention_months,
+      'runner stats retention_months',
+    )
+  }
+
+  return parsedStats
 }
 
 function readFiniteNumber(value: unknown, label: string): number {
@@ -389,6 +444,7 @@ function toTomlRunner(runner: RunnerConfig): StringifiableRunnerConfig {
     cache: toTomlRunnerCache(runner.cache),
     file_concurrency: runner.fileConcurrency,
     rule_concurrency: runner.ruleConcurrency,
+    stats: toTomlRunnerStats(runner.stats),
     timeout_ms: runner.timeoutMs,
   }
 }
@@ -397,4 +453,20 @@ function toTomlRunnerCache(
   cache: RunnerConfig['cache'],
 ): StringifiableRunnerConfig['cache'] {
   return cache
+}
+
+function toTomlRunnerStats(
+  stats: RunnerConfig['stats'],
+): StringifiableRunnerConfig['stats'] {
+  if (stats === undefined || typeof stats === 'boolean') {
+    return stats
+  }
+
+  const tomlStats: StringifiableRunnerStatsConfig = {
+    enabled: stats.enabled,
+    location: stats.location,
+    retention_months: stats.retentionMonths,
+  }
+
+  return tomlStats
 }

@@ -20,6 +20,7 @@ export function resolveRunnerConfig(
   options: LintCommandOptions,
 ): SetupConfig['runner'] {
   const cache = resolveRunnerCacheConfig(setupConfig.runner?.cache, config.runner?.cache, options)
+  const stats = resolveRunnerStatsConfig(setupConfig.runner?.stats, config.runner?.stats, options)
   const fileConcurrency = parsePositiveIntegerOption(options.fileConcurrency, '--file-concurrency')
   const ruleConcurrency = parsePositiveIntegerOption(options.ruleConcurrency, '--rule-concurrency')
   const timeoutMs = parsePositiveIntegerOption(options.timeoutMs, '--timeout-ms')
@@ -29,6 +30,7 @@ export function resolveRunnerConfig(
     cache,
     fileConcurrency: fileConcurrency ?? config.runner?.fileConcurrency ?? setupConfig.runner?.fileConcurrency,
     ruleConcurrency: ruleConcurrency ?? config.runner?.ruleConcurrency ?? setupConfig.runner?.ruleConcurrency,
+    stats,
     timeoutMs: timeoutMs ?? config.runner?.timeoutMs ?? setupConfig.runner?.timeoutMs,
   }
 
@@ -54,6 +56,25 @@ function mergeRunnerCacheConfig(
   }
 
   return configCache
+}
+
+function mergeRunnerStatsConfig(
+  setupStats: RunnerConfig['stats'],
+  configStats: RunnerConfig['stats'],
+): RunnerConfig['stats'] {
+  if (configStats === undefined) {
+    return setupStats
+  }
+
+  if (typeof configStats === 'boolean') {
+    return configStats
+  }
+
+  if (typeof setupStats === 'object') {
+    return { ...setupStats, ...configStats }
+  }
+
+  return configStats
 }
 
 function parsePositiveIntegerOption(value: string | undefined, label: string): number | undefined {
@@ -88,4 +109,18 @@ function resolveRunnerCacheConfig(
   }
 
   return configuredCache
+}
+
+// The --no-stats flag is a hard off-switch for this run; otherwise config/setup merge like cache.
+// The CI gate lives in the writer (resolveStatsWrite), not here.
+function resolveRunnerStatsConfig(
+  setupStats: RunnerConfig['stats'],
+  configStats: RunnerConfig['stats'],
+  options: LintCommandOptions,
+): RunnerConfig['stats'] {
+  if (options.stats === false) {
+    return false
+  }
+
+  return mergeRunnerStatsConfig(setupStats, configStats)
 }

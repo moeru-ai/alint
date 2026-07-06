@@ -163,6 +163,54 @@ id = "qwen"
     )
   })
 
+  it('parses and stringifies runner stats settings', () => {
+    const config = parseSetupConfigToml([
+      'version = 1',
+      '',
+      '[runner.stats]',
+      'enabled = false',
+      'location = "/tmp/alint-stats"',
+      'retention_months = 6',
+      '',
+      '[[providers]]',
+      'id = "ollama"',
+      'type = "openai-compatible"',
+      'endpoint = "http://localhost:11434/v1"',
+      '',
+      '[[providers.models]]',
+      'id = "qwen:8b"',
+    ].join('\n'))
+
+    expect(config.runner?.stats).toEqual({
+      enabled: false,
+      location: '/tmp/alint-stats',
+      retentionMonths: 6,
+    })
+
+    const toml = stringifySetupConfigToml(config)
+    expect(toml).toContain('[runner.stats]')
+    expect(toml).toContain('enabled = false')
+    expect(toml).toContain('location = "/tmp/alint-stats"')
+    expect(toml).toContain('retention_months = 6')
+  })
+
+  it('rejects a non-integer runner stats retention', () => {
+    expect(() => parseSetupConfigToml([
+      'version = 1',
+      '',
+      '[runner.stats]',
+      'retention_months = 0',
+      '',
+      '[[providers]]',
+      'id = "local"',
+      'type = "openai-compatible"',
+      'endpoint = "http://localhost:11434/v1"',
+      '',
+      '[[providers.models]]',
+      'id = "qwen"',
+    ].join('\n'))).toThrow('Invalid runner stats retention_months: must be a positive integer.')
+  })
+
   it('rejects invalid runner settings', () => {
     expect(() => parseSetupConfigToml(`
 version = 1

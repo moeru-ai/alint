@@ -391,8 +391,10 @@ function shouldSkipOptionValue(arg: string): boolean {
   }
 
   return [
+    '--by',
     '--cache-location',
     '--config',
+    '--cwd',
     '--file-concurrency',
     '--format',
     '--model',
@@ -401,6 +403,7 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--provider-id',
     '--provider-model',
     '--rule-concurrency',
+    '--since',
     '--timeout-ms',
     '-f',
     '-l',

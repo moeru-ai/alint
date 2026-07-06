@@ -14,12 +14,26 @@ export function getGlobalSetupConfigPath(
   env: NodeJS.ProcessEnv = process.env,
   options: GlobalSetupConfigPathOptions = {},
 ): string {
-  const configHome = env.XDG_CONFIG_HOME ?? resolveDefaultConfigHome(options)
-  return join(configHome, 'alint', 'config.toml')
+  return join(resolveAlintHome(env, options), 'config.toml')
 }
 
 export function getProjectSetupConfigPath(cwd: string): string {
   return join(cwd, '.alint', 'config.toml')
+}
+
+export function getStatsDir(
+  env: NodeJS.ProcessEnv = process.env,
+  options: GlobalSetupConfigPathOptions = {},
+): string {
+  return join(resolveAlintHome(env, options), 'stats')
+}
+
+function resolveAlintHome(
+  env: NodeJS.ProcessEnv,
+  options: GlobalSetupConfigPathOptions,
+): string {
+  const configHome = env.XDG_CONFIG_HOME ?? resolveDefaultConfigHome(options)
+  return join(configHome, 'alint')
 }
 
 function resolveDefaultConfigHome(options: GlobalSetupConfigPathOptions): string {
