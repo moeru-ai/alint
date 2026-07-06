@@ -20,7 +20,7 @@ export function formatStatsAggregate(aggregate: StatsAggregate, options: FormatS
     options.color === true ? style(text) : text
   const runLabel = aggregate.totalRuns === 1 ? 'run' : 'runs'
   const lines = [
-    `${aggregate.totalRuns} ${runLabel} · ${formatTokens(aggregate.totalIn)} in / ${formatTokens(aggregate.totalOut)} out / ${paint(`${formatTokens(aggregate.totalTok)} total`, colors.cyan)}`,
+    `${aggregate.totalRuns} ${runLabel} — ${formatTokens(aggregate.totalIn)} in / ${formatTokens(aggregate.totalOut)} out / ${paint(`${formatTokens(aggregate.totalTok)} total`, colors.cyan)}`,
     '',
   ]
 
@@ -38,7 +38,6 @@ export function formatStatsAggregate(aggregate: StatsAggregate, options: FormatS
     formatTokens(row.outTok),
     formatTokens(row.totalTok),
   ])
-  // First column left-aligned (the label); numeric columns right-aligned for readable digits.
   const widths = header.map((cell, index) =>
     Math.max(cell.length, ...rows.map(row => row[index].length)))
   const renderRow = (cells: string[], isHeader: boolean): string =>

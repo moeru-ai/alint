@@ -9,7 +9,7 @@ export const stats = defineCommand({
   name: 'stats',
   options: [
     { description: 'Group by rule, operation, model, or dir', flags: '--by <dimension>' },
-    { description: 'Only include runs since this time (e.g. 7d, 24h, 2025-01)', flags: '--since <spec>' },
+    { description: 'Only include runs since this time (e.g. 7d, 24h, 2025-01)', flags: '--since <time>' },
     { description: 'Only include runs from this directory', flags: '--cwd <path>' },
     { description: 'Only include runs from the current directory', flags: '--here' },
     { description: 'Output JSON', flags: '--json' },

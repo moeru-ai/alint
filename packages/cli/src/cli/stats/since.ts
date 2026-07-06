@@ -1,21 +1,21 @@
 /**
- * Parse a `--since` value into an inclusive lower-bound timestamp.
+ * Parse a `--since` time into an inclusive lower-bound timestamp.
  * This is a tiny helper only to meet the needs.
  *
- * Supported forms:
+ * Supported formats:
  * - `Nd`/`Nh` — Now minus N days/hours.
  * - `YYYY-MM`/`YYYY-MM-DD` — Start of that UTC month/day.
  *
  * Edge cases:
- * - An empty value means "no lower bound".
- * - An unrecognized value will cause an error to be thrown.
+ * - An empty time means "no lower bound".
+ * - An unrecognized time will cause an error to be thrown.
  */
-export function parseSince(value: string | undefined, now: number): number | undefined {
-  if (value === undefined || value === '') {
+export function parseSince(time: string | undefined, now: number): number | undefined {
+  if (time === undefined || time === '') {
     return undefined
   }
 
-  const relative = /^(\d+)([dh])$/u.exec(value)
+  const relative = /^(\d+)([dh])$/u.exec(time)
 
   if (relative) {
     const amount = Number(relative[1])
@@ -24,7 +24,7 @@ export function parseSince(value: string | undefined, now: number): number | und
     return now - amount * unitMs
   }
 
-  const calendar = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/u.exec(value)
+  const calendar = /^(\d{4})-(\d{2})(?:-(\d{2}))?$/u.exec(time)
 
   if (calendar) {
     const year = Number(calendar[1])
@@ -34,5 +34,5 @@ export function parseSince(value: string | undefined, now: number): number | und
     return Date.UTC(year, month - 1, day)
   }
 
-  throw new Error(`Invalid --since "${value}": use e.g. 7d, 24h, 2025-01, or 2025-01-15.`)
+  throw new Error(`Invalid --since "${time}": use e.g. 7d, 24h, 2025-01, or 2025-01-15.`)
 }

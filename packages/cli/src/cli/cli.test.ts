@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -17,6 +17,17 @@ interface TestIo {
   stderrText: string
   stdout: { write: (chunk: string) => void }
   stdoutText: string
+}
+
+// Remove CI signals so the stats writer still works in the CI environment.
+function clearCiEnv(env: NodeJS.ProcessEnv | undefined): void {
+  if (!env) {
+    return
+  }
+
+  for (const key of ['BUILDKITE', 'CI', 'CIRCLECI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TF_BUILD']) {
+    delete env[key]
+  }
 }
 
 async function createTestIo(): Promise<TestIo> {
@@ -43,6 +54,10 @@ async function createTestIo(): Promise<TestIo> {
   }
 
   return io
+}
+
+function statsDirOf(io: { env?: NodeJS.ProcessEnv }): string {
+  return join(io.env?.XDG_CONFIG_HOME ?? '', 'alint', 'stats')
 }
 
 async function withModelsServer(
@@ -185,6 +200,45 @@ export default [
 `)
 }
 
+// A run fixture whose rule records inference usage directly via ctx.metering, so a full lint
+// run produces usage records (with an `operation` tag) without any model/provider HTTP.
+async function writeStatsFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: {
+        rules: {
+          judge: {
+            create: ctx => ({
+              onTarget: (target) => {
+                if (target.kind !== 'function') return
+                ctx.metering.recordUsage({
+                  filePath: target.file.path,
+                  inputTokens: 100,
+                  metadata: { operation: 'judge' },
+                  modelId: 'gpt-4o',
+                  outputTokens: 20,
+                  providerId: 'openai',
+                  totalTokens: 120,
+                })
+                ctx.report({ filePath: target.file.path, message: 'checked' })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'company/judge': 'warn',
+    },
+  },
+]
+`)
+}
+
 describe('createProviderId', () => {
   it('creates endpoint-based provider ids and avoids collisions', () => {
     expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('localhost')
@@ -250,6 +304,52 @@ describe('executeCli', () => {
     expect(io.stdoutText).toContain('company/problem')
     expect(io.stdoutText).toContain('1 warn / 0 error | 15 tokens')
     expect(io.stderrText).toBe('')
+  })
+
+  it('records a stats line after a lint run', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+    await writeStatsFixture(io.cwd)
+
+    const exitCode = await executeCli(['node', 'alint', 'demo.ts'], io)
+
+    expect(exitCode).toBe(1)
+    const files = await readdir(statsDirOf(io))
+    expect(files).toHaveLength(1)
+    const lines = (await readFile(join(statsDirOf(io), files[0]), 'utf8')).trim().split('\n')
+    expect(lines).toHaveLength(1)
+    const record = JSON.parse(lines[0])
+    expect(record.cwd).toBe(io.cwd)
+    expect(record.ruleCounts.completed).toBeGreaterThanOrEqual(1)
+    expect(record.usage.totalTok).toBe(120)
+    expect(record.usage.records[0].operation).toBe('judge')
+    expect(record.usage.records[0].modelId).toBe('gpt-4o')
+  })
+
+  it('does not record stats with --no-stats', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+    await writeStatsFixture(io.cwd)
+
+    await executeCli(['node', 'alint', '--no-stats', 'demo.ts'], io)
+
+    // The stats dir is only created on write, so its absence proves nothing was recorded.
+    await expect(readdir(statsDirOf(io))).rejects.toThrow()
+  })
+
+  it('does not record stats in CI', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+
+    if (io.env) {
+      io.env.CI = 'true'
+    }
+
+    await writeStatsFixture(io.cwd)
+
+    await executeCli(['node', 'alint', 'demo.ts'], io)
+
+    await expect(readdir(statsDirOf(io))).rejects.toThrow()
   })
 
   it('reprints saved output with the json reporter', async () => {

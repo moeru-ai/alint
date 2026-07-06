@@ -5,7 +5,7 @@ import { parseSince } from './since'
 const NOW = Date.UTC(2026, 0, 15)
 
 describe('parseSince', () => {
-  it('returns undefined for an empty value', () => {
+  it('returns undefined for an empty time', () => {
     expect(parseSince(undefined, NOW)).toBeUndefined()
     expect(parseSince('', NOW)).toBeUndefined()
   })
@@ -26,7 +26,7 @@ describe('parseSince', () => {
     expect(parseSince('2025-03-10', NOW)).toBe(Date.UTC(2025, 2, 10))
   })
 
-  it('throws on an unrecognized value', () => {
+  it('throws on an unrecognized time', () => {
     expect(() => parseSince('paw', NOW)).toThrow(/Invalid --since/u)
   })
 })
