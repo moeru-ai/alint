@@ -123,6 +123,10 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
     }
 
     if (stats?.isDirectory()) {
+      if (!hasFilePatterns) {
+        continue
+      }
+
       const directoryFiles = (await walkFiles(path, {
         cwd: options.cwd,
         gitignore: options.gitignore,

@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1328,6 +1328,49 @@ export default [
     expect(io.stdoutText).toContain('checked text/plain')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('README.md')
+  })
+
+  it('returns 0 without walking directories when config has no files patterns', async () => {
+    const io = await createTestIo()
+    const blockedDir = join(io.cwd, 'blocked')
+    await mkdir(blockedDir)
+    await writeFile(join(blockedDir, 'demo.ts'), 'export const visited = true\n')
+    await chmod(blockedDir, 0o000)
+
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    try {
+      const code = await executeCli(['node', 'alint'], io)
+
+      expect(code).toBe(0)
+      expect(io.stdoutText).toBe('')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      await chmod(blockedDir, 0o700)
+    }
   })
 
   it('expands positional directories using flat config files patterns', async () => {
