@@ -1268,6 +1268,29 @@ export default [
     expect(io.stdoutText).toContain('company/prefer-load')
   })
 
+  it('returns 2 when a positional file path does not exist', async () => {
+    const io = await createTestIo()
+
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    rules: {},
+  },
+]
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'missing.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('No files matching "missing.ts" were found.\n')
+    expect(io.stdoutText).toBe('')
+  })
+
   it('discovers files from flat config files patterns when no positional files are passed', async () => {
     const io = await createTestIo()
     await mkdir(join(io.cwd, 'src'), { recursive: true })
@@ -1305,6 +1328,45 @@ export default [
     expect(io.stdoutText).toContain('checked text/plain')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('README.md')
+  })
+
+  it('expands positional directories using flat config files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.go'), 'package main\n')
+    await writeFile(join(io.cwd, 'src/README.md'), '# demo\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['src/**/*.go'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'checked ' + target.language,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', 'src'], io)
+
+    expect(code).toBe(1)
+    expect(io.stdoutText).toContain('checked text/plain')
+    expect(io.stdoutText).toContain('src/main.go')
+    expect(io.stdoutText).not.toContain('src/README.md')
   })
 
   it('passes --lang to rule context', async () => {

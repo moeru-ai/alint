@@ -1,6 +1,8 @@
+import type { Stats } from 'node:fs'
+
 import type { AlintConfig, AlintConfigItem } from '@alint-js/core'
 
-import { readdir } from 'node:fs/promises'
+import { readdir, stat } from 'node:fs/promises'
 
 import Gitignore from 'gitignore-fs'
 
@@ -8,15 +10,58 @@ import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig } from 
 import { minimatch } from 'minimatch'
 import { relative, resolve } from 'pathe'
 
+export interface FindFilesOptions {
+  config: AlintConfig
+  cwd: string
+  errorOnUnmatchedPattern?: boolean
+  globInputPaths?: boolean
+  inputs: string[]
+}
+
+interface ResolveInputFilesOptions {
+  config: AlintConfig
+  cwd: string
+  errorOnUnmatchedPattern: boolean
+  gitignore?: Gitignore
+  globInputPaths: boolean
+  inputs: string[]
+}
+
 interface WalkFilesOptions {
   cwd: string
   gitignore?: Gitignore
   ignoredPatterns: readonly string[]
 }
 
-export async function resolveLintFiles(files: string[], config: AlintConfig, cwd: string): Promise<string[]> {
+export class NoFilesFoundError extends Error {
+  readonly globInputPaths: boolean
+  readonly pattern: string
+
+  constructor(pattern: string, options: { globInputPaths: boolean }) {
+    super(`No files matching "${pattern}" were found${options.globInputPaths ? '' : ' (glob input is disabled)'}.`)
+    this.name = 'NoFilesFoundError'
+    this.globInputPaths = options.globInputPaths
+    this.pattern = pattern
+  }
+}
+
+export async function findFiles(options: FindFilesOptions): Promise<string[]> {
+  const {
+    config,
+    cwd,
+    errorOnUnmatchedPattern = true,
+    globInputPaths = true,
+    inputs,
+  } = options
   const gitignore = shouldFilterGitignoredFiles(config) ? new Gitignore() : undefined
-  const candidates = files.length > 0 ? files : await discoverLintFiles(config, cwd, gitignore)
+  const candidates = await resolveInputFiles({
+    config,
+    cwd,
+    errorOnUnmatchedPattern,
+    gitignore,
+    globInputPaths,
+    inputs: inputs.length > 0 ? inputs : ['.'],
+  })
 
   if (!gitignore || candidates.length === 0) {
     return candidates
@@ -41,24 +86,14 @@ function collectGlobalIgnorePatterns(config: AlintConfig): string[] {
   )
 }
 
-async function discoverLintFiles(config: AlintConfig, cwd: string, gitignore?: Gitignore): Promise<string[]> {
-  if (!hasDiscoveryFilePatterns(config)) {
-    return []
-  }
-
-  const ignoredPatterns = collectGlobalIgnorePatterns(config)
-  const files = await walkFiles(cwd, { cwd, gitignore, ignoredPatterns })
-  const candidates = files
-    .map(file => normalizeRelativePath(cwd, file))
-    .filter(file => matchesDiscoveryFile(file, config, { cwd }))
-
-  return [...new Set(candidates)].sort()
-}
-
 function isGlobalIgnoreItem(item: AlintConfigItem): item is AlintConfigItem & { ignores: readonly string[] } {
   const keys = Object.keys(item).filter(key => item[key as keyof AlintConfigItem] !== undefined)
 
   return item.ignores !== undefined && keys.every(key => key === 'ignores' || key === 'name')
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error
 }
 
 function matchesIgnoredDirectory(relativePath: string, patterns: readonly string[]): boolean {
@@ -73,6 +108,46 @@ function normalizeRelativePath(cwd: string, filePath: string): string {
   return relative(cwd, filePath).replaceAll('\\', '/')
 }
 
+async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<string[]> {
+  const hasFilePatterns = hasDiscoveryFilePatterns(options.config)
+  const ignoredPatterns = collectGlobalIgnorePatterns(options.config)
+  const candidates: string[] = []
+
+  for (const input of options.inputs) {
+    const path = resolve(options.cwd, input)
+    const stats = await statPath(path)
+
+    if (stats?.isFile()) {
+      candidates.push(input)
+      continue
+    }
+
+    if (stats?.isDirectory()) {
+      const directoryFiles = (await walkFiles(path, {
+        cwd: options.cwd,
+        gitignore: options.gitignore,
+        ignoredPatterns,
+      })).sort()
+
+      for (const directoryFile of directoryFiles) {
+        const relativePath = normalizeRelativePath(options.cwd, directoryFile)
+
+        if (hasFilePatterns && matchesDiscoveryFile(relativePath, options.config, { cwd: options.cwd })) {
+          candidates.push(relativePath)
+        }
+      }
+
+      continue
+    }
+
+    if (options.errorOnUnmatchedPattern) {
+      throw new NoFilesFoundError(input, { globInputPaths: options.globInputPaths })
+    }
+  }
+
+  return [...new Set(candidates)]
+}
+
 function shouldFilterGitignoredFiles(config: AlintConfig): boolean {
   return normalizeConfig(config).some(item => item.ignore?.gitignore === true)
 }
@@ -85,6 +160,19 @@ async function shouldPruneDirectory(path: string, options: WalkFilesOptions): Pr
   }
 
   return await options.gitignore?.ignores(path) === true
+}
+
+async function statPath(path: string): Promise<Stats | undefined> {
+  try {
+    return await stat(path)
+  }
+  catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return undefined
+    }
+
+    throw error
+  }
 }
 
 async function walkFiles(root: string, options: WalkFilesOptions): Promise<string[]> {
