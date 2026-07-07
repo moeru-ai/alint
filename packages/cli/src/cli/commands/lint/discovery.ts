@@ -244,7 +244,7 @@ async function shouldPruneDirectory(path: string, options: WalkFilesOptions): Pr
     return true
   }
 
-  return await options.gitignore?.ignores(path) === true
+  return await options.gitignore?.ignores(`${path}/`) === true
 }
 
 async function statPath(path: string): Promise<Stats | undefined> {

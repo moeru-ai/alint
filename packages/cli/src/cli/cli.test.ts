@@ -1787,13 +1787,17 @@ export default [
 
   it('prunes ignored directories for positional directory inputs', async () => {
     const io = await createTestIo()
+    const ignoredDir = join(io.cwd, 'src/ignored')
+    const gitignoredDir = join(io.cwd, 'src/gitignored')
     await mkdir(join(io.cwd, 'src'), { recursive: true })
-    await mkdir(join(io.cwd, 'src/ignored'), { recursive: true })
-    await mkdir(join(io.cwd, 'src/gitignored'), { recursive: true })
+    await mkdir(ignoredDir, { recursive: true })
+    await mkdir(gitignoredDir, { recursive: true })
     await writeFile(join(io.cwd, '.gitignore'), 'src/gitignored/\n')
     await writeFile(join(io.cwd, 'src/demo.txt'), 'demo\n')
-    await writeFile(join(io.cwd, 'src/ignored/demo.txt'), 'ignored\n')
-    await writeFile(join(io.cwd, 'src/gitignored/demo.txt'), 'gitignored\n')
+    await writeFile(join(ignoredDir, 'demo.txt'), 'ignored\n')
+    await writeFile(join(gitignoredDir, 'demo.txt'), 'gitignored\n')
+    await chmod(ignoredDir, 0o000)
+    await chmod(gitignoredDir, 0o000)
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
@@ -1828,13 +1832,19 @@ export default [
 ]
 `)
 
-    const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
-    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+    try {
+      const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
+      const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
-    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
-      join(io.cwd, 'src/demo.txt'),
-    ])
+      expect(code).toBe(1)
+      expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+        join(io.cwd, 'src/demo.txt'),
+      ])
+    }
+    finally {
+      await chmod(ignoredDir, 0o700)
+      await chmod(gitignoredDir, 0o700)
+    }
   })
 
   it('discovers explicitly configured files under node_modules when not ignored', async () => {
