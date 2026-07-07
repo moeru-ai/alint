@@ -7,7 +7,7 @@ import { readdir, stat } from 'node:fs/promises'
 import Gitignore from 'gitignore-fs'
 
 import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig } from '@alint-js/core'
-import { minimatch } from 'minimatch'
+import { minimatch, Minimatch } from 'minimatch'
 import { relative, resolve } from 'pathe'
 
 export interface FindFilesOptions {
@@ -27,11 +27,21 @@ interface ResolveInputFilesOptions {
   inputs: string[]
 }
 
+interface SearchGlobOptions {
+  config: AlintConfig
+  cwd: string
+  gitignore?: Gitignore
+  ignoredPatterns: readonly string[]
+  pattern: string
+}
+
 interface WalkFilesOptions {
   cwd: string
   gitignore?: Gitignore
   ignoredPatterns: readonly string[]
 }
+
+const minimatchOptions = { dot: true }
 
 export class NoFilesFoundError extends Error {
   readonly globInputPaths: boolean
@@ -86,21 +96,46 @@ function collectGlobalIgnorePatterns(config: AlintConfig): string[] {
   )
 }
 
+function getGlobParent(input: string): string {
+  const normalized = input.replaceAll('\\', '/')
+  const segments = normalized.split('/')
+  const parentSegments: string[] = []
+
+  for (const segment of segments) {
+    if (isGlobPattern(segment)) {
+      break
+    }
+
+    parentSegments.push(segment)
+  }
+
+  const parent = parentSegments.join('/')
+  return parent === '' ? '.' : parent
+}
+
 function isGlobalIgnoreItem(item: AlintConfigItem): item is AlintConfigItem & { ignores: readonly string[] } {
   const keys = Object.keys(item).filter(key => item[key as keyof AlintConfigItem] !== undefined)
 
   return item.ignores !== undefined && keys.every(key => key === 'ignores' || key === 'name')
 }
 
+function isGlobPattern(input: string): boolean {
+  return new Minimatch(input, minimatchOptions).hasMagic()
+}
+
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && 'code' in error
 }
 
+function matchesGlob(filePath: string, pattern: string): boolean {
+  return minimatch(filePath, pattern.replaceAll('\\', '/'), minimatchOptions)
+}
+
 function matchesIgnoredDirectory(relativePath: string, patterns: readonly string[]): boolean {
   return patterns.some(pattern =>
-    minimatch(relativePath, pattern, { dot: true })
-    || minimatch(`${relativePath}/`, pattern, { dot: true })
-    || minimatch(`${relativePath}/__alint__`, pattern, { dot: true }),
+    minimatch(relativePath, pattern, minimatchOptions)
+    || minimatch(`${relativePath}/`, pattern, minimatchOptions)
+    || minimatch(`${relativePath}/__alint__`, pattern, minimatchOptions),
   )
 }
 
@@ -144,12 +179,58 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
       continue
     }
 
+    if (options.globInputPaths && isGlobPattern(input)) {
+      const matches = await searchGlob({
+        config: options.config,
+        cwd: options.cwd,
+        gitignore: options.gitignore,
+        ignoredPatterns,
+        pattern: input,
+      })
+
+      if (matches.length === 0 && options.errorOnUnmatchedPattern) {
+        throw new NoFilesFoundError(input, { globInputPaths: options.globInputPaths })
+      }
+
+      candidates.push(...matches)
+      continue
+    }
+
     if (options.errorOnUnmatchedPattern) {
       throw new NoFilesFoundError(input, { globInputPaths: options.globInputPaths })
     }
   }
 
   return [...new Set(candidates)]
+}
+
+async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
+  const root = resolve(options.cwd, getGlobParent(options.pattern))
+  const rootStats = await statPath(root)
+
+  if (!rootStats?.isDirectory()) {
+    return []
+  }
+
+  const files = (await walkFiles(root, {
+    cwd: options.cwd,
+    gitignore: options.gitignore,
+    ignoredPatterns: options.ignoredPatterns,
+  })).sort()
+  const candidates: string[] = []
+
+  for (const file of files) {
+    const relativePath = normalizeRelativePath(options.cwd, file)
+
+    if (
+      matchesGlob(relativePath, options.pattern)
+      && matchesDiscoveryFile(relativePath, options.config, { cwd: options.cwd })
+    ) {
+      candidates.push(relativePath)
+    }
+  }
+
+  return candidates
 }
 
 function shouldFilterGitignoredFiles(config: AlintConfig): boolean {
