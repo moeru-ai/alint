@@ -1457,6 +1457,30 @@ export default [
     ])
   })
 
+  it('returns 2 when a positional glob pattern has no matches', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.ts'), 'export const main = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['src/**/*.ts'],
+    rules: {},
+  },
+]
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'src/**/*.missing.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('No files matching "src/**/*.missing.ts" were found.\n')
+    expect(io.stdoutText).toBe('')
+  })
+
   it('passes --lang to rule context', async () => {
     const io = await createTestIo()
     await writeOutputLanguageFixture(io.cwd)
@@ -1753,6 +1777,58 @@ export default [
 `)
 
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'src/demo.txt'),
+    ])
+  })
+
+  it('prunes ignored directories for positional directory inputs', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await mkdir(join(io.cwd, 'src/ignored'), { recursive: true })
+    await mkdir(join(io.cwd, 'src/gitignored'), { recursive: true })
+    await writeFile(join(io.cwd, '.gitignore'), 'src/gitignored/\n')
+    await writeFile(join(io.cwd, 'src/demo.txt'), 'demo\n')
+    await writeFile(join(io.cwd, 'src/ignored/demo.txt'), 'ignored\n')
+    await writeFile(join(io.cwd, 'src/gitignored/demo.txt'), 'gitignored\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    ignores: ['src/ignored/**'],
+  },
+  {
+    ignore: {
+      gitignore: true,
+    },
+  },
+  {
+    files: ['src/**/*.txt'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
     expect(code).toBe(1)
