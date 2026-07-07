@@ -10,6 +10,7 @@
     "test:run": "vitest run",
     "lint:fix": "eslint --cache . --fix",
     "lint": "eslint --cache .",
+    "lint:alint": "pnpm -F @alint-js/cli exec tsx src/bin/index.ts ../..",
     "spellcheck": "cspell .",
     "typecheck": "pnpm -rF=\"./packages/*\" -F=\"./apps/*\" -F=\"./docs\" --parallel typecheck",
     "publish:lib": "pnpm -r publish --access public --no-git-checks",
