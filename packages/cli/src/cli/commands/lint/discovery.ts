@@ -8,7 +8,7 @@ import Gitignore from 'gitignore-fs'
 
 import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig } from '@alint-js/core'
 import { minimatch, Minimatch } from 'minimatch'
-import { relative, resolve } from 'pathe'
+import { isAbsolute, relative, resolve } from 'pathe'
 
 export interface FindFilesOptions {
   config: AlintConfig
@@ -139,6 +139,12 @@ function matchesIgnoredDirectory(relativePath: string, patterns: readonly string
   )
 }
 
+function normalizeGlobPattern(cwd: string, pattern: string): string {
+  return isAbsolute(pattern)
+    ? normalizeRelativePath(cwd, pattern)
+    : pattern.replaceAll('\\', '/')
+}
+
 function normalizeRelativePath(cwd: string, filePath: string): string {
   return relative(cwd, filePath).replaceAll('\\', '/')
 }
@@ -159,6 +165,14 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
 
     if (stats?.isDirectory()) {
       if (!hasFilePatterns) {
+        continue
+      }
+
+      if (await shouldPruneDirectory(path, {
+        cwd: options.cwd,
+        gitignore: options.gitignore,
+        ignoredPatterns,
+      })) {
         continue
       }
 
@@ -207,6 +221,7 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
 async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
   const root = resolve(options.cwd, getGlobParent(options.pattern))
   const rootStats = await statPath(root)
+  const pattern = normalizeGlobPattern(options.cwd, options.pattern)
 
   if (!rootStats?.isDirectory()) {
     return []
@@ -223,7 +238,7 @@ async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
     const relativePath = normalizeRelativePath(options.cwd, file)
 
     if (
-      matchesGlob(relativePath, options.pattern)
+      matchesGlob(relativePath, pattern)
       && matchesDiscoveryFile(relativePath, options.config, { cwd: options.cwd })
     ) {
       candidates.push(relativePath)
@@ -252,7 +267,7 @@ async function statPath(path: string): Promise<Stats | undefined> {
     return await stat(path)
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
       return undefined
     }
 
