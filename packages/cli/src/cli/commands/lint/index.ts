@@ -12,7 +12,7 @@ import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
 import { loadMergedSetupConfig } from '../config/setup-config'
-import { resolveLintFiles } from './discovery'
+import { findFiles, NoFilesFoundError } from './discovery'
 import { formatRunError } from './errors'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
@@ -72,7 +72,26 @@ async function runLintCommand(
     loadMergedSetupConfig(io),
     loadAlintConfig(io.cwd, options.config),
   ])
-  const lintFiles = await resolveLintFiles(files, config, io.cwd)
+  let lintFiles: string[]
+
+  try {
+    lintFiles = await findFiles({
+      config,
+      cwd: io.cwd,
+      errorOnUnmatchedPattern: true,
+      globInputPaths: true,
+      inputs: files,
+    })
+  }
+  catch (error) {
+    if (error instanceof NoFilesFoundError) {
+      io.stderr.write(`${error.message}\n`)
+      return 2
+    }
+
+    throw error
+  }
+
   const runner = resolveRunnerConfig(setupConfig, { runner: resolveConfigRunner(config) }, options)
   const progress = shouldEnableProgress(options, io)
     ? createCliProgressReporter({

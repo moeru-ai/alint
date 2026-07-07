@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -1268,6 +1268,53 @@ export default [
     expect(io.stdoutText).toContain('company/prefer-load')
   })
 
+  it('returns 2 when a positional file path does not exist', async () => {
+    const io = await createTestIo()
+
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    rules: {},
+  },
+]
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'missing.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('No files matching "missing.ts" were found.\n')
+    expect(io.stdoutText).toBe('')
+  })
+
+  it('returns 2 when a positional file path traverses through a file', async () => {
+    const io = await createTestIo()
+
+    await writeFile(join(io.cwd, 'package.json'), '{}\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    rules: {},
+  },
+]
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'package.json/missing.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('No files matching "package.json/missing.ts" were found.\n')
+    expect(io.stdoutText).toBe('')
+  })
+
   it('discovers files from flat config files patterns when no positional files are passed', async () => {
     const io = await createTestIo()
     await mkdir(join(io.cwd, 'src'), { recursive: true })
@@ -1305,6 +1352,293 @@ export default [
     expect(io.stdoutText).toContain('checked text/plain')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('README.md')
+  })
+
+  it('returns 0 without walking directories when config has no files patterns', async () => {
+    const io = await createTestIo()
+    const blockedDir = join(io.cwd, 'blocked')
+    await mkdir(blockedDir)
+    await writeFile(join(blockedDir, 'demo.ts'), 'export const visited = true\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+    let blockedDirLocked = false
+
+    try {
+      await chmod(blockedDir, 0o000)
+      blockedDirLocked = true
+
+      const code = await executeCli(['node', 'alint'], io)
+
+      expect(code).toBe(0)
+      expect(io.stdoutText).toBe('')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      if (blockedDirLocked) {
+        await chmod(blockedDir, 0o700)
+      }
+    }
+  })
+
+  it('expands positional directories using flat config files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.go'), 'package main\n')
+    await writeFile(join(io.cwd, 'src/README.md'), '# demo\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['src/**/*.go'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'checked ' + target.language,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', 'src'], io)
+
+    expect(code).toBe(1)
+    expect(io.stdoutText).toContain('checked text/plain')
+    expect(io.stdoutText).toContain('src/main.go')
+    expect(io.stdoutText).not.toContain('src/README.md')
+  })
+
+  it('expands positional glob patterns using config files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src/nested'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.ts'), 'export const main = 1\n')
+    await writeFile(join(io.cwd, 'src/nested/feature.ts'), 'export const feature = 1\n')
+    await writeFile(join(io.cwd, 'src/nested/feature.test.ts'), 'export const test = 1\n')
+    await writeFile(join(io.cwd, 'src/readme.md'), '# demo\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+  {
+    files: [['src/**/*.ts', '!src/**/*.test.ts']],
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', '--format', 'json', 'src/**/*.ts'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath).sort()).toEqual([
+      join(io.cwd, 'src/main.ts'),
+      join(io.cwd, 'src/nested/feature.ts'),
+    ])
+  })
+
+  it('expands absolute positional glob patterns using config files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.ts'), 'export const main = 1\n')
+    await writeFile(join(io.cwd, 'src/main.test.ts'), 'export const test = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+  {
+    files: [['src/**/*.ts', '!src/**/*.test.ts']],
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', '--format', 'json', join(io.cwd, 'src/**/*.ts')], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'src/main.ts'),
+    ])
+  })
+
+  it('expands positional glob patterns when config has no files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src', 'demo.ts'), 'export const demo = 1\n')
+    await writeFile(join(io.cwd, 'README.md'), '# demo\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', '--format', 'json', 'src/*.ts'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'src', 'demo.ts'),
+    ])
+  })
+
+  it('returns 2 when a positional glob pattern has no matches', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src/main.ts'), 'export const main = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['src/**/*.ts'],
+    rules: {},
+  },
+]
+`)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'src/**/*.missing.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('No files matching "src/**/*.missing.ts" were found.\n')
+    expect(io.stdoutText).toBe('')
+  })
+
+  it('preserves explicit file order and dedupes directory and glob results', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'first.ts'), 'export const first = 1\n')
+    await writeFile(join(io.cwd, 'src/second.ts'), 'export const second = 1\n')
+    await writeFile(join(io.cwd, 'src/third.ts'), 'export const third = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'first.ts',
+      'src',
+      'src/**/*.ts',
+    ], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'first.ts'),
+      join(io.cwd, 'src/second.ts'),
+      join(io.cwd, 'src/third.ts'),
+    ])
   })
 
   it('passes --lang to rule context', async () => {
@@ -1609,6 +1943,127 @@ export default [
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/demo.txt'),
     ])
+  })
+
+  it('prunes ignored directories for positional directory inputs', async () => {
+    const io = await createTestIo()
+    const ignoredDir = join(io.cwd, 'src/ignored')
+    const gitignoredDir = join(io.cwd, 'src/gitignored')
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await mkdir(ignoredDir, { recursive: true })
+    await mkdir(gitignoredDir, { recursive: true })
+    await writeFile(join(io.cwd, '.gitignore'), 'src/gitignored/\n')
+    await writeFile(join(io.cwd, 'src/demo.txt'), 'demo\n')
+    await writeFile(join(ignoredDir, 'demo.txt'), 'ignored\n')
+    await writeFile(join(gitignoredDir, 'demo.txt'), 'gitignored\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    ignores: ['src/ignored/**'],
+  },
+  {
+    ignore: {
+      gitignore: true,
+    },
+  },
+  {
+    files: ['src/**/*.txt'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+    let ignoredDirLocked = false
+    let gitignoredDirLocked = false
+
+    try {
+      await chmod(ignoredDir, 0o000)
+      ignoredDirLocked = true
+      await chmod(gitignoredDir, 0o000)
+      gitignoredDirLocked = true
+
+      const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
+      const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+      expect(code).toBe(1)
+      expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+        join(io.cwd, 'src/demo.txt'),
+      ])
+    }
+    finally {
+      if (ignoredDirLocked) {
+        await chmod(ignoredDir, 0o700)
+      }
+      if (gitignoredDirLocked) {
+        await chmod(gitignoredDir, 0o700)
+      }
+    }
+  })
+
+  it('prunes ignored positional directory roots before reading them', async () => {
+    const io = await createTestIo()
+    const ignoredDir = join(io.cwd, 'ignored')
+    const gitignoredDir = join(io.cwd, 'gitignored')
+    await mkdir(ignoredDir)
+    await mkdir(gitignoredDir)
+    await writeFile(join(ignoredDir, 'demo.txt'), 'ignored\n')
+    await writeFile(join(gitignoredDir, 'demo.txt'), 'gitignored\n')
+    await writeFile(join(io.cwd, '.gitignore'), 'gitignored/\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    ignores: ['ignored/**'],
+  },
+  {
+    ignore: {
+      gitignore: true,
+    },
+  },
+  {
+    files: ['**/*.txt'],
+    rules: {},
+  },
+]
+`)
+    let ignoredDirLocked = false
+    let gitignoredDirLocked = false
+
+    try {
+      await chmod(ignoredDir, 0o000)
+      ignoredDirLocked = true
+      await chmod(gitignoredDir, 0o000)
+      gitignoredDirLocked = true
+
+      const code = await executeCli(['node', 'alint', 'ignored', 'gitignored'], io)
+
+      expect(code).toBe(0)
+      expect(io.stdoutText).toBe('')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      if (ignoredDirLocked) {
+        await chmod(ignoredDir, 0o700)
+      }
+      if (gitignoredDirLocked) {
+        await chmod(gitignoredDir, 0o700)
+      }
+    }
   })
 
   it('discovers explicitly configured files under node_modules when not ignored', async () => {
