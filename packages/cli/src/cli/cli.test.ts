@@ -1335,8 +1335,6 @@ export default [
     const blockedDir = join(io.cwd, 'blocked')
     await mkdir(blockedDir)
     await writeFile(join(blockedDir, 'demo.ts'), 'export const visited = true\n')
-    await chmod(blockedDir, 0o000)
-
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
@@ -1360,8 +1358,12 @@ export default [
   },
 ]
 `)
+    let blockedDirLocked = false
 
     try {
+      await chmod(blockedDir, 0o000)
+      blockedDirLocked = true
+
       const code = await executeCli(['node', 'alint'], io)
 
       expect(code).toBe(0)
@@ -1369,7 +1371,9 @@ export default [
       expect(io.stderrText).toBe('')
     }
     finally {
-      await chmod(blockedDir, 0o700)
+      if (blockedDirLocked) {
+        await chmod(blockedDir, 0o700)
+      }
     }
   })
 
