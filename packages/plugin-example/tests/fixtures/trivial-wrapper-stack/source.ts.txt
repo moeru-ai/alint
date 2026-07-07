@@ -1,0 +1,124 @@
+import { type RuntimeContext } from 'runtime-sdk'
+
+import { getStoreConfig } from './storeConfig'
+import { initializeStore, isStoreEnabled } from './store'
+import { type StoreProvider } from './storeTypes'
+import { assertBaseOperationAllowed, BaseGuardError } from './baseGuard'
+
+interface FeatureGuardInput {
+  payload?: unknown
+  operationPath: string
+  operationRunId?: string
+  stepName?: string
+}
+
+const getOperationRunId = (context: RuntimeContext<unknown>): string | undefined =>
+  (context as unknown as { operationRunId?: string }).operationRunId
+
+const getStore = async (): Promise<StoreProvider | null> => {
+  const config = getStoreConfig()
+  if (!isStoreEnabled(config)) return null
+
+  return initializeStore(config)
+}
+
+const getPayloadActorId = (payload: unknown): string | undefined => {
+  if (!payload || typeof payload !== 'object') return undefined
+
+  const actorId = 'actorId' in payload ? payload.actorId : undefined
+  if (typeof actorId === 'string' && actorId) return actorId
+
+  const actorIds = 'actorIds' in payload ? payload.actorIds : undefined
+  if (!Array.isArray(actorIds)) return undefined
+
+  return actorIds.find((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
+/**
+ * Checks whether a feature run may continue for the provided scope.
+ *
+ * Use when:
+ * - Feature handlers start or reach an expensive step boundary.
+ * - Store failures should inherit the shared guard fail-open behavior.
+ *
+ * Expects:
+ * - `operationPath` identifies the current route.
+ * - `payload` may include `actorId` or `actorIds` for actor-level guard checks.
+ *
+ * Returns:
+ * - Resolves when no guard blocks the operation.
+ * - Rejects with the shared guard error when a matching guard exists.
+ */
+export const assertFeatureRunAllowed = async ({
+  operationPath,
+  operationRunId,
+  payload,
+  stepName,
+}: FeatureGuardInput): Promise<void> => {
+  const store = await getStore()
+
+  await assertBaseOperationAllowed(store, {
+    actorId: getPayloadActorId(payload),
+    operationPath,
+    operationRunId,
+    stepName,
+  })
+}
+
+/**
+ * Checks whether a feature context may continue for a route or step.
+ *
+ * Use when:
+ * - A runtime handler has a concrete context.
+ * - The caller wants to include the current run id when available.
+ *
+ * Expects:
+ * - `operationPath` is the route path serving the current handler.
+ * - `stepName` is passed before the matching context step call.
+ *
+ * Returns:
+ * - Resolves when no guard blocks the operation.
+ * - Rejects with the shared guard error when a matching guard exists.
+ */
+export const assertFeatureContextAllowed = async (
+  context: RuntimeContext<unknown>,
+  operationPath: string,
+  stepName?: string,
+): Promise<void> => {
+  await assertFeatureRunAllowed({
+    operationPath,
+    operationRunId: getOperationRunId(context),
+    payload: context.requestPayload,
+    stepName,
+  })
+}
+
+export interface FeatureRunGuardBlock {
+  matchedKey: string
+  reason?: string
+  scope: string
+}
+
+/**
+ * Resolves whether a run guard blocks this feature, WITHOUT throwing.
+ *
+ * Why not throw:
+ * - The runtime retries failures before the first step, so a guard match must become
+ *   a graceful return instead of a thrown error.
+ */
+export const resolveFeatureRunGuard = async (
+  context: RuntimeContext<unknown>,
+  operationPath: string,
+): Promise<FeatureRunGuardBlock | null> => {
+  try {
+    await assertFeatureContextAllowed(context, operationPath)
+    return null
+  }
+  catch (error) {
+    if (error instanceof BaseGuardError) {
+      return { matchedKey: error.matchedKey, reason: error.reason, scope: error.guardScope }
+    }
+
+    throw error
+  }
+}
