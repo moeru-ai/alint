@@ -1481,6 +1481,57 @@ export default [
     expect(io.stdoutText).toBe('')
   })
 
+  it('preserves explicit file order and dedupes directory and glob results', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'first.ts'), 'export const first = 1\n')
+    await writeFile(join(io.cwd, 'src/second.ts'), 'export const second = 1\n')
+    await writeFile(join(io.cwd, 'src/third.ts'), 'export const third = 1\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'first.ts',
+      'src',
+      'src/**/*.ts',
+    ], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'first.ts'),
+      join(io.cwd, 'src/second.ts'),
+      join(io.cwd, 'src/third.ts'),
+    ])
+  })
+
   it('passes --lang to rule context', async () => {
     const io = await createTestIo()
     await writeOutputLanguageFixture(io.cwd)
