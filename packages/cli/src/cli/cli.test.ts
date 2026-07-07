@@ -1796,8 +1796,6 @@ export default [
     await writeFile(join(io.cwd, 'src/demo.txt'), 'demo\n')
     await writeFile(join(ignoredDir, 'demo.txt'), 'ignored\n')
     await writeFile(join(gitignoredDir, 'demo.txt'), 'gitignored\n')
-    await chmod(ignoredDir, 0o000)
-    await chmod(gitignoredDir, 0o000)
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
@@ -1831,8 +1829,15 @@ export default [
   },
 ]
 `)
+    let ignoredDirLocked = false
+    let gitignoredDirLocked = false
 
     try {
+      await chmod(ignoredDir, 0o000)
+      ignoredDirLocked = true
+      await chmod(gitignoredDir, 0o000)
+      gitignoredDirLocked = true
+
       const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
       const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
@@ -1842,8 +1847,12 @@ export default [
       ])
     }
     finally {
-      await chmod(ignoredDir, 0o700)
-      await chmod(gitignoredDir, 0o700)
+      if (ignoredDirLocked) {
+        await chmod(ignoredDir, 0o700)
+      }
+      if (gitignoredDirLocked) {
+        await chmod(gitignoredDir, 0o700)
+      }
     }
   })
 
