@@ -1,4 +1,12 @@
 export { loadAlintConfig } from './config/load'
+export {
+  ignorePatternsAIAgents,
+  ignorePatternsBuildOutputs,
+  ignorePatternsCaches,
+  ignorePatternsCommon,
+  ignorePatternsEslintDefaults,
+  ignorePatternsGenerated,
+} from './ignore-patterns'
 export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'

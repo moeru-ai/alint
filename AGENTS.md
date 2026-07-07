@@ -99,6 +99,7 @@
 - Do not add broad comments like `// Config`, `// Host`, or `// Update state` unless they explain a non-obvious boundary or transition.
 - Add clear, concise comments for utils, math, OS-interaction, algorithm, shared, and architectural functions that explain non-obvious intent, invariants, constraints, or why the code is needed.
 - When using a workaround, add a `// NOTICE:` comment explaining why, the root cause, and any source context. If validated via `node_modules` inspection or external sources (e.g., GitHub), include relevant line references and links in code-formatted text.
+- When copying, adapting, or deriving code, configuration, constants, schemas, ignore patterns, algorithms, or rules from an external repository, add a nearby `// NOTICE:` comment with a GitHub permalink pinned to the source commit and exact line reference. Use single-line references like `https://github.com/eslint/eslint/blob/833ec10fd702644e94334edd3cd2aa313174a958/.editorconfig#L11` and multi-line references like `https://github.com/eslint/eslint/blob/833ec10fd702644e94334edd3cd2aa313174a958/.editorconfig#L11-L17`. Do not use branch links such as `main` or links without line numbers for traceable source references.
 - When moving/refactoring/fixing/updating code, keep still-accurate comments with the code. Remove obsolete comments rather than preserving their history in source; explain notable removals in review notes when needed.
 - Avoid stubby/hacky scaffolding; prefer small refactors that leave code cleaner.
 - Use markers:
