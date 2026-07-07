@@ -6,7 +6,7 @@ import { readdir, stat } from 'node:fs/promises'
 
 import Gitignore from 'gitignore-fs'
 
-import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig } from '@alint-js/core'
+import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolveConfigForFile } from '@alint-js/core'
 import { minimatch, Minimatch } from 'minimatch'
 import { isAbsolute, relative, resolve } from 'pathe'
 
@@ -31,6 +31,7 @@ interface SearchGlobOptions {
   config: AlintConfig
   cwd: string
   gitignore?: Gitignore
+  hasFilePatterns: boolean
   ignoredPatterns: readonly string[]
   pattern: string
 }
@@ -198,6 +199,7 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
         config: options.config,
         cwd: options.cwd,
         gitignore: options.gitignore,
+        hasFilePatterns,
         ignoredPatterns,
         pattern: input,
       })
@@ -237,10 +239,10 @@ async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
   for (const file of files) {
     const relativePath = normalizeRelativePath(options.cwd, file)
 
-    if (
-      matchesGlob(relativePath, pattern)
-      && matchesDiscoveryFile(relativePath, options.config, { cwd: options.cwd })
-    ) {
+    if (matchesGlob(relativePath, pattern) && shouldIncludeGlobCandidate(relativePath, options.config, {
+      cwd: options.cwd,
+      hasFilePatterns: options.hasFilePatterns,
+    })) {
       candidates.push(relativePath)
     }
   }
@@ -250,6 +252,18 @@ async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
 
 function shouldFilterGitignoredFiles(config: AlintConfig): boolean {
   return normalizeConfig(config).some(item => item.ignore?.gitignore === true)
+}
+
+function shouldIncludeGlobCandidate(
+  filePath: string,
+  config: AlintConfig,
+  options: { cwd: string, hasFilePatterns: boolean },
+): boolean {
+  if (options.hasFilePatterns) {
+    return matchesDiscoveryFile(filePath, config, { cwd: options.cwd })
+  }
+
+  return !resolveConfigForFile(filePath, config, { cwd: options.cwd }).ignored
 }
 
 async function shouldPruneDirectory(path: string, options: WalkFilesOptions): Promise<boolean> {

@@ -1527,6 +1527,45 @@ export default [
     ])
   })
 
+  it('expands positional glob patterns when config has no files patterns', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'src'), { recursive: true })
+    await writeFile(join(io.cwd, 'src', 'demo.ts'), 'export const demo = 1\n')
+    await writeFile(join(io.cwd, 'README.md'), '# demo\n')
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    language: 'text/plain',
+    plugins: {
+      review: {
+        rules: {
+          file: {
+            create: ctx => ({
+              onTarget: target => ctx.report({
+                filePath: target.file.path,
+                message: 'visited ' + target.file.path,
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/file': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', '--format', 'json', 'src/*.ts'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics
+
+    expect(code).toBe(1)
+    expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
+      join(io.cwd, 'src', 'demo.ts'),
+    ])
+  })
+
   it('returns 2 when a positional glob pattern has no matches', async () => {
     const io = await createTestIo()
     await mkdir(join(io.cwd, 'src'), { recursive: true })
