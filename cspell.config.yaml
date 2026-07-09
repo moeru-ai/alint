@@ -35,6 +35,7 @@ words:
   - oxlint
   - picklist
   - qwen
+  - RAII
   - referer
   - retriable
   - smol
