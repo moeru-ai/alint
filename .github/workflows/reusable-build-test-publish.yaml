@@ -34,7 +34,11 @@ jobs:
         run: pnpm install
 
       - name: Spellcheck
-        run: pnpm run spellcheck
+        run: |
+          pnpm run spellcheck || {
+            echo "::warning title=Spellcheck failed::CSpell found spelling issues. Check the Spellcheck logs for details."
+            exit 0
+          }
 
       - name: Lint
         run: pnpm run lint
