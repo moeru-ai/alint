@@ -179,6 +179,9 @@ importers:
       '@alint-js/plugin-example':
         specifier: workspace:*
         version: link:packages/plugin-example
+      '@alint-js/plugin-example-python':
+        specifier: workspace:*
+        version: link:packages/plugin-example-python
       '@antfu/eslint-config':
         specifier: 'catalog:'
         version: 9.1.0(@typescript-eslint/rule-tester@8.61.1(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(@typescript-eslint/typescript-estree@8.62.0(typescript@6.0.3))(@typescript-eslint/utils@8.62.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(@vue/compiler-sfc@3.5.38)(eslint@10.5.0(jiti@2.7.0))(oxlint@1.71.0)(typescript@6.0.3)(vitest@4.1.9)
@@ -480,6 +483,34 @@ importers:
       '@alint-js/agent-apeira':
         specifier: workspace:*
         version: link:../agent-apeira
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.18
+      '@valibot/to-json-schema':
+        specifier: 'catalog:'
+        version: 1.7.1(valibot@1.4.1(typescript@6.0.3))
+      tinyglobby:
+        specifier: 'catalog:'
+        version: 0.2.17
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.1(typescript@6.0.3)
+      xsai:
+        specifier: 'catalog:'
+        version: 0.5.0-beta.6(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+    devDependencies:
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/plugin-example-python:
+    dependencies:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
