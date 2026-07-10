@@ -42,6 +42,7 @@ catalog:
   cac: ^7.0.0
   cli-spinners: ^3.4.0
   cspell: ^9.8.0
+  doctoc: ^2.5.0
   es-toolkit: ^1.49.0
   eslint: ^10.5.0
   eslint-plugin-oxlint: ^1.71.0
