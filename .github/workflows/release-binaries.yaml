@@ -21,63 +21,42 @@ jobs:
             target: aarch64-apple-darwin
             bun_target: bun-darwin-arm64
             oxc_binding: darwin-arm64
-            pnpm_cpu: arm64
-            pnpm_libc: current
-            pnpm_os: darwin
             archive: alint-aarch64-apple-darwin.tar.gz
             executable: alint
           - os: macos-latest
             target: x86_64-apple-darwin
             bun_target: bun-darwin-x64
             oxc_binding: darwin-x64
-            pnpm_cpu: x64
-            pnpm_libc: current
-            pnpm_os: darwin
             archive: alint-x86_64-apple-darwin.tar.gz
             executable: alint
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             bun_target: bun-linux-x64
             oxc_binding: linux-x64-gnu
-            pnpm_cpu: x64
-            pnpm_libc: glibc
-            pnpm_os: linux
             archive: alint-x86_64-unknown-linux-gnu.tar.gz
             executable: alint
           - os: ubuntu-latest
             target: aarch64-unknown-linux-gnu
             bun_target: bun-linux-arm64
             oxc_binding: linux-arm64-gnu
-            pnpm_cpu: arm64
-            pnpm_libc: glibc
-            pnpm_os: linux
             archive: alint-aarch64-unknown-linux-gnu.tar.gz
             executable: alint
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             bun_target: bun-linux-x64-musl
             oxc_binding: linux-x64-musl
-            pnpm_cpu: x64
-            pnpm_libc: musl
-            pnpm_os: linux
             archive: alint-x86_64-unknown-linux-musl.tar.gz
             executable: alint
           - os: ubuntu-latest
             target: aarch64-unknown-linux-musl
             bun_target: bun-linux-arm64-musl
             oxc_binding: linux-arm64-musl
-            pnpm_cpu: arm64
-            pnpm_libc: musl
-            pnpm_os: linux
             archive: alint-aarch64-unknown-linux-musl.tar.gz
             executable: alint
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             bun_target: bun-windows-x64
             oxc_binding: win32-x64-msvc
-            pnpm_cpu: x64
-            pnpm_libc: current
-            pnpm_os: win32
             archive: alint-x86_64-pc-windows-msvc.zip
             executable: alint.exe
 
@@ -95,11 +74,21 @@ jobs:
       - name: Configure pnpm target arch
         shell: bash
         run: |
+          case "${{ matrix.oxc_binding }}" in
+            darwin-arm64) pnpm_os=darwin; pnpm_cpu=arm64; pnpm_libc=current ;;
+            darwin-x64) pnpm_os=darwin; pnpm_cpu=x64; pnpm_libc=current ;;
+            linux-x64-gnu) pnpm_os=linux; pnpm_cpu=x64; pnpm_libc=glibc ;;
+            linux-arm64-gnu) pnpm_os=linux; pnpm_cpu=arm64; pnpm_libc=glibc ;;
+            linux-x64-musl) pnpm_os=linux; pnpm_cpu=x64; pnpm_libc=musl ;;
+            linux-arm64-musl) pnpm_os=linux; pnpm_cpu=arm64; pnpm_libc=musl ;;
+            win32-x64-msvc) pnpm_os=win32; pnpm_cpu=x64; pnpm_libc=current ;;
+          esac
+
           cat >> pnpm-workspace.yaml <<YAML
           supportedArchitectures:
-            os: [current, ${{ matrix.pnpm_os }}]
-            cpu: [current, ${{ matrix.pnpm_cpu }}]
-            libc: [current, ${{ matrix.pnpm_libc }}]
+            os: [current, $pnpm_os]
+            cpu: [current, $pnpm_cpu]
+            libc: [current, $pnpm_libc]
           YAML
 
       - run: pnpm install
@@ -115,69 +104,44 @@ jobs:
             --bun-target ${{ matrix.bun_target }} \
             --oxc-binding ${{ matrix.oxc_binding }}
 
-      - name: Import macOS signing certificate
+      - name: Decode macOS signing certificate
         if: runner.os == 'macOS'
         env:
           APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+        run: '[ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" ] || printf "%s" "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/alint-developer-id-application.p12"'
+
+      - name: Create macOS signing keychain
+        if: runner.os == 'macOS'
+        run: |
+          [ ! -f "$RUNNER_TEMP/alint-developer-id-application.p12" ] || security create-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
+          [ ! -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || security set-keychain-settings -lut 21600 "$RUNNER_TEMP/alint-signing.keychain-db"
+          [ ! -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || security unlock-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
           APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
         run: |
-          set -euo pipefail
-
-          if [ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" ] || [ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" ]; then
-            echo "::warning title=macOS signing certificate skipped::APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE or APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD is not configured."
-            exit 0
-          fi
-
-          CERT_PATH="$RUNNER_TEMP/alint-developer-id-application.p12"
-          KEYCHAIN_PATH="$RUNNER_TEMP/alint-signing.keychain-db"
-          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
-
-          printf '%s' "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > "$CERT_PATH"
-
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security import "$CERT_PATH" \
-            -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" \
-            -A \
-            -t cert \
-            -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-          security list-keychains -d user -s "$KEYCHAIN_PATH"
-          security set-key-partition-list \
-            -S apple-tool:,apple:,codesign: \
-            -s \
-            -k "$KEYCHAIN_PASSWORD" \
-            "$KEYCHAIN_PATH"
-
-          echo "ALINT_MACOS_SIGNING_AVAILABLE=true" >> "$GITHUB_ENV"
-          echo "ALINT_MACOS_SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+          [ ! -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || [ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" ] || security import "$RUNNER_TEMP/alint-developer-id-application.p12" -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/alint-signing.keychain-db"
+          [ ! -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || security list-keychains -d user -s "$RUNNER_TEMP/alint-signing.keychain-db"
+          [ ! -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
 
       - name: Sign macOS executable
         if: runner.os == 'macOS'
         env:
           APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
+          APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
         run: |
-          if [ "${ALINT_MACOS_SIGNING_AVAILABLE:-}" != "true" ]; then
-            echo "::warning title=macOS signing skipped::The Developer ID Application certificate was not imported."
-            exit 0
-          fi
-
-          if [ -z "$APPLE_DEVELOPER_ID_APPLICATION" ]; then
-            echo "::warning title=macOS signing skipped::APPLE_DEVELOPER_ID_APPLICATION is not configured."
-            exit 0
-          fi
-
+          [ -f "$RUNNER_TEMP/alint-signing.keychain-db" ] || exit 0
+          [ -n "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" ] || exit 0
+          [ -n "$APPLE_DEVELOPER_ID_APPLICATION" ] || exit 0
           codesign --force --timestamp --options runtime \
             --sign "$APPLE_DEVELOPER_ID_APPLICATION" \
             target/${{ matrix.target }}/${{ matrix.executable }}
 
       - name: Clean up macOS signing keychain
         if: runner.os == 'macOS' && always()
-        run: |
-          if [ -n "${ALINT_MACOS_SIGNING_KEYCHAIN_PATH:-}" ]; then
-            security delete-keychain "$ALINT_MACOS_SIGNING_KEYCHAIN_PATH" || true
-          fi
+        run: security delete-keychain "$RUNNER_TEMP/alint-signing.keychain-db" || true
 
       - name: Smoke test executable
         shell: bash
