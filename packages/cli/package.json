@@ -36,7 +36,9 @@
     "tinyrainbow": "catalog:"
   },
   "devDependencies": {
+    "@pnpm/find-workspace-dir": "catalog:",
     "@types/node": "catalog:",
+    "mlly": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:vitest"
