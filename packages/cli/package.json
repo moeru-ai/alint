@@ -1,7 +1,7 @@
 {
   "name": "@alint-js/cli",
   "type": "module",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
