@@ -29,6 +29,7 @@ export interface CommandNode extends CommandHelp {
   description: string
   name: string
   options?: readonly CommandOption[]
+  strictArguments?: boolean
 }
 
 export interface CommandOption {
@@ -275,6 +276,10 @@ function insertHelpSection(
 
 function parseCommandArguments(node: CommandNode, args: readonly string[]): unknown[] {
   if (!node.arguments) {
+    if (node.strictArguments && args.length > 0) {
+      throw new Error(`Unexpected argument ${args[0]}.`)
+    }
+
     return []
   }
 
@@ -295,6 +300,10 @@ function parseCommandArguments(node: CommandNode, args: readonly string[]): unkn
 
     values.push(args[argIndex])
     argIndex += 1
+  }
+
+  if (node.strictArguments && argIndex < args.length) {
+    throw new Error(`Unexpected argument ${args[argIndex]}.`)
   }
 
   return values
@@ -323,7 +332,7 @@ function registerRootCommand(
   command.action((...args: unknown[]) => {
     const options = args.at(-1)
     const result = node.children
-      ? dispatchCommand(context, node, (args[0] as string[] | undefined) ?? [], options, [node.name])
+      ? dispatchCommand(context, node, resolveCommandArgs(args, options), options, [node.name])
       : Promise.resolve(node.action?.(context, ...args.slice(0, -1), options) ?? 0)
 
     return setPendingResult(result)
@@ -337,6 +346,22 @@ function reportUnknownCommand(
 ): number {
   context.io.stderr.write(`unknown command: ${formatUnknownCommand(path, args)}\n`)
   return 2
+}
+
+function resolveCommandArgs(args: readonly unknown[], options: unknown): string[] {
+  const commandArgs = (args[0] as string[] | undefined) ?? []
+
+  if (!options || typeof options !== 'object' || !('--' in options)) {
+    return commandArgs
+  }
+
+  const trailingArgs = (options as { '--'?: unknown })['--']
+
+  if (!Array.isArray(trailingArgs)) {
+    return commandArgs
+  }
+
+  return [...commandArgs, ...trailingArgs.map(String)]
 }
 
 function resolveHelpPath(
