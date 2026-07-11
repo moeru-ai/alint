@@ -40,12 +40,12 @@ pnpm add -g @alint-js/cli
 Or install it in a project and run it through your package manager:
 
 ```bash
-npm install -D @alint-js/cli @alint-js/core
+npm install -D @alint-js/cli
 npx alint src
 ```
 
 ```bash
-pnpm add -D @alint-js/cli @alint-js/core
+pnpm add -D @alint-js/cli
 pnpm exec alint src
 ```
 
@@ -216,7 +216,7 @@ alint setup -N \
 Similar to `eslint`, use `alint.config.ts` for files, ignores, plugins, and rules:
 
 ```ts
-import { defineConfig } from '@alint-js/core'
+import { defineConfig } from '@alint-js/cli'
 import { examplePlugin } from '@alint-js/plugin-example'
 
 export default defineConfig([
@@ -251,7 +251,7 @@ Flat configs can analyze non-JavaScript files by selecting `text/plain`:
 ```ts
 import docsPlugin from '@your-alint-config/docs-rules'
 
-import { defineConfig } from '@alint-js/core'
+import { defineConfig } from '@alint-js/cli'
 
 export default defineConfig([
   {
@@ -401,9 +401,9 @@ defineRule({
 
 | Package | Purpose |
 | --- | --- |
-| [`@alint-js/cli`](https://github.com/moeru-ai/alint/tree/main/packages/cli) | CLI entrypoint, setup commands, reporters, output inspection, and stats commands. |
-| [`@alint-js/config`](https://github.com/moeru-ai/alint/tree/main/packages/config) | Config loading, setup TOML parsing, config paths, and ignore defaults. |
-| [`@alint-js/core`](https://github.com/moeru-ai/alint/tree/main/packages/core) | Public DSL, run engine, source runtime, model resolution, diagnostics, cache, and agent contracts. |
+| [`@alint-js/cli`](https://github.com/moeru-ai/alint/tree/main/packages/cli) | CLI entrypoint, user-facing config facade, setup commands, reporters, output inspection, and stats commands. |
+| [`@alint-js/config`](https://github.com/moeru-ai/alint/tree/main/packages/config) | Lower-level config loading, setup TOML parsing, config paths, and ignore defaults for tools. |
+| [`@alint-js/core`](https://github.com/moeru-ai/alint/tree/main/packages/core) | SDK and run engine for plugins, rules, source runtime, model resolution, diagnostics, cache, and agent contracts. |
 | [`@alint-js/agent-apeira`](https://github.com/moeru-ai/alint/tree/main/packages/agent-apeira) | Apeira-backed `AgentAdapter`. |
 | [`@alint-js/agent-pi`](https://github.com/moeru-ai/alint/tree/main/packages/agent-pi) | Pi-backed `AgentAdapter`. |
 | [`@alint-js/plugin-example`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example) | Example TypeScript/JavaScript model-backed rules. |

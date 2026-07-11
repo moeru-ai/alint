@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
@@ -49,6 +50,38 @@ export default config
       {
         files: ['**/*.ts'],
         rules: { 'review/typescript': 'warn' },
+      },
+    ])
+  })
+
+  it('loads configs authored through the CLI facade', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-cli-facade-'))
+    const cliEntryUrl = pathToFileURL(join(import.meta.dirname, '../../../cli/src/index.ts')).href
+
+    await writeFile(join(cwd, 'alint.config.ts'), `
+import { defineConfig, ignorePatternsAIAgents, ignorePatternsCommon } from ${JSON.stringify(cliEntryUrl)}
+
+export default defineConfig([
+  {
+    name: 'test/global-ignores',
+    ignores: [
+      ...ignorePatternsCommon,
+      ...ignorePatternsAIAgents,
+    ],
+  },
+])
+`)
+
+    await mkdir(join(cwd, 'src'))
+    const config = await loadAlintConfig(cwd)
+
+    expect(config).toEqual([
+      {
+        ignores: expect.arrayContaining([
+          '**/node_modules/**',
+          '**/.agents/**',
+        ]),
+        name: 'test/global-ignores',
       },
     ])
   })
