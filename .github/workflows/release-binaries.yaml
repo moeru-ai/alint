@@ -95,7 +95,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          node scripts/build-bun-executable.mjs \
+          pnpm exec tsx packages/cli/scripts/build-bun-executable.ts \
             --target ${{ matrix.target }} \
             --bun-target ${{ matrix.bun_target }} \
             --oxc-binding ${{ matrix.oxc_binding }} \
