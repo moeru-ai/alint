@@ -17,13 +17,13 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
+          - os: macos-26
             target: aarch64-apple-darwin
             bun_target: bun-darwin-arm64
             oxc_binding: darwin-arm64
             archive: alint-aarch64-apple-darwin.tar.gz
             executable: alint
-          - os: macos-latest
+          - os: macos-15-intel
             target: x86_64-apple-darwin
             bun_target: bun-darwin-x64
             oxc_binding: darwin-x64
@@ -35,7 +35,7 @@ jobs:
             oxc_binding: linux-x64-gnu
             archive: alint-x86_64-unknown-linux-gnu.tar.gz
             executable: alint
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-gnu
             bun_target: bun-linux-arm64
             oxc_binding: linux-arm64-gnu
@@ -47,7 +47,7 @@ jobs:
             oxc_binding: linux-x64-musl
             archive: alint-x86_64-unknown-linux-musl.tar.gz
             executable: alint
-          - os: ubuntu-latest
+          - os: ubuntu-24.04-arm
             target: aarch64-unknown-linux-musl
             bun_target: bun-linux-arm64-musl
             oxc_binding: linux-arm64-musl
@@ -70,15 +70,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
-
-      - name: Configure pnpm target arch
-        run: |
-          cat >> pnpm-workspace.yaml <<'YAML'
-          supportedArchitectures:
-            os: [current, darwin, linux, win32]
-            cpu: [current, x64, arm64]
-            libc: [current, glibc, musl]
-          YAML
 
       - run: pnpm install
       - run: pnpm run build
