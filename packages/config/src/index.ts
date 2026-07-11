@@ -13,6 +13,8 @@ export {
 export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
 export { emptyPluginLockFile, loadPluginLockFile, writePluginLockFile } from './plugins/lock'
+export { fetchNpmPackageVersion } from './plugins/npm'
+export type { FetchNpmPackageVersionOptions, NpmPackageVersionMetadata } from './plugins/npm'
 export {
   getProjectPluginDir,
   getProjectPluginLockPath,
@@ -20,6 +22,7 @@ export {
   getStoredPluginPackageDir,
 } from './plugins/paths'
 export { formatPluginSpecifier, parsePluginSpecifier } from './plugins/spec'
+export { extractNpmTarball, verifyIntegrity } from './plugins/tarball'
 export type {
   ParsedPluginSpecifier,
   PluginLockEntry,

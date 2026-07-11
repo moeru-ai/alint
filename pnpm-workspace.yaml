@@ -36,6 +36,7 @@ catalog:
   '@pnpm/find-workspace-dir': ^1000.1.5
   '@smithy/node-http-handler': ^4.9.1
   '@types/node': ^26.0.1
+  '@types/tar-stream': ^3.1.0
   '@valibot/to-json-schema': ^1.7.1
   apeira: ^0.0.6
   bumpp: ^11.1.0
@@ -63,6 +64,7 @@ catalog:
   simple-git-hooks: ^2.13.1
   smol-toml: ^1.7.0
   table: ^6.9.0
+  tar-stream: ^3.1.7
   taze: ^19.14.1
   tinyexec: ^1.2.4
   tinyglobby: ^0.2.17
