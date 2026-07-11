@@ -88,17 +88,17 @@ jobs:
         if: runner.os == 'macOS'
         env:
           APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE }}
-        run: '[ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" ] || printf "%s" "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > alint-developer-id-application.p12'
+        run: printf "%s" "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > alint-developer-id-application.p12
 
       - name: Create macOS signing keychain
-        if: runner.os == 'macOS' && hashFiles('alint-developer-id-application.p12') != ''
+        if: runner.os == 'macOS'
         run: |
           security create-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
           security set-keychain-settings -lut 21600 "$RUNNER_TEMP/alint-signing.keychain-db"
           security unlock-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
 
       - name: Import macOS signing certificate
-        if: runner.os == 'macOS' && hashFiles('alint-developer-id-application.p12') != ''
+        if: runner.os == 'macOS'
         env:
           APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
         run: |
@@ -107,7 +107,7 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
 
       - name: Sign macOS executable
-        if: runner.os == 'macOS' && hashFiles('alint-developer-id-application.p12') != ''
+        if: runner.os == 'macOS'
         run: |
           identity="$(security find-identity -v -p codesigning "$RUNNER_TEMP/alint-signing.keychain-db" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -n 1)"
           test -n "$identity"
