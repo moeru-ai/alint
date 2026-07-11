@@ -1,6 +1,8 @@
 import type { PluginLockFile } from './types'
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import process from 'node:process'
+
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 
 import { dirname } from 'pathe'
 import { literal, object, parse, record, string } from 'valibot'
@@ -51,8 +53,17 @@ export async function writePluginLockFile(
   lock: PluginLockFile,
 ): Promise<void> {
   const path = getProjectPluginLockPath(cwd)
+  const tempPath = `${path}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
   await mkdir(dirname(path), { recursive: true })
-  await writeFile(path, `${JSON.stringify(lock, null, 2)}\n`)
+
+  try {
+    await writeFile(tempPath, `${JSON.stringify(lock, null, 2)}\n`)
+    await rename(tempPath, path)
+  }
+  catch (error) {
+    await rm(tempPath, { force: true })
+    throw error
+  }
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
