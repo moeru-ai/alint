@@ -28,6 +28,4 @@ export interface StaticPluginReference {
   specifier: ParsedPluginSpecifier
 }
 
-export type StaticPluginResolver = (
-  reference: StaticPluginReference,
-) => Promise<PluginDefinition>
+export type StaticPluginResolver = (reference: StaticPluginReference) => Promise<PluginDefinition>

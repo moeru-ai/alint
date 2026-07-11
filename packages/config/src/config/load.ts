@@ -1,11 +1,17 @@
 import type { AlintConfig } from '@alint-js/core'
 
+import type { StaticPluginResolver } from '../plugins/types'
+
 import { resolve } from 'node:path'
 
 import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
 import { normalizeLoadedAlintConfig } from './static'
+
+export interface LoadAlintConfigOptions {
+  pluginResolver?: StaticPluginResolver
+}
 
 interface C12LoadConfigResult {
   _configFile?: string
@@ -14,6 +20,7 @@ interface C12LoadConfigResult {
 export async function loadAlintConfig(
   cwd: string,
   configFile?: string,
+  options: LoadAlintConfigOptions = {},
 ): Promise<AlintConfig> {
   const result = await loadConfig({
     configFile,
@@ -41,5 +48,6 @@ export async function loadAlintConfig(
 
   return normalizeLoadedAlintConfig(result.config, {
     configFile: (result as C12LoadConfigResult)._configFile,
+    pluginResolver: options.pluginResolver,
   })
 }

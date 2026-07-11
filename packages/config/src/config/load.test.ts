@@ -110,4 +110,64 @@ files = ["**/*.py"]
       },
     ])
   })
+
+  it('resolves static config plugins through the provided resolver', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-static-plugins-'))
+    const plugin = { rules: {} }
+    await writeFile(
+      join(cwd, 'alint.config.toml'),
+      `
+[[config.group]]
+files = ["**/*.py"]
+
+[config.group.plugins]
+python = "@alint-js/plugin-python@0.3.1"
+`,
+    )
+
+    const config = await loadAlintConfig(cwd, undefined, {
+      async pluginResolver(reference) {
+        expect(reference).toEqual({
+          alias: 'python',
+          specifier: {
+            name: '@alint-js/plugin-python',
+            raw: '@alint-js/plugin-python@0.3.1',
+            version: '0.3.1',
+          },
+        })
+
+        return plugin
+      },
+    })
+
+    expect(config).toEqual([
+      {
+        files: ['**/*.py'],
+        plugins: { python: plugin },
+      },
+    ])
+  })
+
+  it('preserves dynamic TypeScript config plugin objects', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-dynamic-plugins-'))
+    await writeFile(join(cwd, 'alint.config.ts'), `
+const plugin = { rules: {} }
+
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: { local: plugin },
+  },
+]
+`)
+
+    const config = await loadAlintConfig(cwd)
+
+    expect(config).toEqual([
+      {
+        files: ['**/*.ts'],
+        plugins: { local: { rules: {} } },
+      },
+    ])
+  })
 })

@@ -1,4 +1,7 @@
 export { loadAlintConfig } from './config/load'
+export type { LoadAlintConfigOptions } from './config/load'
+export { normalizeLoadedAlintConfig } from './config/static'
+export type { NormalizeLoadedAlintConfigOptions } from './config/static'
 export {
   ignorePatternsAIAgents,
   ignorePatternsBuildOutputs,
