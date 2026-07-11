@@ -83,37 +83,26 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-
       - uses: pnpm/action-setup@v6
-
       - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
-
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Configure target optional dependencies
+      - name: Configure pnpm target arch
         shell: bash
         run: |
-          cat >> pnpm-workspace.yaml <<'YAML'
-
+          cat >> pnpm-workspace.yaml <<YAML
           supportedArchitectures:
-            os:
-              - current
-              - ${{ matrix.pnpm_os }}
-            cpu:
-              - current
-              - ${{ matrix.pnpm_cpu }}
-            libc:
-              - current
-              - ${{ matrix.pnpm_libc }}
+            os: [current, ${{ matrix.pnpm_os }}]
+            cpu: [current, ${{ matrix.pnpm_cpu }}]
+            libc: [current, ${{ matrix.pnpm_libc }}]
           YAML
 
       - run: pnpm install
-
       - run: pnpm run build
 
       - name: Build executable
