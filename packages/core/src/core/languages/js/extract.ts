@@ -1,8 +1,7 @@
 import type { SourceFile, SourceRange, SourceTarget } from '../../source/types'
 
-import { parseSync } from 'oxc-parser'
-
 import { sliceRange } from '../../source/runtime'
+import { parseSync } from './parser'
 
 interface AstNode {
   [key: string]: unknown
