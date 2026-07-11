@@ -9,6 +9,14 @@ export {
 } from './ignore-patterns'
 export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
+export { formatPluginSpecifier, parsePluginSpecifier } from './plugins/spec'
+export type {
+  ParsedPluginSpecifier,
+  PluginLockEntry,
+  PluginLockFile,
+  StaticPluginReference,
+  StaticPluginResolver,
+} from './plugins/types'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'
