@@ -48,6 +48,7 @@ catalog:
   eslint: ^10.5.0
   eslint-plugin-oxlint: ^1.71.0
   gitignore-fs: ^2.2.3
+  jiti: ^2.7.0
   knip: ^6.21.0
   local-pkg: ^1.2.1
   minimatch: ^10.2.5
