@@ -26,6 +26,7 @@
     "@alint-js/config": "workspace:*",
     "@alint-js/core": "workspace:*",
     "@alint-js/plugin-example": "workspace:*",
+    "@alint-js/plugin-example-python": "workspace:*",
     "@antfu/eslint-config": "catalog:",
     "@arethetypeswrong/core": "catalog:",
     "@moeru/eslint-config": "catalog:",
