@@ -18,40 +18,55 @@ words:
   - Alint
   - alintcache
   - apeira
+  - bili
   - bumpp
   - BYOA
+  - construc
+  - dataclass
   - doctoc
+  - downloaders
   - earendil
   - eslintcache
   - eventa
+  - fplugin
   - gitmoji
   - injeca
+  - libc
+  - LIBC
   - lifecycles
+  - maku
   - Makito
   - masknet
   - maxlevel
   - moeru
+  - msvc
   - NAPI
   - nolyfill
   - ollama
+  - onstructor
   - openrouter
   - oxlint
   - picklist
+  - pycache
   - qwen
   - RAII
   - referer
   - retriable
   - smol
   - sonarjs
+  - structor
   - Stringifiable
   - taze
   - tinyexec
   - tinylib
   - tinyrainbow
   - tsdown
+  - uiltin
   - unjs
   - unocss
+  - unrun
   - Unrefable
+  - venv
   - xsai
 ignoreWords: []
 import: []

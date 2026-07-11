@@ -12,6 +12,10 @@ This package owns the file-system side of configuration:
 - merges setup layers
 - writes provider setup files
 - exports built-in ignore pattern groups
+- normalizes static TOML/YAML/JSON config groups into flat config arrays
+- parses exact static plugin specifiers
+- reads and writes project plugin lock files
+- downloads, extracts, verifies, and loads self-contained plugin packages
 
 It is used by `@alint-js/cli` and is useful for tools that need to inspect or prepare an `alint` project without running the linter.
 

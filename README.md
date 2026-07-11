@@ -158,6 +158,15 @@ alint --format json src > alint-output.json
 alint output inspect alint-output.json
 ```
 
+### Static Plugin Commands
+
+```bash
+alint plugin install
+alint plugin verify ./plugin-package.tgz
+```
+
+`plugin install` reads static config plugin references, downloads exact npm package tarballs, verifies integrity, and writes `.alint/plugins/lock.json`. It does not install transitive npm dependencies.
+
 ## Concepts
 
 `alint` keeps the familiar lint shape: select targets, apply named rules, report diagnostics, and return an exit code that CI can understand. The difference is that a rule can reach its judgment through model calls or a tool-using agent when syntax-only checks are not enough.
@@ -239,6 +248,23 @@ export default defineConfig([
   },
 ])
 ```
+
+#### Static config files
+
+Projects that do not use a JavaScript toolchain can use TOML, YAML, JSON, JSONC, or JSON5 static config files. TOML uses `[[config.group]]`, which maps to one flat config item:
+
+```toml
+[[config.group]]
+files = [ "**/*.py" ]
+
+[config.group.plugins]
+python = "@alint-js/plugin-python@0.3.1"
+
+[config.group.rules]
+"python/semantic-boundary" = "warn"
+```
+
+Static plugin values must include an exact version. Run `alint plugin install` after editing static plugin references. The install command downloads npm package tarballs into `.alint/plugins`; it does not run `npm install` and does not use the target project's `node_modules`.
 
 Rule severities follow the familiar lint convention:
 
