@@ -15,7 +15,7 @@ The rules show how to request a model from `ctx.model(...)`, send source context
 ## How to use
 
 ```ts
-import { defineConfig } from '@alint-js/core'
+import { defineConfig } from '@alint-js/cli'
 import { examplePlugin } from '@alint-js/plugin-example'
 
 export default defineConfig([
