@@ -12,6 +12,13 @@ export {
 } from './ignore-patterns'
 export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
+export { emptyPluginLockFile, loadPluginLockFile, writePluginLockFile } from './plugins/lock'
+export {
+  getProjectPluginDir,
+  getProjectPluginLockPath,
+  getProjectPluginStoreDir,
+  getStoredPluginPackageDir,
+} from './plugins/paths'
 export { formatPluginSpecifier, parsePluginSpecifier } from './plugins/spec'
 export type {
   ParsedPluginSpecifier,
