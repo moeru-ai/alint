@@ -4,38 +4,19 @@ The public SDK and run engine for `alint`.
 
 ## What it does
 
-This package provides the core APIs used by configs, plugins, rules, language processors, and agent adapters:
+This package provides the core SDK and run engine APIs used by plugins, rules, language processors, embedding tools, and agent adapters:
 
-- `defineConfig`, `definePlugin`, and `defineRule`
+- `definePlugin` and `defineRule`
+- `runAlint`
 - rule registry and flat config normalization
 - source runtime helpers
 - built-in JavaScript source extraction
 - model resolution by size and capability
 - diagnostics and progress payload types
-- `runAlint`
 - framework-neutral agent contracts under `@alint-js/core/agent`
+- config DSL and types for advanced SDK consumers
 
 ## How to use
-
-Define an `alint` config:
-
-```ts
-import examplePlugin from '@alint-js/plugin-example'
-
-import { defineConfig } from '@alint-js/core'
-
-export default defineConfig([
-  {
-    files: ['**/*.{js,ts,jsx,tsx}'],
-    plugins: {
-      example: examplePlugin,
-    },
-    rules: {
-      'example/no-redundant-jsdoc': 'warn',
-    },
-  },
-])
-```
 
 Write a rule:
 
@@ -74,5 +55,5 @@ const agent = requireAgent(ctx)
 
 ## When not to use
 
-- Use `@alint-js/cli` for command-line usage.
-- Use `@alint-js/config` for setup TOML and config-file helpers only.
+- Use `@alint-js/cli` for command-line usage and ordinary `alint.config.*` files.
+- Use `@alint-js/config` for setup TOML, config loading, and config-file tooling only.
