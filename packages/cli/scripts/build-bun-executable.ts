@@ -3,7 +3,7 @@ import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { findWorkspaceDir } from '@pnpm/find-workspace-dir'
-import { getPackageInfoSync, resolveModule } from 'local-pkg'
+import { getPackageInfo, resolveModule } from 'local-pkg'
 import { findDynamicImports, findStaticImports, parseStaticImport } from 'mlly'
 import { x } from 'tinyexec'
 
@@ -15,8 +15,8 @@ export interface BuildBunExecutableOptions {
 }
 
 export async function buildBunExecutable(options: BuildBunExecutableOptions): Promise<void> {
-  const root = await resolveWorkspaceRoot()
-  const bindingPath = resolveBindingPath(root, options.oxcBinding)
+  const root = (await findWorkspaceDir(fileURLToPath(new URL('../../..', import.meta.url))))!
+  const bindingPath = await resolveBindingPath(root, options.oxcBinding)
 
   const tempRoot = join(root, '.tmp')
   await mkdir(tempRoot, { recursive: true })
@@ -78,38 +78,15 @@ function replaceImportSpecifier(code: string, specifier: string, replacement: st
   throw new Error(`Could not replace import specifier ${specifier}.`)
 }
 
-function resolveBindingPath(root: string, binding: string): string {
-  const oxcPackage = getPackageInfoSync('oxc-parser', {
-    paths: [join(root, 'packages/core')],
-  })
-
-  if (!oxcPackage) {
-    throw new Error('Could not resolve oxc-parser from @alint-js/core.')
-  }
-
-  const bindingPath = resolveModule(`@oxc-parser/binding-${binding}`, {
-    paths: [oxcPackage.rootPath],
-  })
+async function resolveBindingPath(root: string, binding: string): Promise<string> {
+  const oxcPackage = await getPackageInfo('oxc-parser', { paths: [join(root, 'packages/core')] })
+  const bindingPath = oxcPackage && resolveModule(`@oxc-parser/binding-${binding}`, { paths: [oxcPackage.rootPath] })
 
   if (!bindingPath) {
     throw new Error(`Could not resolve @oxc-parser/binding-${binding} from oxc-parser.`)
   }
 
-  if (!bindingPath.endsWith('.node')) {
-    throw new TypeError(`Invalid @oxc-parser/binding-${binding} package entry.`)
-  }
-
   return bindingPath
-}
-
-async function resolveWorkspaceRoot(): Promise<string> {
-  const workspaceRoot = await findWorkspaceDir(fileURLToPath(new URL('../../..', import.meta.url)))
-
-  if (!workspaceRoot) {
-    throw new Error('Could not find pnpm workspace root.')
-  }
-
-  return workspaceRoot
 }
 
 function rewriteBootstrapImports(code: string, replacements: Record<string, string>): string {
