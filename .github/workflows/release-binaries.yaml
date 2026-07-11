@@ -84,6 +84,13 @@ jobs:
             --bun-target ${{ matrix.bun_target }} \
             --oxc-binding ${{ matrix.oxc_binding }}
 
+      - name: Copy executable to workspace target
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/${{ matrix.target }}
+          cp packages/cli/target/${{ matrix.target }}/${{ matrix.executable }} target/${{ matrix.target }}/${{ matrix.executable }}
+
       - name: Decode macOS signing certificate
         if: runner.os == 'macOS'
         env:
