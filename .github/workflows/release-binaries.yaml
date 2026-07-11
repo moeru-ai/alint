@@ -61,28 +61,22 @@ jobs:
             executable: alint.exe
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v6
+      - uses: pnpm/action-setup@v6
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: lts/*
           cache: pnpm
 
-      - name: Set up Bun
-        uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
-      - name: Install dependencies
-        run: pnpm install
+      - run: pnpm install
 
-      - name: Build packages
-        run: pnpm run build
+      - run: pnpm run build
 
       - name: Install target oxc-parser binding
         shell: bash
@@ -93,14 +87,13 @@ jobs:
 
       - name: Build executable
         shell: bash
-        env:
-          ALINT_BINARY_OUTFILE: target/${{ matrix.target }}/${{ matrix.executable }}
-          ALINT_BINARY_TARGET: ${{ matrix.target }}
-          ALINT_BUN_TARGET: ${{ matrix.bun_target }}
-          ALINT_OXC_BINDING: ${{ matrix.oxc_binding }}
         run: |
           set -euo pipefail
-          pnpm -F @alint-js/cli build:binary
+          pnpm -F @alint-js/cli build:binary -- \
+            --outfile target/${{ matrix.target }}/${{ matrix.executable }} \
+            --target ${{ matrix.target }} \
+            --bun-target ${{ matrix.bun_target }} \
+            --oxc-binding ${{ matrix.oxc_binding }}
 
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
