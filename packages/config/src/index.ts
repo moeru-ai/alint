@@ -30,6 +30,11 @@ export type {
   StaticPluginReference,
   StaticPluginResolver,
 } from './plugins/types'
+export { verifyExtractedPluginPackage } from './plugins/verify'
+export type {
+  VerifiedPluginPackage,
+  VerifyExtractedPluginPackageOptions,
+} from './plugins/verify'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'
