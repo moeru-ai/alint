@@ -1,15 +1,22 @@
 import type { ListFilesOptions } from './list'
 
 import { readFile } from 'node:fs/promises'
-import { relative } from 'node:path'
+import { relative, resolve } from 'node:path'
 
 import { listFiles } from './list'
 
 const maxSearchResults = 24
 const maxSearchBytesPerFile = 200_000
 
-export async function searchFiles(cwd: string, query: string, options: ListFilesOptions = {}): Promise<string> {
-  const files = await listFiles(cwd, options)
+export interface SearchOptions extends ListFilesOptions {
+  directory?: string
+}
+
+export async function searchFiles(cwd: string, query: string, options: SearchOptions = {}): Promise<string> {
+  // Scope the walk to `directory` when given, but keep reported paths relative to
+  // `cwd` so callers see stable project-root paths regardless of the search root.
+  const root = resolve(cwd, options.directory ?? '.')
+  const files = await listFiles(root, options)
 
   return files
     .filter(file => relative(cwd, file).includes(query))
@@ -18,8 +25,9 @@ export async function searchFiles(cwd: string, query: string, options: ListFiles
     .join('\n')
 }
 
-export async function searchInFiles(cwd: string, query: string, options: ListFilesOptions = {}): Promise<string> {
-  const files = await listFiles(cwd, options)
+export async function searchInFiles(cwd: string, query: string, options: SearchOptions = {}): Promise<string> {
+  const root = resolve(cwd, options.directory ?? '.')
+  const files = await listFiles(root, options)
   const snippets: string[] = []
 
   for (const file of files) {

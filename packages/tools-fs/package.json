@@ -1,7 +1,7 @@
 {
-  "name": "@alint-js/plugin-example-rust",
+  "name": "@alint-js/tools-fs",
   "type": "module",
-  "private": true,
+  "version": "0.0.11",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -17,13 +17,8 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
-    "@alint-js/tools-fs": "workspace:*",
-    "@moeru/std": "catalog:",
-    "@valibot/to-json-schema": "catalog:",
-    "valibot": "catalog:",
-    "xsai": "catalog:"
+    "tinyglobby": "catalog:"
   },
   "devDependencies": {
     "tsdown": "catalog:",

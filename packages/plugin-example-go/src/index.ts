@@ -11,7 +11,7 @@ export {
   responsibilityBoundaryPrompt,
   responsibilityBoundaryResponseSchema,
 } from './rules/responsibility-boundary'
-export { createTools } from './tools'
+export { createTools } from '@alint-js/tools-fs'
 
 export function createGoPlugin() {
   return definePlugin({

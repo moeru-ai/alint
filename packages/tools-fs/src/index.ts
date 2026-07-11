@@ -1,16 +1,24 @@
 import type { AgentTool } from '@alint-js/core/agent'
 
-import type { ListFilesOptions } from './list'
+import type { SearchOptions } from './search'
 
 import { relative, resolve } from 'node:path'
 
-import { listFiles } from './list'
+import { DEFAULT_IGNORE_PATTERNS, listFiles, toStringArray } from './list'
 import { readFile } from './read'
 import { searchFiles, searchInFiles } from './search'
 
-export { listFiles, readFile, searchFiles, searchInFiles }
+export type { ListFilesOptions } from './list'
+export type { SearchOptions } from './search'
+export { DEFAULT_IGNORE_PATTERNS, listFiles, readFile, searchFiles, searchInFiles, toStringArray }
 
-export function createTools(cwd: string): AgentTool[] {
+export interface CreateToolsOptions {
+  ignore?: readonly string[] | string
+}
+
+export function createTools(cwd: string, options: CreateToolsOptions = {}): AgentTool[] {
+  const baseIgnore = options.ignore === undefined ? DEFAULT_IGNORE_PATTERNS : toStringArray(options.ignore)
+
   return [
     {
       description: 'Read a UTF-8 text file. The path may be relative to the project root or absolute.',
@@ -28,8 +36,9 @@ export function createTools(cwd: string): AgentTool[] {
     {
       description: 'List files under a directory with optional glob patterns and ignore patterns.',
       execute: async (input) => {
-        const dir = resolve(cwd, getStringProperty(input, 'directory') ?? '.')
-        const files = await listFiles(dir, getListOptions(input))
+        const listOptions = getListOptions(input, baseIgnore)
+        const dir = resolve(cwd, listOptions.directory ?? '.')
+        const files = await listFiles(dir, listOptions)
 
         return files.map(path => relative(cwd, path)).join('\n')
       },
@@ -38,13 +47,13 @@ export function createTools(cwd: string): AgentTool[] {
     },
     {
       description: 'Search listed file paths by substring. Use search_in_files to search file contents.',
-      execute: input => searchFiles(cwd, getRequiredStringProperty(input, 'query'), getListOptions(input)),
+      execute: input => searchFiles(cwd, getRequiredStringProperty(input, 'query'), getListOptions(input, baseIgnore)),
       name: 'search_files',
       parameters: fileSearchParameters(true),
     },
     {
       description: 'Search file contents by literal substring and return path:line snippets.',
-      execute: input => searchInFiles(cwd, getRequiredStringProperty(input, 'query'), getListOptions(input)),
+      execute: input => searchInFiles(cwd, getRequiredStringProperty(input, 'query'), getListOptions(input, baseIgnore)),
       name: 'search_in_files',
       parameters: fileSearchParameters(true),
     },
@@ -65,9 +74,10 @@ function fileSearchParameters(requiresQuery: boolean): Record<string, unknown> {
   }
 }
 
-function getListOptions(input: unknown): ListFilesOptions {
+function getListOptions(input: unknown, baseIgnore: readonly string[]): SearchOptions {
   return {
-    ignore: getStringOrStringArrayProperty(input, 'ignore'),
+    directory: getStringProperty(input, 'directory'),
+    ignore: [...baseIgnore, ...toStringArray(getStringOrStringArrayProperty(input, 'ignore'))],
     patterns: getStringOrStringArrayProperty(input, 'patterns'),
   }
 }

@@ -1,4 +1,7 @@
+import type { AgentTool } from '@alint-js/core/agent'
+
 import { definePlugin } from '@alint-js/core'
+import { createTools as createFsTools, DEFAULT_IGNORE_PATTERNS } from '@alint-js/tools-fs'
 
 import { pythonSemanticBoundaryRule } from './rules/semantic-boundary'
 import { pythonTypedArtifactBoundaryRule } from './rules/typed-artifact-boundary'
@@ -19,8 +22,6 @@ export {
   pythonTypedArtifactBoundaryResponseSchema,
   reportPythonTypedArtifactBoundaryFindings,
 } from './rules/typed-artifact-boundary'
-export { createTools } from './tools'
-
 export function createPythonPlugin() {
   return definePlugin({
     configs: {
@@ -40,6 +41,10 @@ export function createPythonPlugin() {
       'typed-artifact-boundary': pythonTypedArtifactBoundaryRule,
     },
   })
+}
+
+export function createTools(cwd: string): AgentTool[] {
+  return createFsTools(cwd, { ignore: [...DEFAULT_IGNORE_PATTERNS, '**/.venv/**', '**/__pycache__/**'] })
 }
 
 export const pythonPlugin = createPythonPlugin()
