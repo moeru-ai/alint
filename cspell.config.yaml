@@ -37,6 +37,7 @@ words:
   - openrouter
   - oxlint
   - picklist
+  - pycache
   - qwen
   - RAII
   - referer
@@ -52,6 +53,7 @@ words:
   - unjs
   - unocss
   - Unrefable
+  - venv
   - xsai
 ignoreWords: []
 import: []

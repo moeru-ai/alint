@@ -7,6 +7,7 @@ export default defineConfig({
       'packages/core',
       'packages/config',
       'packages/cli',
+      'packages/tools-fs',
       'packages/plugin-example',
       'packages/plugin-example-agent',
       'packages/plugin-example-go',

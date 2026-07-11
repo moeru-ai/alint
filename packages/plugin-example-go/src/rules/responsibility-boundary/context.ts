@@ -4,9 +4,8 @@ import { readdir } from 'node:fs/promises'
 import { basename, dirname, relative, resolve } from 'node:path'
 
 import { createApeiraAdapter } from '@alint-js/agent-apeira'
+import { createTools } from '@alint-js/tools-fs'
 import { errorMessageFrom } from '@moeru/std/error'
-
-import { createTools } from '../../tools'
 
 const maxContextSymbols = 16
 const contextScoutAgent = createApeiraAdapter()

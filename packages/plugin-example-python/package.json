@@ -18,9 +18,9 @@
   },
   "dependencies": {
     "@alint-js/core": "workspace:*",
+    "@alint-js/tools-fs": "workspace:*",
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
-    "tinyglobby": "catalog:",
     "valibot": "catalog:",
     "xsai": "catalog:"
   },

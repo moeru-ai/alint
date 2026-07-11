@@ -1,7 +1,8 @@
 import { glob } from 'tinyglobby'
 
 const maxListedFiles = 160
-const defaultIgnorePatterns = [
+
+export const DEFAULT_IGNORE_PATTERNS: readonly string[] = [
   '**/.git/**',
   '**/build/**',
   '**/dist/**',
@@ -19,10 +20,7 @@ export async function listFiles(root: string, options: ListFilesOptions = {}): P
     return (await glob(options.patterns ?? '**/*', {
       absolute: true,
       cwd: root,
-      ignore: [
-        ...defaultIgnorePatterns,
-        ...toStringArray(options.ignore),
-      ],
+      ignore: toStringArray(options.ignore),
       onlyFiles: true,
     })).slice(0, maxListedFiles)
   }

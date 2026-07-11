@@ -1,6 +1,7 @@
-import { definePlugin } from '@alint-js/core'
+import type { AgentTool } from '@alint-js/core/agent'
 
-export { createTools } from './tools'
+import { definePlugin } from '@alint-js/core'
+import { createTools as createFsTools, DEFAULT_IGNORE_PATTERNS } from '@alint-js/tools-fs'
 
 export function createRustPlugin() {
   return definePlugin({
@@ -15,6 +16,10 @@ export function createRustPlugin() {
     },
     rules: {},
   })
+}
+
+export function createTools(cwd: string): AgentTool[] {
+  return createFsTools(cwd, { ignore: [...DEFAULT_IGNORE_PATTERNS, '**/target/**'] })
 }
 
 export const rustPlugin = createRustPlugin()
