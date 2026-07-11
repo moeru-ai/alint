@@ -1,7 +1,11 @@
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
 import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { promisify } from 'node:util'
+import { gzip } from 'node:zlib'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
 import { describe, expect, it } from 'vitest'
@@ -11,6 +15,8 @@ import packageJson from '../../package.json'
 import { executeCli } from './cli'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId } from './provider-registry'
+
+const gzipAsync = promisify(gzip)
 
 interface TestIo {
   cwd: string
@@ -30,6 +36,51 @@ function clearCiEnv(env: NodeJS.ProcessEnv | undefined): void {
   for (const key of ['BUILDKITE', 'CI', 'CIRCLECI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TF_BUILD']) {
     delete env[key]
   }
+}
+
+function createStaticPluginIntegrity(tarball: Buffer): string {
+  return `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+}
+
+async function createStaticPluginTarball(files: Record<string, string>): Promise<Buffer> {
+  const chunks: Buffer[] = []
+
+  for (const [name, content] of Object.entries(files)) {
+    const body = Buffer.from(content)
+    chunks.push(createTarHeader(name, body.byteLength))
+    chunks.push(body)
+    chunks.push(Buffer.alloc((512 - (body.byteLength % 512)) % 512))
+  }
+
+  chunks.push(Buffer.alloc(1024))
+  return gzipAsync(Buffer.concat(chunks))
+}
+
+function createTarHeader(name: string, size: number): Buffer {
+  const header = Buffer.alloc(512)
+
+  header.write(name, 0, 100, 'utf8')
+  writeTarOctal(header, 0o644, 100, 8)
+  writeTarOctal(header, 0, 108, 8)
+  writeTarOctal(header, 0, 116, 8)
+  writeTarOctal(header, size, 124, 12)
+  writeTarOctal(header, 0, 136, 12)
+  header.fill(0x20, 148, 156)
+  header.write('0', 156, 1, 'ascii')
+  header.set([0x75, 0x73, 0x74, 0x61, 0x72], 257)
+  header.write('00', 263, 2, 'ascii')
+
+  let checksum = 0
+
+  for (const byte of header) {
+    checksum += byte
+  }
+
+  header.write(checksum.toString(8).padStart(6, '0'), 148, 6, 'ascii')
+  header[154] = 0
+  header[155] = 0x20
+
+  return header
 }
 
 async function createTestIo(): Promise<TestIo> {
@@ -94,6 +145,52 @@ async function withModelsServer(
       })
     }),
     endpoint: `http://127.0.0.1:${address.port}/v1/`,
+  }
+}
+
+async function withStaticPluginRegistry(
+  name: string,
+  version: string,
+  tarball: Buffer,
+  integrity: string,
+): Promise<{ close: () => Promise<void>, registry: string }> {
+  let registry = ''
+  const server = createServer((request, response) => {
+    if (request.url?.toLowerCase() === `/@${name.slice(1).replace('/', '%2f')}`) {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({
+        versions: {
+          [version]: {
+            dist: {
+              integrity,
+              tarball: `${registry}plugin.tgz`,
+            },
+          },
+        },
+      }))
+      return
+    }
+
+    response.setHeader('content-type', 'application/octet-stream')
+    response.end(tarball)
+  })
+
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve)
+  })
+  const address = server.address()
+
+  if (address === null || typeof address === 'string') {
+    throw new Error('Expected TCP test server address.')
+  }
+
+  registry = `http://127.0.0.1:${address.port}/`
+
+  return {
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close(error => error ? reject(error) : resolve())
+    }),
+    registry,
   }
 }
 
@@ -239,6 +336,11 @@ export default [
   },
 ]
 `)
+}
+
+function writeTarOctal(buffer: Buffer, value: number, offset: number, length: number): void {
+  buffer.write(value.toString(8).padStart(length - 1, '0'), offset, length - 1, 'ascii')
+  buffer[offset + length - 1] = 0
 }
 
 describe('createProviderId', () => {
@@ -1189,6 +1291,81 @@ export default [
 
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('No static plugins found.')
+  })
+
+  it('installs a static plugin package and runs a rule from the lock store', async () => {
+    const io = await createTestIo()
+    const tarball = await createStaticPluginTarball({
+      'package/dist/index.mjs': `
+export default {
+  rules: {
+    "semantic-boundary": {
+      create: ctx => ({
+        onTarget: target => {
+          ctx.report({
+            filePath: target.file.path,
+            message: "checked static plugin",
+          })
+        },
+      }),
+    },
+  },
+}
+`,
+      'package/package.json': JSON.stringify({
+        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        name: '@alint-js/plugin-python',
+        version: '0.3.1',
+      }),
+    })
+    const integrity = createStaticPluginIntegrity(tarball)
+    const server = await withStaticPluginRegistry('@alint-js/plugin-python', '0.3.1', tarball, integrity)
+
+    try {
+      await writeFile(join(io.cwd, 'demo.py'), 'def load(): pass\n')
+      await writeFile(join(io.cwd, 'alint.config.toml'), `
+[[config.group]]
+files = [ "**/*.py" ]
+language = "text/plain"
+
+[config.group.plugins]
+python = "@alint-js/plugin-python@0.3.1"
+
+[config.group.rules]
+"python/semantic-boundary" = "warn"
+`)
+
+      const installExitCode = await executeCli([
+        'node',
+        'alint',
+        'plugin',
+        'install',
+        '--registry',
+        server.registry,
+      ], io)
+
+      expect(installExitCode).toBe(0)
+      expect(io.stdoutText).toContain('Installed @alint-js/plugin-python@0.3.1 as python')
+
+      io.stdoutText = ''
+      const lintExitCode = await executeCli([
+        'node',
+        'alint',
+        '--format',
+        'json',
+        'demo.py',
+      ], io)
+      const output = JSON.parse(io.stdoutText)
+
+      expect(lintExitCode).toBe(1)
+      expect(output.diagnostics[0]).toMatchObject({
+        message: 'checked static plugin',
+        ruleId: 'python/semantic-boundary',
+      })
+    }
+    finally {
+      await server.close()
+    }
   })
 
   it('rejects extra plugin install arguments', async () => {
