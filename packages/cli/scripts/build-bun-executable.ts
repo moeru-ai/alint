@@ -1,10 +1,11 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { dirname, join, relative, sep } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { findWorkspaceDir } from '@pnpm/find-workspace-dir'
 import { getPackageInfo, resolveModule } from 'local-pkg'
 import { findDynamicImports, findStaticImports, parseStaticImport } from 'mlly'
+import { relative } from 'pathe'
 import { x } from 'tinyexec'
 
 export interface BuildBunExecutableOptions {
@@ -31,8 +32,8 @@ export async function buildBunExecutable(options: BuildBunExecutableOptions): Pr
     // the binding file is a direct static import, so the generated bootstrap
     // must import the platform binding file before importing the CLI entry.
     await writeFile(entryPath, rewriteBootstrapImports(await readFile(templatePath, 'utf8'), {
-      __ALINT_CLI_ENTRY__: toImportSpecifier(relative(tempDir, cliEntryPath)),
-      __ALINT_OXC_BINDING__: toImportSpecifier(relative(tempDir, bindingPath)),
+      __ALINT_CLI_ENTRY__: relative(tempDir, cliEntryPath),
+      __ALINT_OXC_BINDING__: relative(tempDir, bindingPath),
     }))
 
     await mkdir(dirname(options.outfile), { recursive: true })
@@ -126,10 +127,4 @@ function rewriteBootstrapImports(code: string, replacements: Record<string, stri
   }
 
   return rewritten
-}
-
-function toImportSpecifier(path: string): string {
-  const normalized = path.split(sep).join('/')
-
-  return normalized.startsWith('.') ? normalized : `./${normalized}`
 }
