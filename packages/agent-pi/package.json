@@ -1,7 +1,7 @@
 {
   "name": "@alint-js/agent-pi",
   "type": "module",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
