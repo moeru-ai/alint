@@ -1,0 +1,231 @@
+name: Release Binaries
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-26
+            target: aarch64-apple-darwin
+            bun_target: bun-darwin-arm64
+            oxc_binding: darwin-arm64
+            archive: alint-aarch64-apple-darwin.tar.gz
+            executable: alint
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+            bun_target: bun-darwin-x64
+            oxc_binding: darwin-x64
+            archive: alint-x86_64-apple-darwin.tar.gz
+            executable: alint
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            bun_target: bun-linux-x64
+            oxc_binding: linux-x64-gnu
+            archive: alint-x86_64-unknown-linux-gnu.tar.gz
+            executable: alint
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            bun_target: bun-linux-arm64
+            oxc_binding: linux-arm64-gnu
+            archive: alint-aarch64-unknown-linux-gnu.tar.gz
+            executable: alint
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            bun_target: bun-linux-x64-musl
+            oxc_binding: linux-x64-musl
+            archive: alint-x86_64-unknown-linux-musl.tar.gz
+            executable: alint
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            bun_target: bun-linux-arm64-musl
+            oxc_binding: linux-arm64-musl
+            archive: alint-aarch64-unknown-linux-musl.tar.gz
+            executable: alint
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            bun_target: bun-windows-x64
+            oxc_binding: win32-x64-msvc
+            archive: alint-x86_64-pc-windows-msvc.zip
+            executable: alint.exe
+
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: pnpm install
+      - run: pnpm run build
+
+      - name: Build executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm -F @alint-js/cli build:binary -- \
+            --outfile target/${{ matrix.target }}/${{ matrix.executable }} \
+            --target ${{ matrix.target }} \
+            --bun-target ${{ matrix.bun_target }} \
+            --oxc-binding ${{ matrix.oxc_binding }}
+
+      - name: Decode macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+        run: printf "%s" "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > alint-developer-id-application.p12
+
+      - name: Create macOS signing keychain
+        if: runner.os == 'macOS'
+        run: |
+          security create-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
+          security set-keychain-settings -lut 21600 "$RUNNER_TEMP/alint-signing.keychain-db"
+          security unlock-keychain -p alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
+
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+        run: |
+          security import alint-developer-id-application.p12 -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$RUNNER_TEMP/alint-signing.keychain-db"
+          security list-keychains -d user -s "$RUNNER_TEMP/alint-signing.keychain-db"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k alint-signing "$RUNNER_TEMP/alint-signing.keychain-db"
+
+      - name: Sign macOS executable
+        if: runner.os == 'macOS'
+        run: |
+          identity="$(security find-identity -v -p codesigning "$RUNNER_TEMP/alint-signing.keychain-db" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -n 1)"
+          test -n "$identity"
+          codesign --force --timestamp --options runtime \
+            --sign "$identity" \
+            target/${{ matrix.target }}/${{ matrix.executable }}
+
+      - name: Clean up macOS signing keychain
+        if: runner.os == 'macOS' && always()
+        run: security delete-keychain "$RUNNER_TEMP/alint-signing.keychain-db" || true
+
+      - name: Verify
+        run: target/${{ matrix.target }}/${{ matrix.executable }} --help
+
+      - name: Create archive
+        if: runner.os != 'Windows'
+        run: tar -czf ${{ matrix.archive }} -C target/${{ matrix.target }} ${{ matrix.executable }}
+
+      - name: Create archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path "target/${{ matrix.target }}/${{ matrix.executable }}" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Calculate hash
+        if: runner.os != 'Windows'
+        run: shasum -a 256 ${{ matrix.archive }} | awk '{ print $1 }' > ${{ matrix.archive }}.sha256
+
+      - name: Calculate hash
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-Content -Path "${{ matrix.archive }}.sha256" -Value (Get-FileHash -Algorithm SHA256 "${{ matrix.archive }}").Hash.ToLower()
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.archive }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  notarize-macos:
+    name: Notarize macOS ${{ matrix.archive }}
+    needs: build
+    runs-on: macos-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - archive: alint-aarch64-apple-darwin.tar.gz
+          - archive: alint-x86_64-apple-darwin.tar.gz
+
+    steps:
+      - name: Download macOS artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ matrix.archive }}
+
+      - name: Set up notarization credentials
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+        run: |
+          xcrun notarytool store-credentials alint-notary \
+            --apple-id "$APPLE_ID" \
+            --team-id "$APPLE_TEAM_ID" \
+            --password "$APPLE_APP_SPECIFIC_PASSWORD"
+
+      - name: Submit executable for notarization
+        run: |
+          set -euo pipefail
+          tar -xzf ${{ matrix.archive }}
+          zip alint-notary.zip alint
+          xcrun notarytool submit alint-notary.zip --keychain-profile alint-notary --wait
+          tar -czf ${{ matrix.archive }} alint
+          shasum -a 256 ${{ matrix.archive }} | awk '{ print $1 }' > ${{ matrix.archive }}.sha256
+
+      - name: Upload notarized macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: notarized-${{ matrix.archive }}
+          path: |
+            ${{ matrix.archive }}
+            ${{ matrix.archive }}.sha256
+
+  publish:
+    name: Publish release artifacts
+    needs: [build, notarize-macos]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Prefer notarized macOS archives
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find artifacts -type f \( -name 'alint-*' -o -name '*.sha256' \) -print0 | while IFS= read -r -d '' file; do
+            case "$file" in
+              artifacts/notarized-*/*)
+                cp "$file" release/
+                ;;
+              *apple-darwin*)
+                if [ ! -e "release/$(basename "$file")" ]; then
+                  cp "$file" release/
+                fi
+                ;;
+              *)
+                cp "$file" release/
+                ;;
+            esac
+          done
+
+      - name: Upload to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${GITHUB_REF_NAME}" release/* --clobber

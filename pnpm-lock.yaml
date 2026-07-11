@@ -27,6 +27,9 @@ catalogs:
     '@moeru/std':
       specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.18
+    '@pnpm/find-workspace-dir':
+      specifier: ^1000.1.5
+      version: 1000.1.5
     '@smithy/node-http-handler':
       specifier: ^4.9.1
       version: 4.9.1
@@ -72,9 +75,15 @@ catalogs:
     knip:
       specifier: ^6.21.0
       version: 6.21.0
+    local-pkg:
+      specifier: ^1.2.1
+      version: 1.2.1
     minimatch:
       specifier: ^10.2.5
       version: 10.2.5
+    mlly:
+      specifier: ^1.8.2
+      version: 1.8.2
     nano-staged:
       specifier: ^1.0.2
       version: 1.0.2
@@ -108,6 +117,9 @@ catalogs:
     taze:
       specifier: ^19.14.1
       version: 19.14.1
+    tinyexec:
+      specifier: ^1.2.4
+      version: 1.2.4
     tinyglobby:
       specifier: ^0.2.17
       version: 0.2.17
@@ -353,9 +365,21 @@ importers:
         specifier: 'catalog:'
         version: 3.1.0
     devDependencies:
+      '@pnpm/find-workspace-dir':
+        specifier: 'catalog:'
+        version: 1000.1.5
       '@types/node':
         specifier: 'catalog:'
         version: 26.0.1
+      local-pkg:
+        specifier: 'catalog:'
+        version: 1.2.1
+      mlly:
+        specifier: 'catalog:'
+        version: 1.8.2
+      tinyexec:
+        specifier: 'catalog:'
+        version: 1.2.4
       tsdown:
         specifier: 'catalog:'
         version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
@@ -1913,6 +1937,18 @@ packages:
   '@pkgr/core@0.3.6':
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
     engines: {node: ^14.18.0 || >=16.0.0}
+
+  '@pnpm/constants@1001.3.1':
+    resolution: {integrity: sha512-2hf0s4pVrVEH8RvdJJ7YRKjQdiG8m0iAT26TTqXnCbK30kKwJW69VLmP5tED5zstmDRXcOeH5eRcrpkdwczQ9g==}
+    engines: {node: '>=18.12'}
+
+  '@pnpm/error@1000.1.0':
+    resolution: {integrity: sha512-Dqc2IJJPjUatwc9Letw+vG29rnaMrDGi5g6WCx1HiZYm0obXbTmLygeRafMbgf+sLKXrWE1shOeiayQuczBdoA==}
+    engines: {node: '>=18.12'}
+
+  '@pnpm/find-workspace-dir@1000.1.5':
+    resolution: {integrity: sha512-r1WzYXBD8cqlglOi4ilN9BphX74mJmH2hhiogzYbcNCHhtXnG7tw/9Iq54UGZ+cpDkgGHjL0xLwj9QLUoKJxmg==}
+    engines: {node: '>=18.12'}
 
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
@@ -6071,6 +6107,17 @@ snapshots:
     optional: true
 
   '@pkgr/core@0.3.6': {}
+
+  '@pnpm/constants@1001.3.1': {}
+
+  '@pnpm/error@1000.1.0':
+    dependencies:
+      '@pnpm/constants': 1001.3.1
+
+  '@pnpm/find-workspace-dir@1000.1.5':
+    dependencies:
+      '@pnpm/error': 1000.1.0
+      find-up: 5.0.0
 
   '@polka/url@1.0.0-next.29':
     optional: true

@@ -9,7 +9,7 @@
     "build": "pnpm -r run build",
     "test": "vitest",
     "test:run": "vitest run",
-    "docs:sync-readme": "node scripts/sync-cli-readme.mjs",
+    "docs:sync-readme": "tsx scripts/sync-cli-readme.ts",
     "docs:toc": "doctoc --github --title \"## Table of Contents\" --maxlevel=2 README.md",
     "docs:update": "pnpm docs:toc && pnpm docs:sync-readme",
     "lint:fix": "eslint --cache . --fix",

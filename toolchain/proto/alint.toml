@@ -1,0 +1,28 @@
+name = "alint"
+type = "cli"
+
+[platform.linux]
+download-file = "alint-{arch}-unknown-linux-{libc}.tar.gz"
+checksum-file = "alint-{arch}-unknown-linux-{libc}.tar.gz.sha256"
+exe-path = "alint"
+
+[platform.macos]
+download-file = "alint-{arch}-apple-darwin.tar.gz"
+checksum-file = "alint-{arch}-apple-darwin.tar.gz.sha256"
+exe-path = "alint"
+
+[platform.windows]
+download-file = "alint-{arch}-pc-windows-msvc.zip"
+checksum-file = "alint-{arch}-pc-windows-msvc.zip.sha256"
+exe-path = "alint.exe"
+
+[install]
+download-url = "https://github.com/alint-js/alint/releases/download/v{version}/{download_file}"
+checksum-url = "https://github.com/alint-js/alint/releases/download/v{version}/{checksum_file}"
+
+[install.exes.alint]
+exe-path = "alint"
+primary = true
+
+[resolve]
+git-url = "https://github.com/alint-js/alint"
