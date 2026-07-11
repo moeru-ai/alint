@@ -5,6 +5,8 @@ import { resolve } from 'node:path'
 import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
+import { normalizeLoadedAlintConfig } from './static'
+
 interface C12LoadConfigResult {
   _configFile?: string
 }
@@ -13,7 +15,7 @@ export async function loadAlintConfig(
   cwd: string,
   configFile?: string,
 ): Promise<AlintConfig> {
-  const result = await loadConfig<AlintConfig>({
+  const result = await loadConfig({
     configFile,
     cwd,
     dotenv: true,
@@ -37,5 +39,7 @@ export async function loadAlintConfig(
     return []
   }
 
-  return result.config ?? []
+  return normalizeLoadedAlintConfig(result.config, {
+    configFile: (result as C12LoadConfigResult)._configFile,
+  })
 }
