@@ -72,23 +72,12 @@ jobs:
           bun-version: latest
 
       - name: Configure pnpm target arch
-        shell: bash
         run: |
-          case "${{ matrix.oxc_binding }}" in
-            darwin-arm64) pnpm_os=darwin; pnpm_cpu=arm64; pnpm_libc=current ;;
-            darwin-x64) pnpm_os=darwin; pnpm_cpu=x64; pnpm_libc=current ;;
-            linux-x64-gnu) pnpm_os=linux; pnpm_cpu=x64; pnpm_libc=glibc ;;
-            linux-arm64-gnu) pnpm_os=linux; pnpm_cpu=arm64; pnpm_libc=glibc ;;
-            linux-x64-musl) pnpm_os=linux; pnpm_cpu=x64; pnpm_libc=musl ;;
-            linux-arm64-musl) pnpm_os=linux; pnpm_cpu=arm64; pnpm_libc=musl ;;
-            win32-x64-msvc) pnpm_os=win32; pnpm_cpu=x64; pnpm_libc=current ;;
-          esac
-
-          cat >> pnpm-workspace.yaml <<YAML
+          cat >> pnpm-workspace.yaml <<'YAML'
           supportedArchitectures:
-            os: [current, $pnpm_os]
-            cpu: [current, $pnpm_cpu]
-            libc: [current, $pnpm_libc]
+            os: [current, darwin, linux, win32]
+            cpu: [current, x64, arm64]
+            libc: [current, glibc, musl]
           YAML
 
       - run: pnpm install
