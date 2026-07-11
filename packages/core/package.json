@@ -1,7 +1,7 @@
 {
   "name": "@alint-js/core",
   "type": "module",
-  "version": "0.0.17",
+  "version": "0.0.18",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
