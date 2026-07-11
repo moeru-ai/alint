@@ -7,6 +7,7 @@
       "types": "./dist/index.d.mts",
       "default": "./dist/index.mjs"
     },
+    "./schemas/alint-config.schema.json": "./dist/schemas/alint-config.schema.json",
     "./package.json": "./package.json"
   },
   "files": [

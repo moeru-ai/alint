@@ -1,0 +1,176 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://alint.dev/schemas/alint-config.schema.json",
+  "title": "alint static config",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/flatConfig"
+    },
+    {
+      "additionalProperties": false,
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": false,
+          "properties": {
+            "group": {
+              "$ref": "#/$defs/flatConfig"
+            }
+          },
+          "required": [
+            "group"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "config"
+      ],
+      "type": "object"
+    }
+  ],
+  "$defs": {
+    "flatConfig": {
+      "items": {
+        "$ref": "#/$defs/configInput"
+      },
+      "type": "array"
+    },
+    "configInput": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/configGroup"
+        },
+        {
+          "items": {
+            "$ref": "#/$defs/configInput"
+          },
+          "type": "array"
+        }
+      ]
+    },
+    "configGroup": {
+      "additionalProperties": false,
+      "properties": {
+        "basePath": {
+          "type": "string"
+        },
+        "files": {
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "extends": {
+          "items": {
+            "oneOf": [
+              {
+                "type": "string"
+              },
+              {
+                "$ref": "#/$defs/configInput"
+              }
+            ]
+          },
+          "type": "array"
+        },
+        "ignore": {
+          "additionalProperties": false,
+          "properties": {
+            "gitignore": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "ignores": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "language": {
+          "type": "string"
+        },
+        "languageOptions": {
+          "type": "object"
+        },
+        "linterOptions": {
+          "additionalProperties": false,
+          "properties": {
+            "noInlineConfig": {
+              "type": "boolean"
+            },
+            "reportUnusedDisableDirectives": {
+              "$ref": "#/$defs/ruleSeverity"
+            }
+          },
+          "type": "object"
+        },
+        "name": {
+          "type": "string"
+        },
+        "plugins": {
+          "additionalProperties": {
+            "pattern": "^(@[^/]+/[^@]+|[^@/]+)@(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\\+[0-9A-Za-z-]+(?:\\.[0-9A-Za-z-]+)*)?$",
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "processor": {
+          "type": "string"
+        },
+        "rules": {
+          "additionalProperties": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ruleSeverity"
+              },
+              {
+                "items": false,
+                "prefixItems": [
+                  {
+                    "$ref": "#/$defs/ruleSeverity"
+                  }
+                ],
+                "maxItems": 1,
+                "minItems": 1,
+                "type": "array"
+              }
+            ]
+          },
+          "type": "object"
+        },
+        "runner": {
+          "type": "object"
+        },
+        "settings": {
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "ruleSeverity": {
+      "enum": [
+        "off",
+        "warn",
+        "error",
+        0,
+        1,
+        2
+      ]
+    }
+  }
+}
