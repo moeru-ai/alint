@@ -20,6 +20,7 @@
   "dependencies": {
     "@alint-js/core": "workspace:*",
     "c12": "catalog:",
+    "jiti": "catalog:",
     "pathe": "catalog:",
     "smol-toml": "catalog:",
     "xdg-basedir": "catalog:"

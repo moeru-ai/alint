@@ -72,6 +72,9 @@ catalogs:
     gitignore-fs:
       specifier: ^2.2.3
       version: 2.2.3
+    jiti:
+      specifier: ^2.7.0
+      version: 2.7.0
     knip:
       specifier: ^6.21.0
       version: 6.21.0
@@ -398,6 +401,9 @@ importers:
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)
+      jiti:
+        specifier: 'catalog:'
+        version: 2.7.0
       pathe:
         specifier: 'catalog:'
         version: 2.0.3

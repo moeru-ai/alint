@@ -30,6 +30,29 @@ export default [
     ])
   })
 
+  it('loads TypeScript-only config syntax through the bundled jiti transform', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-ts-transform-'))
+    await writeFile(join(cwd, 'alint.config.ts'), `
+const config = [
+  {
+    files: ['**/*.ts'],
+    rules: { 'review/typescript': 'warn' },
+  },
+] satisfies unknown[]
+
+export default config
+`)
+
+    const config = await loadAlintConfig(cwd)
+
+    expect(config).toEqual([
+      {
+        files: ['**/*.ts'],
+        rules: { 'review/typescript': 'warn' },
+      },
+    ])
+  })
+
   it('returns an empty flat config when no config file exists', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-missing-'))
     const config = await loadAlintConfig(cwd)
