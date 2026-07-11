@@ -38,7 +38,9 @@
   "devDependencies": {
     "@pnpm/find-workspace-dir": "catalog:",
     "@types/node": "catalog:",
+    "local-pkg": "catalog:",
     "mlly": "catalog:",
+    "tinyexec": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:vitest"

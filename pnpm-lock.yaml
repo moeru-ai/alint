@@ -75,6 +75,9 @@ catalogs:
     knip:
       specifier: ^6.21.0
       version: 6.21.0
+    local-pkg:
+      specifier: ^1.2.1
+      version: 1.2.1
     minimatch:
       specifier: ^10.2.5
       version: 10.2.5
@@ -114,6 +117,9 @@ catalogs:
     taze:
       specifier: ^19.14.1
       version: 19.14.1
+    tinyexec:
+      specifier: ^1.2.4
+      version: 1.2.4
     tinyglobby:
       specifier: ^0.2.17
       version: 0.2.17
@@ -362,9 +368,15 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.0.1
+      local-pkg:
+        specifier: 'catalog:'
+        version: 1.2.1
       mlly:
         specifier: 'catalog:'
         version: 1.8.2
+      tinyexec:
+        specifier: 'catalog:'
+        version: 1.2.4
       tsdown:
         specifier: 'catalog:'
         version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))

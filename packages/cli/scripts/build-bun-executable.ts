@@ -1,25 +1,17 @@
-import process from 'node:process'
-
-import { spawnSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createRequire } from 'node:module'
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { findWorkspaceDir } from '@pnpm/find-workspace-dir'
+import { getPackageInfoSync, resolveModule } from 'local-pkg'
 import { findDynamicImports, findStaticImports, parseStaticImport } from 'mlly'
+import { x } from 'tinyexec'
 
 export interface BuildBunExecutableOptions {
   bunTarget: string
   outfile: string
   oxcBinding: string
   target: string
-}
-
-const isCli = process.argv[1] === fileURLToPath(import.meta.url)
-
-if (isCli) {
-  await runCli(process.argv.slice(2))
 }
 
 export async function buildBunExecutable(options: BuildBunExecutableOptions): Promise<void> {
@@ -45,7 +37,7 @@ export async function buildBunExecutable(options: BuildBunExecutableOptions): Pr
 
     await mkdir(dirname(options.outfile), { recursive: true })
 
-    const result = spawnSync('bun', [
+    await x('bun', [
       'build',
       '--compile',
       `--target=${options.bunTarget}`,
@@ -53,43 +45,15 @@ export async function buildBunExecutable(options: BuildBunExecutableOptions): Pr
       '--outfile',
       options.outfile,
     ], {
-      stdio: 'inherit',
+      nodeOptions: {
+        stdio: 'inherit',
+      },
+      throwOnError: true,
     })
-
-    if (result.status !== 0) {
-      throw new Error(`Bun executable build failed with exit code ${result.status ?? 1}.`)
-    }
   }
   finally {
     await rm(tempDir, { force: true, recursive: true })
   }
-}
-
-function parseArgs(values: string[]): Map<string, string> {
-  const parsed = new Map<string, string>()
-
-  for (let index = 0; index < values.length; index += 1) {
-    const value = values[index]
-
-    if (!value.startsWith('--')) {
-      throw new Error(`Unexpected positional argument: ${value}`)
-    }
-
-    const [key, inlineValue] = value.slice(2).split('=', 2)
-    const nextValue = inlineValue ?? values[index + 1]
-
-    if (!nextValue || nextValue.startsWith('--')) {
-      throw new Error(`Missing value for --${key}`)
-    }
-
-    parsed.set(key, nextValue)
-
-    if (inlineValue === undefined) {
-      index += 1
-    }
-  }
-
-  return parsed
 }
 
 function parseDynamicImportSpecifier(expression: string): string | undefined {
@@ -114,21 +78,22 @@ function replaceImportSpecifier(code: string, specifier: string, replacement: st
   throw new Error(`Could not replace import specifier ${specifier}.`)
 }
 
-function requiredArg(args: Map<string, string>, name: string): string {
-  const value = args.get(name)
+function resolveBindingPath(root: string, binding: string): string {
+  const oxcPackage = getPackageInfoSync('oxc-parser', {
+    paths: [join(root, 'packages/core')],
+  })
 
-  if (!value) {
-    throw new Error(`Missing required argument --${name}`)
+  if (!oxcPackage) {
+    throw new Error('Could not resolve oxc-parser from @alint-js/core.')
   }
 
-  return value
-}
+  const bindingPath = resolveModule(`@oxc-parser/binding-${binding}`, {
+    paths: [oxcPackage.rootPath],
+  })
 
-function resolveBindingPath(root: string, binding: string): string {
-  const requireFromCore = createRequire(join(root, 'packages/core/package.json'))
-  const oxcPackageJson = requireFromCore.resolve('oxc-parser/package.json')
-  const requireFromOxc = createRequire(oxcPackageJson)
-  const bindingPath = requireFromOxc.resolve(`@oxc-parser/binding-${binding}`)
+  if (!bindingPath) {
+    throw new Error(`Could not resolve @oxc-parser/binding-${binding} from oxc-parser.`)
+  }
 
   if (!bindingPath.endsWith('.node')) {
     throw new TypeError(`Invalid @oxc-parser/binding-${binding} package entry.`)
@@ -184,17 +149,6 @@ function rewriteBootstrapImports(code: string, replacements: Record<string, stri
   }
 
   return rewritten
-}
-
-async function runCli(values: string[]): Promise<void> {
-  const args = parseArgs(values)
-
-  await buildBunExecutable({
-    bunTarget: requiredArg(args, 'bun-target'),
-    outfile: requiredArg(args, 'outfile'),
-    oxcBinding: requiredArg(args, 'oxc-binding'),
-    target: requiredArg(args, 'target'),
-  })
 }
 
 function toImportSpecifier(path: string): string {
