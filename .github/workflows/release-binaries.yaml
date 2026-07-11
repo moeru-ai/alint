@@ -123,27 +123,26 @@ jobs:
         if: runner.os == 'macOS' && always()
         run: security delete-keychain "$RUNNER_TEMP/alint-signing.keychain-db" || true
 
-      - name: Smoke test executable
-        shell: bash
-        run: |
-          set -euo pipefail
-          target/${{ matrix.target }}/${{ matrix.executable }} --help
+      - name: Verify
+        run: target/${{ matrix.target }}/${{ matrix.executable }} --help
 
-      - name: Package Unix archive
+      - name: Create archive
         if: runner.os != 'Windows'
-        shell: bash
-        run: |
-          set -euo pipefail
-          tar -czf ${{ matrix.archive }} -C target/${{ matrix.target }} ${{ matrix.executable }}
-          shasum -a 256 ${{ matrix.archive }} | awk '{ print $1 }' > ${{ matrix.archive }}.sha256
+        run: tar -czf ${{ matrix.archive }} -C target/${{ matrix.target }} ${{ matrix.executable }}
 
-      - name: Package Windows archive
+      - name: Create archive
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          Compress-Archive -Path "target/${{ matrix.target }}/${{ matrix.executable }}" -DestinationPath "${{ matrix.archive }}"
-          $hash = (Get-FileHash -Algorithm SHA256 "${{ matrix.archive }}").Hash.ToLower()
-          Set-Content -Path "${{ matrix.archive }}.sha256" -Value $hash
+        run: Compress-Archive -Path "target/${{ matrix.target }}/${{ matrix.executable }}" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Calculate hash
+        if: runner.os != 'Windows'
+        run: shasum -a 256 ${{ matrix.archive }} | awk '{ print $1 }' > ${{ matrix.archive }}.sha256
+
+      - name: Calculate hash
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Set-Content -Path "${{ matrix.archive }}.sha256" -Value (Get-FileHash -Algorithm SHA256 "${{ matrix.archive }}").Hash.ToLower()
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v7
