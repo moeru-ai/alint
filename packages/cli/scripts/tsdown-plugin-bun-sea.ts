@@ -15,7 +15,7 @@ export interface BuildBunExecutableOptions {
   target: string
 }
 
-export async function buildBunExecutable(options: BuildBunExecutableOptions): Promise<void> {
+export async function pluginBunSea(options: BuildBunExecutableOptions): Promise<void> {
   const root = (await findWorkspaceDir(fileURLToPath(new URL('../../..', import.meta.url))))!
   const bindingPath = await resolveBindingPath(root, options.oxcBinding)
 

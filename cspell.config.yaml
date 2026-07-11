@@ -28,9 +28,10 @@ words:
   - injeca
   - lifecycles
   - Makito
-  - maxlevel
   - masknet
+  - maxlevel
   - moeru
+  - NAPI
   - nolyfill
   - ollama
   - openrouter
@@ -44,6 +45,7 @@ words:
   - sonarjs
   - Stringifiable
   - taze
+  - tinyexec
   - tinylib
   - tinyrainbow
   - tsdown
