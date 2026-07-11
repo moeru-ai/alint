@@ -1,10 +1,9 @@
 name: Release Binaries
 
 on:
-  workflow_dispatch:
-  push:
-    tags:
-      - 'v*.*.*'
+  release:
+    types:
+      - prereleased
 
 permissions:
   contents: write
@@ -180,7 +179,7 @@ jobs:
     name: Notarize macOS ${{ matrix.archive }}
     needs: build
     runs-on: macos-latest
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'release'
     strategy:
       fail-fast: false
       matrix:
@@ -226,7 +225,7 @@ jobs:
     name: Publish release artifacts
     needs: [build, notarize-macos]
     runs-on: ubuntu-latest
-    if: github.ref_type == 'tag'
+    if: github.event_name == 'release'
     steps:
       - name: Download artifacts
         uses: actions/download-artifact@v8
@@ -256,4 +255,4 @@ jobs:
       - name: Upload to GitHub Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${GITHUB_REF_NAME}" release/* --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" release/* --clobber --repo "$GITHUB_REPOSITORY"
