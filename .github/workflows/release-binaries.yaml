@@ -71,6 +71,26 @@ jobs:
         with:
           bun-version: latest
 
+      - name: Configure pnpm Linux target architectures
+        if: startsWith(matrix.os, 'ubuntu-')
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >> pnpm-workspace.yaml <<'YAML'
+
+          supportedArchitectures:
+            os:
+              - current
+            cpu:
+              - current
+              - x64
+              - arm64
+            libc:
+              - current
+              - glibc
+              - musl
+          YAML
+
       - run: pnpm install
       - run: pnpm run build
 
