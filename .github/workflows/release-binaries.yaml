@@ -105,13 +105,13 @@ jobs:
       - name: Import macOS signing certificate
         if: runner.os == 'macOS'
         env:
-          CSC_CONTENT: ${{ secrets.CSC_CONTENT }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE }}
+          APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
         run: |
           set -euo pipefail
 
-          if [ -z "$CSC_CONTENT" ] || [ -z "$CSC_KEY_PASSWORD" ]; then
-            echo "::warning title=macOS signing certificate skipped::CSC_CONTENT or CSC_KEY_PASSWORD is not configured."
+          if [ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" ] || [ -z "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" ]; then
+            echo "::warning title=macOS signing certificate skipped::APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE or APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD is not configured."
             exit 0
           fi
 
@@ -119,13 +119,13 @@ jobs:
           KEYCHAIN_PATH="$RUNNER_TEMP/alint-signing.keychain-db"
           KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
 
-          printf '%s' "$CSC_CONTENT" | base64 --decode > "$CERT_PATH"
+          printf '%s' "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE" | base64 --decode > "$CERT_PATH"
 
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
           security import "$CERT_PATH" \
-            -P "$CSC_KEY_PASSWORD" \
+            -P "$APPLE_DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD" \
             -A \
             -t cert \
             -f pkcs12 \
