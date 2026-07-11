@@ -5,6 +5,7 @@
   "packageManager": "pnpm@11.9.0",
   "license": "MIT",
   "scripts": {
+    "alint": "pnpm -F @alint-js/cli run alint",
     "build": "pnpm -r run build",
     "test": "vitest",
     "test:run": "vitest run",

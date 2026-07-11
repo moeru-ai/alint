@@ -6,6 +6,8 @@ import { join } from 'node:path'
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
 import { describe, expect, it } from 'vitest'
 
+import packageJson from '../../package.json'
+
 import { executeCli } from './cli'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId } from './provider-registry'
@@ -2803,5 +2805,35 @@ export default [
       join(io.cwd, 'missing.alint.config.ts'),
       'demo.ts',
     ], io)).rejects.toThrow(`Config file "${join(io.cwd, 'missing.alint.config.ts')}" does not exist.`)
+  })
+
+  it('prints only the bare package version to stdout for --version', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', '--version'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe(`${packageJson.version}\n`)
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints only the bare package version to stdout for the -v alias', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', '-v'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe(`${packageJson.version}\n`)
+    expect(io.stderrText).toBe('')
+  })
+
+  it('lists --version in the root help output', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('-v, --version')
+    expect(io.stderrText).toBe('')
   })
 })
