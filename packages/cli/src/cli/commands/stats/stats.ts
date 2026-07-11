@@ -4,7 +4,7 @@ import type { StatsDimension } from '../../stats'
 import type { CliIo } from '../../types'
 import type { StatsCommandOptions } from './options'
 
-import { getStatsDir, loadAlintConfig } from '@alint-js/config'
+import { createLockedPluginResolver, getStatsDir, loadAlintConfig } from '@alint-js/config'
 import { errorMessageFrom } from '@moeru/std'
 
 import { createJsonlStatsStore } from '../../stats'
@@ -17,9 +17,10 @@ const DIMENSIONS = new Set<StatsDimension>(['dir', 'model', 'operation', 'rule']
 export async function runStatsCommand(options: StatsCommandOptions, io: CliIo): Promise<number> {
   try {
     const dimension = parseDimension(options.by)
+    const pluginResolver = await createLockedPluginResolver(io.cwd)
     const [setupConfig, config] = await Promise.all([
       loadMergedSetupConfig(io),
-      loadAlintConfig(io.cwd),
+      loadAlintConfig(io.cwd, undefined, { pluginResolver }),
     ])
     // Note(Makito): No location override via CLI options for now.
     const dir = statsLocation(resolveConfigRunner(config)?.stats)

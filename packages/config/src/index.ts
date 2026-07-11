@@ -14,6 +14,7 @@ export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from
 export type { GlobalSetupConfigPathOptions } from './paths'
 export { installStaticPlugin } from './plugins/install'
 export type { InstalledStaticPlugin, InstallStaticPluginOptions } from './plugins/install'
+export { createLockedPluginResolver } from './plugins/load'
 export { emptyPluginLockFile, loadPluginLockFile, writePluginLockFile } from './plugins/lock'
 export { fetchNpmPackageVersion } from './plugins/npm'
 export type { FetchNpmPackageVersionOptions, NpmPackageVersionMetadata } from './plugins/npm'

@@ -1,6 +1,6 @@
 import type { CliIo } from '../../types'
 
-import { loadAlintConfig } from '@alint-js/config'
+import { createLockedPluginResolver, loadAlintConfig } from '@alint-js/config'
 import { resolveConfigForFile } from '@alint-js/core'
 import { resolve } from 'pathe'
 
@@ -19,7 +19,8 @@ async function runConfigInspectCommand(
   configPath: string | undefined,
   io: CliIo,
 ): Promise<number> {
-  const config = await loadAlintConfig(io.cwd, configPath)
+  const pluginResolver = await createLockedPluginResolver(io.cwd)
+  const config = await loadAlintConfig(io.cwd, configPath, { pluginResolver })
   const result = resolveConfigForFile(resolve(io.cwd, file), config, { cwd: io.cwd })
 
   io.stdout.write(`file: ${file}\n`)

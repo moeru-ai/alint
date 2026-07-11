@@ -4,7 +4,7 @@ import type { LintCommandOptions } from './options'
 
 import { stat } from 'node:fs/promises'
 
-import { loadAlintConfig } from '@alint-js/config'
+import { createLockedPluginResolver, loadAlintConfig } from '@alint-js/config'
 import { AlintRunError, runAlint } from '@alint-js/core'
 import { resolve } from 'pathe'
 
@@ -68,9 +68,10 @@ async function runLintCommand(
     await assertConfigExists(io.cwd, options.config)
   }
 
+  const pluginResolver = await createLockedPluginResolver(io.cwd)
   const [setupConfig, config] = await Promise.all([
     loadMergedSetupConfig(io),
-    loadAlintConfig(io.cwd, options.config),
+    loadAlintConfig(io.cwd, options.config, { pluginResolver }),
   ])
   let lintFiles: string[]
 

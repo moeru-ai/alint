@@ -71,6 +71,41 @@ describe('alint stats command', () => {
     expect(output.rows[0].key).toBe('judge')
   })
 
+  it('loads static plugin config through the plugin lock', async () => {
+    const { cwd, io } = await seedStats()
+    const entry = join(cwd, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs')
+    await mkdir(join(entry, '..'), { recursive: true })
+    await writeFile(entry, 'export default { rules: {} }\n')
+    await writeFile(join(cwd, 'alint.config.toml'), `
+[[config.group]]
+files = ["**/*.py"]
+
+[config.group.plugins]
+python = "@alint-js/plugin-python@0.3.1"
+`)
+    await writeFile(join(cwd, '.alint', 'plugins', 'lock.json'), `${JSON.stringify({
+      plugins: {
+        python: {
+          alias: 'python',
+          apiVersion: '1',
+          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+          integrity: 'sha512-test',
+          name: '@alint-js/plugin-python',
+          registry: 'https://registry.npmjs.org/',
+          specifier: '@alint-js/plugin-python@0.3.1',
+          tarball: 'https://registry.npmjs.org/plugin.tgz',
+          version: '0.3.1',
+        },
+      },
+      version: 1,
+    }, null, 2)}\n`)
+
+    const code = await executeCli(['node', 'alint', 'stats', '--json'], io)
+
+    expect(code).toBe(0)
+    expect(JSON.parse(io.stdoutText).totalRuns).toBe(1)
+  })
+
   it('reports an invalid --by dimension', async () => {
     const { io } = await seedStats()
 
