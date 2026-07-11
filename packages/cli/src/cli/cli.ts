@@ -6,11 +6,20 @@ import { inspect } from 'node:util'
 
 import { cac } from 'cac'
 
+import packageJson from '../../package.json'
+
 import { commandTree, registerCommandTree } from './commands'
 
 export type { CliIo } from './types'
 
 export async function executeCli(argv: string[], io: CliIo): Promise<number> {
+  // cac's built-in `--version` prints `alint/<version> <platform> node-<version>`,
+  // but we only need a pure version string here.
+  if (argv.includes('--version') || argv.includes('-v')) {
+    io.stdout.write(`${packageJson.version}\n`)
+    return 0
+  }
+
   const cli = cac('alint')
   const setupNoInteractive = argv.includes('-N') || argv.includes('--no-interactive')
   const globalOptions = {
@@ -34,6 +43,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('--rule-concurrency <count>', 'Number of rules to run concurrently within a file')
     .option('--no-stats', 'Do not record run stats for this run')
     .option('--timeout-ms <ms>', 'Rule execution timeout in milliseconds')
+    .version(packageJson.version) // To keep `-v` and `--version` visible in `alint --help` output.
     .help()
 
   registerCommandTree(cli, commandTree, {
