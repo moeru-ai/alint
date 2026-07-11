@@ -102,11 +102,54 @@ jobs:
           set -euo pipefail
           pnpm -F @alint-js/cli build:binary
 
+      - name: Import macOS signing certificate
+        if: runner.os == 'macOS'
+        env:
+          CSC_CONTENT: ${{ secrets.CSC_CONTENT }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$CSC_CONTENT" ] || [ -z "$CSC_KEY_PASSWORD" ]; then
+            echo "::warning title=macOS signing certificate skipped::CSC_CONTENT or CSC_KEY_PASSWORD is not configured."
+            exit 0
+          fi
+
+          CERT_PATH="$RUNNER_TEMP/alint-developer-id-application.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/alint-signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 32)"
+
+          printf '%s' "$CSC_CONTENT" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$CSC_KEY_PASSWORD" \
+            -A \
+            -t cert \
+            -f pkcs12 \
+            -k "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH"
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+
+          echo "ALINT_MACOS_SIGNING_AVAILABLE=true" >> "$GITHUB_ENV"
+          echo "ALINT_MACOS_SIGNING_KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
       - name: Sign macOS executable
         if: runner.os == 'macOS'
         env:
           APPLE_DEVELOPER_ID_APPLICATION: ${{ secrets.APPLE_DEVELOPER_ID_APPLICATION }}
         run: |
+          if [ "${ALINT_MACOS_SIGNING_AVAILABLE:-}" != "true" ]; then
+            echo "::warning title=macOS signing skipped::The Developer ID Application certificate was not imported."
+            exit 0
+          fi
+
           if [ -z "$APPLE_DEVELOPER_ID_APPLICATION" ]; then
             echo "::warning title=macOS signing skipped::APPLE_DEVELOPER_ID_APPLICATION is not configured."
             exit 0
@@ -115,6 +158,13 @@ jobs:
           codesign --force --timestamp --options runtime \
             --sign "$APPLE_DEVELOPER_ID_APPLICATION" \
             target/${{ matrix.target }}/${{ matrix.executable }}
+
+      - name: Clean up macOS signing keychain
+        if: runner.os == 'macOS' && always()
+        run: |
+          if [ -n "${ALINT_MACOS_SIGNING_KEYCHAIN_PATH:-}" ]; then
+            security delete-keychain "$ALINT_MACOS_SIGNING_KEYCHAIN_PATH" || true
+          fi
 
       - name: Smoke test executable
         shell: bash
