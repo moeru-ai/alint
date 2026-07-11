@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- NOTICE: Bun standalone executables extract embedded N-API addons to a
+       temporary `.node` file before loading them. `oxc-parser` uses that path
+       during CLI startup, so hardened macOS release binaries must allow loading
+       the extracted addon even though it is not signed by alint's Developer ID.
+
+       Read more:
+       - https://developer.apple.com/documentation/bundleresources/entitlements/com.apple.security.cs.disable-library-validation
+       - https://www.electron.build/docs/features/code-signing/code-signing-mac -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+</dict>
+</plist>

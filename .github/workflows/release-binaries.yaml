@@ -138,6 +138,7 @@ jobs:
           identity="$(security find-identity -v -p codesigning "$RUNNER_TEMP/alint-signing.keychain-db" | sed -n 's/.*"\(Developer ID Application:.*\)".*/\1/p' | head -n 1)"
           test -n "$identity"
           codesign --force --timestamp --options runtime \
+            --entitlements packages/cli/build/entitlements.mac.plist \
             --sign "$identity" \
             target/${{ matrix.target }}/${{ matrix.executable }}
 
@@ -210,6 +211,7 @@ jobs:
           tar -xzf ${{ matrix.archive }}
           zip alint-notary.zip alint
           xcrun notarytool submit alint-notary.zip --keychain-profile alint-notary --wait
+          ./alint --help
           tar -czf ${{ matrix.archive }} alint
           shasum -a 256 ${{ matrix.archive }} | awk '{ print $1 }' > ${{ matrix.archive }}.sha256
 
