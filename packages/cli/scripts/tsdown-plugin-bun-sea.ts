@@ -1,5 +1,6 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
+import { cwd } from 'node:process'
 import { fileURLToPath } from 'node:url'
 
 import { findWorkspaceDir } from '@pnpm/find-workspace-dir'
@@ -16,15 +17,32 @@ export interface BuildBunExecutableOptions {
 }
 
 export async function pluginBunSea(options: BuildBunExecutableOptions): Promise<void> {
-  const root = (await findWorkspaceDir(fileURLToPath(new URL('../../..', import.meta.url))))!
-  const bindingPath = await resolveBindingPath(root, options.oxcBinding)
+  const workspaceRoot = (await findWorkspaceDir(cwd()))!
+  const oxcPackage = await getPackageInfo('oxc-parser', { paths: [join(workspaceRoot, 'packages/core')] })
+  if (!oxcPackage) {
+    throw new Error('Could not find oxc-parser package.')
+  }
 
-  const tempRoot = join(root, '.tmp')
+  const oxcBindingPackage = await getPackageInfo(`@oxc-parser/binding-${options.oxcBinding}`, { paths: [oxcPackage.rootPath] })
+  if (!oxcBindingPackage) {
+    throw new Error(`Could not find @oxc-parser/binding-${options.oxcBinding} package.`)
+  }
+
+  const bindingPath = resolveModule(`@oxc-parser/binding-${options.oxcBinding}`, { paths: [oxcPackage.rootPath] })
+  if (!bindingPath) {
+    throw new Error(`Could not resolve @oxc-parser/binding-${options.oxcBinding} from oxc-parser.`)
+  }
+
+  // NOTICE: on macOS, tmpdir() usually points to /var/folders/..., while when bun is bundling, /private/var/folders/... is resolved.
+  // Therefore if we use tmpdir() as the temp root, bun will fail to find the generated entry file.
+  // To avoid this, we use a temp root under the workspace root instead.
+  const tempRoot = join(workspaceRoot, '.tmp')
   await mkdir(tempRoot, { recursive: true })
+
   const tempDir = await mkdtemp(join(tempRoot, `alint-bun-${options.target}-`))
   const entryPath = join(tempDir, 'entry.ts')
-  const cliEntryPath = join(root, 'packages/cli/src/cli/index.ts')
-  const templatePath = fileURLToPath(new URL('./bun-entry.template.ts', import.meta.url))
+  const cliEntryPath = join(workspaceRoot, 'packages/cli/src/cli/index.ts')
+  const templatePath = fileURLToPath(new URL('./bin.template.ts', import.meta.url))
 
   try {
     // NOTICE: `oxc-parser` loads its NAPI-RS binding while alint core is
@@ -38,17 +56,8 @@ export async function pluginBunSea(options: BuildBunExecutableOptions): Promise<
 
     await mkdir(dirname(options.outfile), { recursive: true })
 
-    await x('bun', [
-      'build',
-      '--compile',
-      `--target=${options.bunTarget}`,
-      entryPath,
-      '--outfile',
-      options.outfile,
-    ], {
-      nodeOptions: {
-        stdio: 'inherit',
-      },
+    await x('bun', ['build', '--compile', `--target=${options.bunTarget}`, entryPath, '--outfile', options.outfile], {
+      nodeOptions: { stdio: 'inherit' },
       throwOnError: true,
     })
   }
@@ -77,17 +86,6 @@ function replaceImportSpecifier(code: string, specifier: string, replacement: st
   }
 
   throw new Error(`Could not replace import specifier ${specifier}.`)
-}
-
-async function resolveBindingPath(root: string, binding: string): Promise<string> {
-  const oxcPackage = await getPackageInfo('oxc-parser', { paths: [join(root, 'packages/core')] })
-  const bindingPath = oxcPackage && resolveModule(`@oxc-parser/binding-${binding}`, { paths: [oxcPackage.rootPath] })
-
-  if (!bindingPath) {
-    throw new Error(`Could not resolve @oxc-parser/binding-${binding} from oxc-parser.`)
-  }
-
-  return bindingPath
 }
 
 function rewriteBootstrapImports(code: string, replacements: Record<string, string>): string {

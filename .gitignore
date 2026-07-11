@@ -75,6 +75,7 @@ components.d.ts
 **/.cache/
 **/.vitepress/cache/
 **/*.tsbuildinfo
+**/*.bun-build
 
 # Netlify
 **/.netlify/*
