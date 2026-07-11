@@ -38,7 +38,7 @@ export default defineConfig({
       // (where the consequent is the error itself, not its `.message`). Antfu's
       // default no-restricted-syntax patterns are preserved alongside.
       {
-        message: 'Avoid `error instanceof Error ? error.message : ...`. Use `errorMessageFrom(error)` from \'@moeru/std\' (or `errorMessageFromUnknown(error, fallback)` from \'@proj-airi/stage-shared\'). Pair with `?? \'fallback\'` when a default is needed.',
+        message: 'Avoid `error instanceof Error ? error.message : ...`. Use `errorMessageFrom(error)` from \'@moeru/std\'. Pair with `?? \'fallback\'` when a default is needed.',
         selector: 'ConditionalExpression[test.type=\'BinaryExpression\'][test.operator=\'instanceof\'][test.right.name=\'Error\'][consequent.type=\'MemberExpression\'][consequent.property.name=\'message\']',
       },
       {

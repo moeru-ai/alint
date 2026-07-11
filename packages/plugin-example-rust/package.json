@@ -1,0 +1,32 @@
+{
+  "name": "@alint-js/plugin-example-rust",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@alint-js/agent-apeira": "workspace:*",
+    "@alint-js/core": "workspace:*",
+    "@moeru/std": "catalog:",
+    "@valibot/to-json-schema": "catalog:",
+    "tinyglobby": "catalog:",
+    "valibot": "catalog:",
+    "xsai": "catalog:"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:",
+    "typescript": "catalog:"
+  }
+}

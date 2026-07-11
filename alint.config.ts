@@ -19,8 +19,5 @@ export default defineConfig([
     plugins: {
       example: examplePlugin,
     },
-    rules: {
-      'example/inline-miniature-normalizer': 'warn',
-    },
   },
 ])

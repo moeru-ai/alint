@@ -10,6 +10,7 @@ export default defineConfig({
       'packages/plugin-example',
       'packages/plugin-example-agent',
       'packages/plugin-example-go',
+      'packages/plugin-example-rust',
       'packages/agent-apeira',
       'packages/agent-pi',
     ],
