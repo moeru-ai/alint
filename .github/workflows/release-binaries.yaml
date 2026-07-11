@@ -93,13 +93,14 @@ jobs:
 
       - name: Build executable
         shell: bash
+        env:
+          ALINT_BINARY_OUTFILE: target/${{ matrix.target }}/${{ matrix.executable }}
+          ALINT_BINARY_TARGET: ${{ matrix.target }}
+          ALINT_BUN_TARGET: ${{ matrix.bun_target }}
+          ALINT_OXC_BINDING: ${{ matrix.oxc_binding }}
         run: |
           set -euo pipefail
-          pnpm exec tsx packages/cli/scripts/build-bun-executable.ts \
-            --target ${{ matrix.target }} \
-            --bun-target ${{ matrix.bun_target }} \
-            --oxc-binding ${{ matrix.oxc_binding }} \
-            --outfile target/${{ matrix.target }}/${{ matrix.executable }}
+          pnpm -F @alint-js/cli build:binary
 
       - name: Sign macOS executable
         if: runner.os == 'macOS'

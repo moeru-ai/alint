@@ -5,6 +5,13 @@ import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promis
 import { dirname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
+export interface BuildBunExecutableOptions {
+  bunTarget: string
+  outfile: string
+  oxcBinding: string
+  target: string
+}
+
 interface BindingPackageJson {
   main?: unknown
 }
@@ -14,52 +21,55 @@ interface BuildEntryOptions {
   cliSpecifier: string
 }
 
-const args = parseArgs(process.argv.slice(2))
-const target = requiredArg(args, 'target')
-const bunTarget = requiredArg(args, 'bun-target')
-const oxcBinding = requiredArg(args, 'oxc-binding')
-const outfile = requiredArg(args, 'outfile')
-const root = fileURLToPath(new URL('../../..', import.meta.url))
-const bindingRoot = await findBindingRoot(root, oxcBinding)
-const bindingPackageJson = JSON.parse(await readFile(join(bindingRoot, 'package.json'), 'utf8')) as BindingPackageJson
-const bindingMain = bindingPackageJson.main
+const isCli = process.argv[1] === fileURLToPath(import.meta.url)
 
-if (typeof bindingMain !== 'string' || !bindingMain.endsWith('.node')) {
-  throw new TypeError(`Invalid @oxc-parser/binding-${oxcBinding} package main.`)
+if (isCli) {
+  await runCli(process.argv.slice(2))
 }
 
-const tempRoot = join(root, '.tmp')
-await mkdir(tempRoot, { recursive: true })
-const tempDir = await mkdtemp(join(tempRoot, `alint-bun-${target}-`))
-const entryPath = join(tempDir, 'entry.ts')
-const bindingPath = join(bindingRoot, bindingMain)
-const cliEntryPath = join(root, 'packages/cli/src/cli/index.ts')
+export async function buildBunExecutable(options: BuildBunExecutableOptions): Promise<void> {
+  const root = fileURLToPath(new URL('../../..', import.meta.url))
+  const bindingRoot = await findBindingRoot(root, options.oxcBinding)
+  const bindingPackageJson = JSON.parse(await readFile(join(bindingRoot, 'package.json'), 'utf8')) as BindingPackageJson
+  const bindingMain = bindingPackageJson.main
 
-try {
-  await writeFile(entryPath, createEntry({
-    bindingSpecifier: toImportSpecifier(relative(tempDir, bindingPath)),
-    cliSpecifier: toImportSpecifier(relative(tempDir, cliEntryPath)),
-  }))
-
-  await mkdir(dirname(outfile), { recursive: true })
-
-  const result = spawnSync('bun', [
-    'build',
-    '--compile',
-    `--target=${bunTarget}`,
-    entryPath,
-    '--outfile',
-    outfile,
-  ], {
-    stdio: 'inherit',
-  })
-
-  if (result.status !== 0) {
-    process.exit(result.status ?? 1)
+  if (typeof bindingMain !== 'string' || !bindingMain.endsWith('.node')) {
+    throw new TypeError(`Invalid @oxc-parser/binding-${options.oxcBinding} package main.`)
   }
-}
-finally {
-  await rm(tempDir, { force: true, recursive: true })
+
+  const tempRoot = join(root, '.tmp')
+  await mkdir(tempRoot, { recursive: true })
+  const tempDir = await mkdtemp(join(tempRoot, `alint-bun-${options.target}-`))
+  const entryPath = join(tempDir, 'entry.ts')
+  const bindingPath = join(bindingRoot, bindingMain)
+  const cliEntryPath = join(root, 'packages/cli/src/cli/index.ts')
+
+  try {
+    await writeFile(entryPath, createEntry({
+      bindingSpecifier: toImportSpecifier(relative(tempDir, bindingPath)),
+      cliSpecifier: toImportSpecifier(relative(tempDir, cliEntryPath)),
+    }))
+
+    await mkdir(dirname(options.outfile), { recursive: true })
+
+    const result = spawnSync('bun', [
+      'build',
+      '--compile',
+      `--target=${options.bunTarget}`,
+      entryPath,
+      '--outfile',
+      options.outfile,
+    ], {
+      stdio: 'inherit',
+    })
+
+    if (result.status !== 0) {
+      throw new Error(`Bun executable build failed with exit code ${result.status ?? 1}.`)
+    }
+  }
+  finally {
+    await rm(tempDir, { force: true, recursive: true })
+  }
 }
 
 function createEntry({ bindingSpecifier, cliSpecifier }: BuildEntryOptions): string {
@@ -136,6 +146,17 @@ function requiredArg(args: Map<string, string>, name: string): string {
   }
 
   return value
+}
+
+async function runCli(values: string[]): Promise<void> {
+  const args = parseArgs(values)
+
+  await buildBunExecutable({
+    bunTarget: requiredArg(args, 'bun-target'),
+    outfile: requiredArg(args, 'outfile'),
+    oxcBinding: requiredArg(args, 'oxc-binding'),
+    target: requiredArg(args, 'target'),
+  })
 }
 
 function toImportSpecifier(path: string): string {
