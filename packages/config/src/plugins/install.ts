@@ -26,6 +26,7 @@ import { resolveInstalledPackageRelativeEntry } from './package'
 import { formatPluginSpecifier } from './spec'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
+const SUPPORTED_INTEGRITY_TOKEN_PATTERN = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u
 
 interface InstalledPackage extends Omit<PluginLockEntry, 'alias' | 'specifier'> {}
 
@@ -271,6 +272,10 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
     throw new Error(`Npm metadata for "${name}" does not include a tarball for version ${version}.`)
   }
 
+  if (dist.integrity === undefined || dist.integrity.trim() === '') {
+    throw new Error(`Npm metadata for "${name}" does not include integrity for version ${version}.`)
+  }
+
   const storePath = getProjectPluginStorePath(options.cwd)
   const packageDir = join(storePath, ...segments, version, 'package')
 
@@ -285,10 +290,7 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
 
   try {
     const tarball = await downloadBuffer(dist.tarball)
-
-    if (dist.integrity !== undefined) {
-      verifyTarballIntegrity(tarball, dist.integrity, `${name}@${version}`)
-    }
+    verifyTarballIntegrity(tarball, dist.integrity, `${name}@${version}`)
 
     await mkdir(stagingPackageDir, { recursive: true })
     await extractPackageTarball(tarball, stagingPackageDir)
@@ -302,7 +304,7 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
 
   return {
     entry: posix.join('.alint/plugins/store', ...segments, version, 'package', relativeEntry.split(/[\\/]/u).join('/')),
-    integrity: dist.integrity ?? '',
+    integrity: dist.integrity,
     name,
     registry: options.registry,
     tarball: dist.tarball,
@@ -365,16 +367,22 @@ async function replacePackageDirectory(packageDir: string, stagingPackageDir: st
 }
 
 function verifyTarballIntegrity(tarball: Buffer, integrity: string, specifier: string): void {
-  const match = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u.exec(integrity)
+  const supportedTokens = integrity
+    .trim()
+    .split(/\s+/u)
+    .map(token => SUPPORTED_INTEGRITY_TOKEN_PATTERN.exec(token))
+    .filter(match => match !== null)
 
-  if (match === null) {
+  if (supportedTokens.length === 0) {
     throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
   }
 
-  const [, algorithm, expected] = match
-  const actual = createHash(algorithm).update(tarball).digest('base64')
+  const matches = supportedTokens.some(([, algorithm, expected]) => {
+    const actual = createHash(algorithm).update(tarball).digest('base64')
+    return actual === expected
+  })
 
-  if (actual !== expected) {
+  if (!matches) {
     throw new Error(`Integrity mismatch for "${specifier}".`)
   }
 }

@@ -69,7 +69,7 @@ describe('static plugin installation', () => {
     return `${algorithm}-${createHash(algorithm).update(tarball).digest('base64')}`
   }
 
-  async function startRegistry(tarball: Buffer, integrity = createIntegrity(tarball)): Promise<RegistryServer> {
+  async function startRegistry(tarball: Buffer, integrity: null | string = createIntegrity(tarball)): Promise<RegistryServer> {
     let metadataRequests = 0
     let tarballRequests = 0
 
@@ -89,7 +89,7 @@ describe('static plugin installation', () => {
           versions: {
             '0.3.1': {
               dist: {
-                integrity,
+                ...(integrity === null ? {} : { integrity }),
                 tarball: `http://${host}/plugin-python-0.3.1.tgz`,
               },
             },
@@ -204,6 +204,44 @@ export default [
     await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
       .rejects
       .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
+  })
+
+  it('rejects npm metadata without usable integrity before installing or writing a lock file', async () => {
+    for (const integrity of [null, '']) {
+      const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+      const registry = await startRegistry(await createPluginTarball(), integrity)
+
+      await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+        .rejects
+        .toThrow('Npm metadata for "@alint-js/plugin-python" does not include integrity for version 0.3.1.')
+      expect(registry.tarballRequests()).toBe(0)
+      await expect(access(join(projectRoot, '.alint', 'plugins', 'store')))
+        .rejects
+        .toMatchObject({ code: 'ENOENT' })
+      await expect(access(join(projectRoot, '.alint', 'plugins', 'lock.json')))
+        .rejects
+        .toMatchObject({ code: 'ENOENT' })
+    }
+  })
+
+  it('accepts multiple-token npm integrity when a supported digest matches', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const tarball = await createPluginTarball()
+    const integrity = `${createIntegrity(Buffer.from('different'))} ${createIntegrity(tarball, 'sha256')}`
+    const registry = await startRegistry(tarball, integrity)
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
+
+    expect(result.lock.plugins.python?.integrity).toBe(integrity)
+    expect(registry.tarballRequests()).toBe(1)
   })
 
   it('downloads each repeated package specifier once while locking every alias', async () => {
