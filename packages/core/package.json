@@ -11,6 +11,10 @@
       "types": "./dist/agent.d.mts",
       "default": "./dist/agent.mjs"
     },
+    "./structured-output": {
+      "types": "./dist/structured-output.d.mts",
+      "default": "./dist/structured-output.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -23,6 +27,10 @@
   },
   "dependencies": {
     "@moeru/std": "catalog:",
+    "@valibot/to-json-schema": "catalog:",
+    "@xsai/generate-text": "catalog:",
+    "@xsai/shared-chat": "catalog:",
+    "@xsai/tool": "catalog:",
     "es-toolkit": "catalog:",
     "minimatch": "catalog:",
     "oxc-parser": "catalog:",

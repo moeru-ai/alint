@@ -21,8 +21,8 @@
     "@alint-js/core": "workspace:*"
   },
   "dependencies": {
-    "apeira": "catalog:",
-    "xsai": "catalog:"
+    "@xsai/tool": "catalog:",
+    "apeira": "catalog:"
   },
   "devDependencies": {
     "@alint-js/core": "workspace:*",
