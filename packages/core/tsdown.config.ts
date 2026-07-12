@@ -4,8 +4,9 @@ export default defineConfig({
   clean: true,
   dts: true,
   entry: {
-    agent: 'src/agent/index.ts',
-    index: 'src/index.ts',
+    'agent': 'src/agent/index.ts',
+    'index': 'src/index.ts',
+    'structured-output': 'src/structuredOutput/index.ts',
   },
   format: 'esm',
 })

@@ -14,6 +14,7 @@ This package provides the core SDK and run engine APIs used by plugins, rules, l
 - model resolution by size and capability
 - diagnostics and progress payload types
 - framework-neutral agent contracts under `@alint-js/core/agent`
+- tool-call structured output under `@alint-js/core/structured-output`
 - config DSL and types for advanced SDK consumers
 
 ## How to use
@@ -45,6 +46,39 @@ import { requireAgent } from '@alint-js/core/agent'
 
 const agent = requireAgent(ctx)
 ```
+
+Ask a model for one validated, typed result with `@alint-js/core/structured-output`. It forces
+the model to call a single reporting tool whose arguments match a valibot schema, validates
+them, and retries with the validation error fed back to the model:
+
+```ts
+import { generateStructured } from '@alint-js/core/structured-output'
+import { array, description, object, pipe } from 'valibot'
+
+const responseSchema = pipe(
+  object({ findings: array(findingSchema) }),
+  description('Report findings for this file.'),
+)
+
+const { findings } = await generateStructured({
+  createMessages: retryFeedback => [
+    { content: prompt, role: 'system' },
+    ...(retryFeedback ? [{ content: retryFeedback, role: 'user' as const }] : []),
+    { content: numberedSource, role: 'user' },
+  ],
+  logger: ctx.logger,
+  metering: ctx.metering,
+  model: await ctx.model(),
+  operation: 'my-rule-judge',
+  schema: responseSchema,
+})
+```
+
+The reporting tool is named `reportFindings` by default (`toolName` overrides it) and its
+description defaults to the schema's valibot `description(...)`. `toolParametersFromSchema`,
+`formatSourceWithLineNumbers`, and `formatOutputLanguageInstruction` are exported for callers
+that build their own tools or prompts. Use `ctx.agent` instead when the model needs to
+explore with tools before answering, because a forced tool call is a single shot, not a loop.
 
 ## When to use
 

@@ -19,14 +19,14 @@ import {
   reportPythonTypedArtifactBoundaryFindings,
 } from './index'
 
-const generateTextMock = vi.hoisted(() => vi.fn())
+const generateStructuredMock = vi.hoisted(() => vi.fn())
 
-vi.mock('xsai', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('xsai')>()
+vi.mock('@alint-js/core/structured-output', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@alint-js/core/structured-output')>()
 
   return {
     ...actual,
-    generateText: generateTextMock,
+    generateStructured: generateStructuredMock,
   }
 })
 
@@ -196,41 +196,28 @@ describe('pythonPlugin', () => {
     const diagnostics: Parameters<RuleContext['report']>[0][] = []
     const context = createRuleContext()
     context.report = diagnostic => diagnostics.push(diagnostic)
-    generateTextMock.mockResolvedValueOnce({
-      finishReason: 'stop',
-      toolResults: [
+    generateStructuredMock.mockResolvedValueOnce({
+      findings: [
         {
-          result: {
-            findings: [
-              {
-                category: 'typed-boundary',
-                confidence: 'high',
-                line: 2,
-                message: 'Raw external data crosses into orchestration.',
-                relatedDeclarations: [
-                  {
-                    line: 3,
-                    name: 'format_output',
-                    role: 'format helper on the wrong owner',
-                  },
-                ],
-                suggestion: 'Return a typed boundary object from the adapter before orchestration consumes the result.',
-              },
-            ],
-          },
-          toolName: 'reportFindings',
+          category: 'typed-boundary',
+          confidence: 'high',
+          line: 2,
+          message: 'Raw external data crosses into orchestration.',
+          relatedDeclarations: [
+            {
+              line: 3,
+              name: 'format_output',
+              role: 'format helper on the wrong owner',
+            },
+          ],
+          suggestion: 'Return a typed boundary object from the adapter before orchestration consumes the result.',
         },
       ],
-      usage: {
-        inputTokens: 10,
-        outputTokens: 20,
-        totalTokens: 30,
-      },
     })
 
     await getPythonSemanticBoundaryRule().create(context).onTarget?.(createSourceTarget('file'))
 
-    expect(generateTextMock).toHaveBeenCalledTimes(1)
+    expect(generateStructuredMock).toHaveBeenCalledTimes(1)
     expect(diagnostics).toEqual([
       {
         evidence: {

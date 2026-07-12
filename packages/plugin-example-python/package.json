@@ -19,10 +19,8 @@
   "dependencies": {
     "@alint-js/core": "workspace:*",
     "@alint-js/tools-fs": "workspace:*",
-    "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
-    "valibot": "catalog:",
-    "xsai": "catalog:"
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "tsdown": "catalog:",

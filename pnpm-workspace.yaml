@@ -37,6 +37,9 @@ catalog:
   '@smithy/node-http-handler': ^4.9.1
   '@types/node': ^26.0.1
   '@valibot/to-json-schema': ^1.7.1
+  '@xsai/generate-text': ^0.5.0-beta.6
+  '@xsai/shared-chat': ^0.5.0-beta.6
+  '@xsai/tool': ^0.5.0-beta.6
   apeira: ^0.0.6
   bumpp: ^11.1.0
   c12: ^3.3.4
@@ -77,7 +80,6 @@ catalog:
   vite: ^8.1.0
   xdg-basedir: ^5.1.0
 
-  xsai: ^0.5.0-beta.6
 catalogs:
   vitest:
     '@vitest/coverage-v8': ^4.1.9
