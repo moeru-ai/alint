@@ -64,7 +64,8 @@ export async function installStaticPlugins(
 ): Promise<StaticPluginInstallResult> {
   const config = await loadStaticConfig(options.cwd, options.configFile)
   const references = listStaticPluginReferences(config)
-  const registry = normalizeRegistry(options.registry ?? DEFAULT_REGISTRY)
+  const rawRegistry = options.registry ?? DEFAULT_REGISTRY
+  const registry = rawRegistry.endsWith('/') ? rawRegistry : `${rawRegistry}/`
   const lock = createEmptyPluginLockFile()
   const installedSpecifiers = new Map<string, Promise<InstalledPackage>>()
 
@@ -306,10 +307,6 @@ function isPathInside(path: string, parent: string): boolean {
   const childRelativePath = relative(parent, path)
   return childRelativePath === ''
     || (!childRelativePath.startsWith('..') && !isAbsolute(childRelativePath))
-}
-
-function normalizeRegistry(registry: string): string {
-  return registry.endsWith('/') ? registry : `${registry}/`
 }
 
 async function replacePackageDirectory(packageDir: string, stagingPackageDir: string): Promise<void> {

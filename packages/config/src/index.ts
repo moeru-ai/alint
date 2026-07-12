@@ -33,15 +33,15 @@ export {
   getStatsDir,
 } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
-export { installStaticPlugins } from './plugins/install'
 export {
   createEmptyPluginLockFile,
+  installStaticPlugins,
   listMissing,
   listUnresolved,
   loadPluginLockFile,
   parsePluginLockFile,
   writePluginLockFile,
-} from './plugins/lock'
+} from './plugins'
 export type {
   ParsedPluginLockEntry,
   ParsedPluginLockFile,
@@ -49,7 +49,7 @@ export type {
   PluginLockFile,
   StaticPluginInstallOptions,
   StaticPluginInstallResult,
-} from './plugins/types'
+} from './plugins'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'
