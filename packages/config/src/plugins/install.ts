@@ -8,7 +8,7 @@ import type {
 } from './types'
 
 import { Buffer } from 'node:buffer'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
@@ -49,6 +49,10 @@ interface PackageIdentity {
   name: string
   registryPath: string
   segments: string[]
+}
+
+interface PackageInstallIdentity extends PackageIdentity {
+  version: string
 }
 
 export async function installStaticPlugins(
@@ -197,19 +201,64 @@ async function getOrInstallPackage(options: InstallPackageOptions): Promise<Inst
   return installed
 }
 
-function getPackageInstallIdentity(specifier: ParsedPluginSpecifier): PackageIdentity & { version: string } {
+function getPackageInstallIdentity(specifier: ParsedPluginSpecifier): PackageInstallIdentity {
   if (specifier.version === undefined || specifier.version === '') {
     throw new Error(`Static plugin specifier "${specifier.raw}" must include an exact package version.`)
   }
+
+  const segments = getSafePackageNameSegments(specifier.name)
 
   return {
     name: specifier.name,
     registryPath: specifier.name.startsWith('@')
       ? specifier.name.replace('/', '%2f')
       : encodeURIComponent(specifier.name),
-    segments: specifier.name.split('/'),
+    segments,
     version: specifier.version,
   }
+}
+
+function getSafePackageNameSegments(name: string): string[] {
+  if (
+    name === ''
+    || name.includes('\\')
+    || isAbsolute(name)
+    || posix.isAbsolute(name)
+  ) {
+    throw new Error(`Invalid static plugin package name "${name}".`)
+  }
+
+  const segments = name.split('/')
+
+  if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
+    throw new Error(`Invalid static plugin package name "${name}".`)
+  }
+
+  const segmentPattern = /^[a-z0-9][a-z0-9._~-]*$/u
+
+  if (name.startsWith('@')) {
+    const [scope, packageName, extraSegment] = segments
+
+    if (
+      segments.length !== 2
+      || scope === undefined
+      || packageName === undefined
+      || extraSegment !== undefined
+      || !scope.startsWith('@')
+      || !segmentPattern.test(scope.slice(1))
+      || !segmentPattern.test(packageName)
+    ) {
+      throw new Error(`Invalid static plugin package name "${name}".`)
+    }
+
+    return segments
+  }
+
+  if (segments.length !== 1 || !segmentPattern.test(segments[0]!)) {
+    throw new Error(`Invalid static plugin package name "${name}".`)
+  }
+
+  return segments
 }
 
 async function installPackage(options: Omit<InstallPackageOptions, 'installedSpecifiers'>): Promise<InstalledPackage> {
@@ -222,15 +271,27 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
     throw new Error(`Npm metadata for "${name}" does not include a tarball for version ${version}.`)
   }
 
-  const packageDir = join(getProjectPluginStorePath(options.cwd), ...segments, version, 'package')
+  const storePath = getProjectPluginStorePath(options.cwd)
+  const packageDir = join(storePath, ...segments, version, 'package')
+
+  if (!isPathInside(resolve(packageDir), resolve(storePath))) {
+    throw new Error(`Static plugin package "${name}" resolves outside the project plugin store.`)
+  }
+
   const packageParentDir = dirname(packageDir)
   const stagingPackageDir = join(packageParentDir, `package-staging-${randomUUID()}`)
 
   let relativeEntry: string
 
   try {
+    const tarball = await downloadBuffer(dist.tarball)
+
+    if (dist.integrity !== undefined) {
+      verifyTarballIntegrity(tarball, dist.integrity, `${name}@${version}`)
+    }
+
     await mkdir(stagingPackageDir, { recursive: true })
-    await extractPackageTarball(await downloadBuffer(dist.tarball), stagingPackageDir)
+    await extractPackageTarball(tarball, stagingPackageDir)
     relativeEntry = await resolveInstalledPackageRelativeEntry(stagingPackageDir)
     await replacePackageDirectory(packageDir, stagingPackageDir)
   }
@@ -270,6 +331,7 @@ function normalizeRegistry(registry: string): string {
 async function replacePackageDirectory(packageDir: string, stagingPackageDir: string): Promise<void> {
   const backupPackageDir = join(dirname(packageDir), `package-backup-${randomUUID()}`)
   let hasBackup = false
+  let replaced = false
 
   try {
     await rename(packageDir, backupPackageDir)
@@ -283,15 +345,36 @@ async function replacePackageDirectory(packageDir: string, stagingPackageDir: st
 
   try {
     await rename(stagingPackageDir, packageDir)
+    replaced = true
   }
   catch (error) {
     if (hasBackup) {
+      // Directory replacement cannot be made crash-proof portably; this keeps
+      // the previous install when the staging rename fails before replacement.
       await rename(backupPackageDir, packageDir)
+      hasBackup = false
     }
 
     throw error
   }
   finally {
-    await rm(backupPackageDir, { force: true, recursive: true })
+    if (replaced || !hasBackup) {
+      await rm(backupPackageDir, { force: true, recursive: true })
+    }
+  }
+}
+
+function verifyTarballIntegrity(tarball: Buffer, integrity: string, specifier: string): void {
+  const match = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u.exec(integrity)
+
+  if (match === null) {
+    throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
+  }
+
+  const [, algorithm, expected] = match
+  const actual = createHash(algorithm).update(tarball).digest('base64')
+
+  if (actual !== expected) {
+    throw new Error(`Integrity mismatch for "${specifier}".`)
   }
 }
