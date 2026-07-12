@@ -31,3 +31,9 @@ export interface PluginLockFile {
   plugins: Record<string, PluginLockEntry>
   version: 1
 }
+
+export interface ResolvedPluginPackage {
+  entry: string
+  packageDir: string
+  packageJson: Record<string, unknown>
+}

@@ -22,6 +22,7 @@
     "c12": "catalog:",
     "jiti": "catalog:",
     "pathe": "catalog:",
+    "resolve.exports": "catalog:",
     "smol-toml": "catalog:",
     "valibot": "catalog:",
     "xdg-basedir": "catalog:"
