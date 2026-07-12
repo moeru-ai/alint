@@ -5,7 +5,8 @@ import type {
   PluginLockFile,
 } from './types'
 
-import { readFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname } from 'node:path'
 
 import {
   literal,
@@ -142,6 +143,12 @@ export function parsePluginLockFile(
       return entry
     },
   }
+}
+
+export async function writePluginLockFile(cwd: string, lock: PluginLockFile): Promise<void> {
+  const lockPath = getProjectPluginLockPath(cwd)
+  await mkdir(dirname(lockPath), { recursive: true })
+  await writeFile(lockPath, `${JSON.stringify(parsePluginLockFileValue(lock), null, 2)}\n`, 'utf8')
 }
 
 function parsePluginLockFileValue(value: unknown): PluginLockFile {

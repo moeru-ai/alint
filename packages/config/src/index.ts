@@ -24,8 +24,10 @@ export {
   ignorePatternsEslintDefaults,
   ignorePatternsGenerated,
 } from './ignore-patterns'
-export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
+export { getGlobalSetupConfigPath, getProjectPluginStorePath, getProjectSetupConfigPath, getStatsDir } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
+export { installStaticPlugins } from './plugins/install'
+export type { StaticPluginInstallOptions, StaticPluginInstallResult } from './plugins/types'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'

@@ -21,6 +21,10 @@ export function getProjectPluginLockPath(cwd: string): string {
   return join(cwd, '.alint', 'plugins', 'lock.json')
 }
 
+export function getProjectPluginStorePath(cwd: string): string {
+  return join(cwd, '.alint', 'plugins', 'store')
+}
+
 export function getProjectSetupConfigPath(cwd: string): string {
   return join(cwd, '.alint', 'config.toml')
 }

@@ -37,3 +37,15 @@ export interface ResolvedPluginPackage {
   packageDir: string
   packageJson: Record<string, unknown>
 }
+
+export interface StaticPluginInstallOptions {
+  configFile?: string
+  cwd: string
+  registry?: string
+}
+
+export interface StaticPluginInstallResult {
+  installedCount: number
+  lock: PluginLockFile
+  referenceCount: number
+}
