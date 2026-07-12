@@ -3,7 +3,13 @@ import { homedir } from 'node:os'
 import { join } from 'pathe'
 import { describe, expect, it } from 'vitest'
 
-import { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
+import {
+  getGlobalSetupConfigPath,
+  getProjectPluginLockPath,
+  getProjectPluginStorePath,
+  getProjectSetupConfigPath,
+  getStatsDir,
+} from './paths'
 
 describe('setup config paths', () => {
   it('uses XDG_CONFIG_HOME when explicitly provided', () => {
@@ -26,6 +32,14 @@ describe('setup config paths', () => {
 
   it('uses project-local config under .alint', () => {
     expect(getProjectSetupConfigPath('/repo')).toBe('/repo/.alint/config.toml')
+  })
+
+  it('uses project-local plugin lock under .alint/plugins', () => {
+    expect(getProjectPluginLockPath('/repo')).toBe('/repo/.alint/plugins/lock.json')
+  })
+
+  it('uses project-local plugin store under .alint/plugins', () => {
+    expect(getProjectPluginStorePath('/repo')).toBe('/repo/.alint/plugins/store')
   })
 })
 

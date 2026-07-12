@@ -522,6 +522,17 @@ describe('executeCli', () => {
     expect(io.stderrText).toBe('')
   })
 
+  it('installs static plugins as a no-op when the config has no static plugin references', async () => {
+    const io = await createTestIo()
+    await writeFile(join(io.cwd, 'empty.config.ts'), 'export default [{ rules: {} }]\n', 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', '--config', 'empty.config.ts', 'plugin', 'install'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe('No static plugins configured. Wrote empty plugin lock.\n')
+    expect(io.stderrText).toBe('')
+  })
+
   it('prints contextual help when global options come before the command', async () => {
     const io = await createTestIo()
 

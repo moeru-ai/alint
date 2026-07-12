@@ -6,6 +6,7 @@ import type {
 
 import { readFile } from 'node:fs/promises'
 
+import { isENOENTError } from '../utils/fs'
 import { parseSetupConfigToml } from './toml'
 
 export const emptySetupConfig: SetupConfig = { providers: [], version: 1 }
@@ -15,7 +16,7 @@ export async function loadSetupConfig(filePath: string): Promise<SetupConfig> {
     return parseSetupConfigToml(await readFile(filePath, 'utf8'))
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isENOENTError(error)) {
       return createEmptySetupConfig()
     }
 
@@ -129,10 +130,6 @@ function cloneProvider(provider: ProviderDefinition): ProviderDefinition {
 
 function createEmptySetupConfig(): SetupConfig {
   return { providers: [], version: 1 }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 function mergeModel(

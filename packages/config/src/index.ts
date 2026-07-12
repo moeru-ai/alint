@@ -1,4 +1,4 @@
-export { loadAlintConfig } from './config/load'
+export * from './config'
 export {
   ignorePatternsAIAgents,
   ignorePatternsBuildOutputs,
@@ -6,12 +6,17 @@ export {
   ignorePatternsCommon,
   ignorePatternsEslintDefaults,
   ignorePatternsGenerated,
-} from './ignore-patterns'
-export { getGlobalSetupConfigPath, getProjectSetupConfigPath, getStatsDir } from './paths'
+} from './constants/patterns/ignore'
+export {
+  getGlobalSetupConfigPath,
+  getProjectPluginLockPath,
+  getProjectPluginStorePath,
+  getProjectSetupConfigPath,
+  getStatsDir,
+} from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
-export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
-export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
-export { writeSetupConfig } from './setup/write'
+export * from './plugins'
+export * from './setup'
 export type {
   AlintConfig,
   ModelSize,

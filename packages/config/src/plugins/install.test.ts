@@ -1,0 +1,318 @@
+import { Buffer } from 'node:buffer'
+import { createHash } from 'node:crypto'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { gzip } from 'node:zlib'
+
+import tar from 'tar-stream'
+
+import { createApp, defineEventHandler, serve, setResponseHeader, setResponseStatus } from 'h3/node'
+import { afterEach, describe, expect, it } from 'vitest'
+
+import { installStaticPlugins } from './install'
+
+interface RegistryServer {
+  close: () => Promise<void>
+  metadataRequests: () => number
+  registry: string
+  tarballRequests: () => number
+}
+
+describe('static plugin installation', () => {
+  const tempRoots: string[] = []
+  const servers: RegistryServer[] = []
+
+  afterEach(async () => {
+    await Promise.all(servers.splice(0).map(server => server.close()))
+    await Promise.all(tempRoots.splice(0).map(root => rm(root, { force: true, recursive: true })))
+  })
+
+  async function createProject(config: string): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'alint-plugin-install-'))
+    tempRoots.push(root)
+    await writeFile(join(root, 'alint.config.ts'), config, 'utf8')
+    return root
+  }
+
+  async function createTarball(entries: Record<string, string>): Promise<Buffer> {
+    const pack = tar.pack()
+    const chunks: Buffer[] = []
+
+    pack.on('data', chunk => chunks.push(Buffer.from(chunk)))
+
+    for (const [name, content] of Object.entries(entries)) {
+      pack.entry({ name }, content)
+    }
+
+    pack.finalize()
+    await new Promise<void>((resolve, reject) => {
+      pack.on('end', resolve)
+      pack.on('error', reject)
+    })
+
+    return new Promise((resolve, reject) => {
+      gzip(Buffer.concat(chunks), (error, result) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve(result)
+      })
+    })
+  }
+
+  function createIntegrity(tarball: Buffer, algorithm = 'sha512'): string {
+    return `${algorithm}-${createHash(algorithm).update(tarball).digest('base64')}`
+  }
+
+  async function startRegistry(tarball: Buffer, integrity: null | string = createIntegrity(tarball)): Promise<RegistryServer> {
+    let metadataRequests = 0
+    let tarballRequests = 0
+
+    const app = createApp()
+
+    app.get('/@alint-js%2fplugin-python', defineEventHandler((event) => {
+      const host = event.req.headers.get('host')
+
+      if (host === null) {
+        setResponseStatus(event, 400)
+        return 'missing host'
+      }
+
+      metadataRequests += 1
+      setResponseHeader(event, 'content-type', 'application/json')
+      return {
+        versions: {
+          '0.3.1': {
+            dist: {
+              ...(integrity === null ? {} : { integrity }),
+              tarball: `http://${host}/plugin-python-0.3.1.tgz`,
+            },
+          },
+        },
+      }
+    }))
+
+    app.get('/plugin-python-0.3.1.tgz', defineEventHandler((event) => {
+      tarballRequests += 1
+      setResponseHeader(event, 'content-type', 'application/octet-stream')
+      return tarball
+    }))
+
+    app.all('/**', defineEventHandler((event) => {
+      setResponseStatus(event, 404)
+      return 'not found'
+    }))
+
+    const server = await serve(app, {
+      hostname: '127.0.0.1',
+      port: 0,
+      silent: true,
+    }).ready()
+
+    const registry = server.url!
+    servers.push({
+      close: () => server.close(true),
+      metadataRequests: () => metadataRequests,
+      registry,
+      tarballRequests: () => tarballRequests,
+    })
+
+    return servers.at(-1)!
+  }
+
+  async function createPluginTarball(): Promise<Buffer> {
+    return createTarball({
+      'package/dist/index.mjs': 'export default { rules: {} }\n',
+      'package/package.json': JSON.stringify({
+        exports: { '.': './dist/index.mjs' },
+        name: '@alint-js/plugin-python',
+        type: 'module',
+        version: '0.3.1',
+      }),
+    })
+  }
+
+  it('downloads, extracts, resolves, and locks configured static plugin packages', async () => {
+    const projectRoot = await createProject(`
+export default [
+  {
+    plugins: {
+      python: '@alint-js/plugin-python@0.3.1',
+    },
+  },
+]
+`)
+    const tarball = await createPluginTarball()
+    const registry = await startRegistry(tarball)
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
+    const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
+
+    expect(result.installedCount).toBe(1)
+    expect(lock).toEqual({
+      plugins: {
+        python: {
+          alias: 'python',
+          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+          integrity: createIntegrity(tarball),
+          name: '@alint-js/plugin-python',
+          registry: registry.registry,
+          specifier: '@alint-js/plugin-python@0.3.1',
+          tarball: `${registry.registry}plugin-python-0.3.1.tgz`,
+          version: '0.3.1',
+        },
+      },
+      version: 1,
+    })
+    await expect(readFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs'), 'utf8'))
+      .resolves
+      .toBe('export default { rules: {} }\n')
+  })
+
+  it('rejects package names that would escape the project plugin store', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '../../outside@1.0.0' } },
+]
+`)
+    const escapedPath = join(projectRoot, '.alint', 'outside')
+
+    await expect(installStaticPlugins({ cwd: projectRoot }))
+      .rejects
+      .toThrow('Invalid static plugin package name "../../outside".')
+    await expect(access(escapedPath))
+      .rejects
+      .toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('rejects downloaded tarballs when npm integrity does not match', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const registry = await startRegistry(await createPluginTarball(), createIntegrity(Buffer.from('different')))
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
+  })
+
+  it('rejects npm metadata without usable integrity before installing or writing a lock file', async () => {
+    for (const integrity of [null, '']) {
+      const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+      const registry = await startRegistry(await createPluginTarball(), integrity)
+
+      await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+        .rejects
+        .toThrow('Npm metadata for "@alint-js/plugin-python" does not include integrity for version 0.3.1.')
+      expect(registry.tarballRequests()).toBe(0)
+      await expect(access(join(projectRoot, '.alint', 'plugins', 'store')))
+        .rejects
+        .toMatchObject({ code: 'ENOENT' })
+      await expect(access(join(projectRoot, '.alint', 'plugins', 'lock.json')))
+        .rejects
+        .toMatchObject({ code: 'ENOENT' })
+    }
+  })
+
+  it('rejects multiple-token npm integrity when strongest supported digest does not match', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const tarball = await createPluginTarball()
+    const integrity = `${createIntegrity(Buffer.from('different'))} ${createIntegrity(tarball, 'sha256')}`
+    const registry = await startRegistry(tarball, integrity)
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
+    expect(registry.tarballRequests()).toBe(1)
+  })
+
+  it('downloads each repeated package specifier once while locking every alias', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+  { plugins: { py: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const registry = await startRegistry(await createPluginTarball())
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
+
+    expect(result.installedCount).toBe(1)
+    expect(registry.metadataRequests()).toBe(1)
+    expect(registry.tarballRequests()).toBe(1)
+    expect(Object.keys(result.lock.plugins)).toEqual(['python', 'py'])
+    expect(result.lock.plugins.python?.entry).toBe(result.lock.plugins.py?.entry)
+  })
+
+  it('writes an empty lock file when there are no static plugin references', async () => {
+    const projectRoot = await createProject('export default [{ rules: {} }]\n')
+
+    const result = await installStaticPlugins({ cwd: projectRoot })
+    const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
+
+    expect(result.installedCount).toBe(0)
+    expect(result.configuredPluginCount).toBe(0)
+    expect(lock).toEqual({ plugins: {}, version: 1 })
+  })
+
+  it('rejects tarball entries that escape the package directory', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const registry = await startRegistry(await createTarball({
+      'package/../evil.txt': 'escape',
+      'package/package.json': '{}',
+    }))
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('Plugin tarball entry "package/../evil.txt" escapes the package directory.')
+  })
+
+  it('keeps an existing installed package intact when reinstalling a package with a missing export fails', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const existingEntryPath = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs')
+    await mkdir(join(existingEntryPath, '..'), { recursive: true })
+    await writeFile(existingEntryPath, 'export default { rules: { existing: {} } }\n', 'utf8')
+    await writeFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name: '@alint-js/plugin-python',
+      type: 'module',
+      version: '0.3.1',
+    }), 'utf8')
+    const registry = await startRegistry(await createTarball({
+      'package/dist/index.mjs': 'export default { rules: { broken: {} } }\n',
+      'package/package.json': JSON.stringify({
+        name: '@alint-js/plugin-python',
+        type: 'module',
+        version: '0.3.1',
+      }),
+    }))
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('does not define a resolvable "." export')
+    await expect(readFile(existingEntryPath, 'utf8'))
+      .resolves
+      .toBe('export default { rules: { existing: {} } }\n')
+  })
+})
