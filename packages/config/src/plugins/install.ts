@@ -18,6 +18,8 @@ import { createGunzip } from 'node:zlib'
 
 import tar from 'tar-stream'
 
+import { ofetch } from 'ofetch'
+
 import { loadStaticConfig } from '../config/load'
 import { listStaticPluginReferences } from '../config/static'
 import { getProjectPluginStorePath } from '../paths'
@@ -98,16 +100,6 @@ export async function installStaticPlugins(
   }
 }
 
-async function downloadBuffer(url: string): Promise<Buffer> {
-  const response = await fetch(url)
-
-  if (!response.ok) {
-    throw new Error(`Failed to download "${url}": ${response.status} ${response.statusText}`)
-  }
-
-  return Buffer.from(await response.arrayBuffer())
-}
-
 async function extractPackageEntry(
   packageDir: string,
   header: tar.Headers,
@@ -177,14 +169,7 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
 
 async function fetchPackageMetadata(registry: string, identity: PackageIdentity): Promise<NpmMetadata> {
   const url = `${registry.replace(/\/$/u, '')}/${identity.registryPath}`
-  const response = await fetch(url)
-
-  if (!response.ok) {
-    throw new Error(`Failed to fetch npm metadata for "${identity.name}": ${response.status} ${response.statusText}`)
-  }
-
-  const value: unknown = await response.json()
-
+  const value = await ofetch<unknown>(url)
   if (!isPlainObject(value)) {
     throw new Error(`Npm metadata for "${identity.name}" must be an object.`)
   }
@@ -292,7 +277,7 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
   let relativeEntry: string
 
   try {
-    const tarball = await downloadBuffer(dist.tarball)
+    const tarball = Buffer.from(await ofetch<ArrayBuffer, 'arrayBuffer'>(dist.tarball, { responseType: 'arrayBuffer' }))
     verifyTarballIntegrity(tarball, dist.integrity, `${name}@${version}`)
 
     await mkdir(stagingPackageDir, { recursive: true })

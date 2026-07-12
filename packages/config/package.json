@@ -21,6 +21,7 @@
     "@alint-js/core": "workspace:*",
     "c12": "catalog:",
     "jiti": "catalog:",
+    "ofetch": "catalog:",
     "pathe": "catalog:",
     "resolve.exports": "catalog:",
     "smol-toml": "catalog:",

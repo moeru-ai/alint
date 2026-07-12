@@ -102,6 +102,9 @@ catalogs:
     nano-staged:
       specifier: ^1.0.2
       version: 1.0.2
+    ofetch:
+      specifier: ^1.5.1
+      version: 1.5.1
     oxc-minify:
       specifier: ^0.137.0
       version: 0.137.0
@@ -419,6 +422,9 @@ importers:
       jiti:
         specifier: 'catalog:'
         version: 2.7.0
+      ofetch:
+        specifier: 'catalog:'
+        version: 1.5.1
       pathe:
         specifier: 'catalog:'
         version: 2.0.3
