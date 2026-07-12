@@ -1,4 +1,4 @@
-import type { StaticPluginReference } from '../config/static'
+import type { ParsedStaticConfig, StaticPluginReference } from '../config/static'
 import type {
   ParsedPluginLockEntry,
   ParsedPluginLockFile,
@@ -16,6 +16,7 @@ import {
 } from 'valibot'
 
 import { getProjectPluginLockPath } from '../paths'
+import { resolveLockedPluginPackage } from './package'
 import { formatPluginSpecifier, parsePluginSpecifier } from './spec'
 
 const PluginLockEntrySchema = object({
@@ -36,6 +37,54 @@ const PluginLockFileSchema = object({
 
 export function createEmptyPluginLockFile(): PluginLockFile {
   return { plugins: {}, version: 1 }
+}
+
+export function listMissing(
+  config: ParsedStaticConfig,
+  lock: ParsedPluginLockFile,
+): StaticPluginReference[] {
+  const missing: StaticPluginReference[] = []
+
+  for (const group of config.groups) {
+    for (const reference of group.plugins) {
+      const entry = lock.find(reference)
+
+      if (entry === undefined) {
+        missing.push(reference)
+      }
+    }
+  }
+
+  return missing
+}
+
+export async function listUnresolved(
+  config: ParsedStaticConfig,
+  lock: ParsedPluginLockFile,
+): Promise<ParsedPluginLockEntry[]> {
+  const unresolved: ParsedPluginLockEntry[] = []
+  const checkedEntries = new Set<ParsedPluginLockEntry>()
+
+  for (const group of config.groups) {
+    for (const reference of group.plugins) {
+      const entry = lock.find(reference)
+
+      if (entry === undefined || checkedEntries.has(entry)) {
+        continue
+      }
+
+      checkedEntries.add(entry)
+
+      try {
+        await resolveLockedPluginPackage(entry)
+      }
+      catch {
+        unresolved.push(entry)
+      }
+    }
+  }
+
+  return unresolved
 }
 
 export async function loadPluginLockFile(cwd: string): Promise<PluginLockFile> {

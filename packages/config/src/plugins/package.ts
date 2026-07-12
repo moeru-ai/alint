@@ -69,7 +69,7 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
   ])
 
   if (!isPathInside(physicalEntry, physicalPluginRoot)) {
-    throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the project root.`)
+    throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the plugin store.`)
   }
 
   const packageDir = findPackageRoot(resolvedEntry)

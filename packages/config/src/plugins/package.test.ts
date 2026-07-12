@@ -97,7 +97,7 @@ describe('plugin package resolution', () => {
 
     await expect(resolveLockedPluginPackage(createLockEntry(projectRoot, '.alint/plugins/store/linked/package/dist/index.mjs')))
       .rejects
-      .toThrow('Plugin lock entry "python" resolves outside the project root.')
+      .toThrow('Plugin lock entry "python" resolves outside the plugin store.')
   })
 
   it('rejects a lock entry inside the plugins directory but outside the plugin store', async () => {
@@ -118,7 +118,7 @@ describe('plugin package resolution', () => {
       '.alint/plugins/other/package/dist/index.mjs',
     )))
       .rejects
-      .toThrow('Plugin lock entry "python" resolves outside the project root.')
+      .toThrow('Plugin lock entry "python" resolves outside the plugin store.')
   })
 
   it('resolves the package exports entry for an installed plugin package', async () => {

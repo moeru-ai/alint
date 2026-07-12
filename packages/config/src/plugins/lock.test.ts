@@ -4,8 +4,25 @@ import { tmpdir } from 'node:os'
 import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { loadPluginLockFile, parsePluginLockFile } from './lock'
+import { parseStaticConfig } from '../config/static'
+import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from './lock'
 import { parsePluginSpecifier } from './spec'
+
+function createLockEntry(alias: string, specifier: string, entry: string) {
+  const name = specifier.slice(0, specifier.lastIndexOf('@'))
+  const version = specifier.slice(specifier.lastIndexOf('@') + 1)
+
+  return {
+    alias,
+    entry,
+    integrity: 'sha512-test',
+    name,
+    registry: 'https://registry.npmjs.org/',
+    specifier,
+    tarball: 'https://registry.npmjs.org/plugin.tgz',
+    version,
+  }
+}
 
 describe('plugin lock parsing', () => {
   it('parses lock entries and finds matching static plugin references', () => {
@@ -83,6 +100,137 @@ describe('plugin lock parsing', () => {
       },
       version: 1,
     }, { cwd: '/repo' })).toThrow('Plugin lock entry key "python" must match alias "js".')
+  })
+})
+
+describe('plugin lock static config state', () => {
+  const tempRoots: string[] = []
+
+  afterEach(async () => {
+    await Promise.all(tempRoots.map(root => rm(root, { force: true, recursive: true })))
+    tempRoots.length = 0
+  })
+
+  async function createTempProject(): Promise<string> {
+    const root = await mkdtemp(join(tmpdir(), 'alint-plugin-lock-state-'))
+    tempRoots.push(root)
+    return root
+  }
+
+  async function writeInstalledPackage(projectRoot: string): Promise<string> {
+    const packageDir = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package')
+    const distDir = join(packageDir, 'dist')
+    await mkdir(distDir, { recursive: true })
+    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name: '@alint-js/plugin-python',
+      type: 'module',
+      version: '0.3.1',
+    }), 'utf8')
+    await writeFile(join(distDir, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+
+    return packageDir
+  }
+
+  it('returns static plugin references absent from the lock file', () => {
+    const config = parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+      { plugins: { js: '@alint-js/plugin-js@1.2.3' } },
+    ])
+    const lock = parsePluginLockFile({
+      plugins: {
+        python: createLockEntry(
+          'python',
+          '@alint-js/plugin-python@0.3.1',
+          '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+        ),
+      },
+      version: 1,
+    }, { cwd: '/repo' })
+
+    expect(listMissing(config, lock)).toEqual([
+      {
+        alias: 'js',
+        specifier: parsePluginSpecifier('@alint-js/plugin-js@1.2.3'),
+      },
+    ])
+  })
+
+  it('returns mismatched-version static plugin references as missing', () => {
+    const config = parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+    ])
+    const lock = parsePluginLockFile({
+      plugins: {
+        python: createLockEntry(
+          'python',
+          '@alint-js/plugin-python@0.3.0',
+          '.alint/plugins/store/@alint-js/plugin-python/0.3.0/package/dist/index.mjs',
+        ),
+      },
+      version: 1,
+    }, { cwd: '/repo' })
+
+    expect(listMissing(config, lock)).toEqual([
+      {
+        alias: 'python',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
+      },
+    ])
+  })
+
+  it('returns lock entries whose package entry cannot be resolved', async () => {
+    const projectRoot = await createTempProject()
+    await mkdir(join(projectRoot, '.alint', 'plugins', 'store'), { recursive: true })
+    const config = parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+    ])
+    const lock = parsePluginLockFile({
+      plugins: {
+        python: createLockEntry(
+          'python',
+          '@alint-js/plugin-python@0.3.1',
+          '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+        ),
+      },
+      version: 1,
+    }, { cwd: projectRoot })
+
+    const unresolved = await listUnresolved(config, lock)
+
+    expect(unresolved).toHaveLength(1)
+    expect(unresolved[0]?.alias).toBe('python')
+    expect(unresolved[0]?.lockEntry.entry).toBe('.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs')
+  })
+
+  it('ignores static plugin references missing from the lock file when listing unresolved entries', async () => {
+    const config = parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+    ])
+    const lock = parsePluginLockFile({ plugins: {}, version: 1 }, { cwd: await createTempProject() })
+
+    await expect(listUnresolved(config, lock)).resolves.toEqual([])
+  })
+
+  it('returns no unresolved entries for an installed package entry', async () => {
+    const projectRoot = await createTempProject()
+    const packageDir = await writeInstalledPackage(projectRoot)
+    const config = parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+    ])
+    const lock = parsePluginLockFile({
+      plugins: {
+        python: createLockEntry(
+          'python',
+          '@alint-js/plugin-python@0.3.1',
+          join(packageDir, 'dist', 'index.mjs'),
+        ),
+      },
+      version: 1,
+    }, { cwd: projectRoot })
+
+    await expect(listUnresolved(config, lock)).resolves.toEqual([])
   })
 })
 
