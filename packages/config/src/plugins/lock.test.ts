@@ -101,6 +101,24 @@ describe('plugin lock parsing', () => {
       version: 1,
     }, { cwd: '/repo' })).toThrow('Plugin lock entry key "python" must match alias "js".')
   })
+
+  it('rejects lock entries with unsupported npm integrity format', () => {
+    expect(() => parsePluginLockFile({
+      plugins: {
+        python: {
+          alias: 'python',
+          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+          integrity: 'sha1-deadbeef',
+          name: '@alint-js/plugin-python',
+          registry: 'https://registry.npmjs.org/',
+          specifier: '@alint-js/plugin-python@0.3.1',
+          tarball: 'https://registry.npmjs.org/plugin.tgz',
+          version: '0.3.1',
+        },
+      },
+      version: 1,
+    }, { cwd: '/repo' })).toThrow('Unsupported npm integrity format for "@alint-js/plugin-python@0.3.1": "sha1-deadbeef".')
+  })
 })
 
 describe('plugin lock static config state', () => {

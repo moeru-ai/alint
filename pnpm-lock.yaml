@@ -419,6 +419,9 @@ importers:
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)
+      es-toolkit:
+        specifier: 'catalog:'
+        version: 1.49.0
       jiti:
         specifier: 'catalog:'
         version: 2.7.0

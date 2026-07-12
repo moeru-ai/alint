@@ -18,6 +18,7 @@ import {
 } from 'valibot'
 
 import { getProjectPluginLockPath } from '../paths'
+import { parseIntegrity } from './integrity'
 import { resolveLockedPluginPackage } from './package'
 import { formatPluginSpecifier, parsePluginSpecifier } from './spec'
 
@@ -172,6 +173,8 @@ function parsePluginLockFileValue(value: unknown): PluginLockFile {
     if (entry.alias !== alias) {
       throw new Error(`Plugin lock entry key "${alias}" must match alias "${entry.alias}".`)
     }
+
+    parseIntegrity(entry.integrity, entry.specifier)
   }
 
   return file

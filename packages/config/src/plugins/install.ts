@@ -8,7 +8,7 @@ import type {
 } from './types'
 
 import { Buffer } from 'node:buffer'
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
@@ -18,18 +18,18 @@ import { createGunzip } from 'node:zlib'
 
 import tar from 'tar-stream'
 
+import { isPlainObject } from 'es-toolkit/compat'
 import { ofetch } from 'ofetch'
 
 import { loadStaticConfig } from '../config/load'
 import { listStaticPluginReferences } from '../config/static'
 import { getProjectPluginStorePath } from '../paths'
+import { checkIntegrity } from './integrity'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
 import { resolveInstalledPackageRelativeEntry } from './package'
 import { formatPluginSpecifier } from './spec'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
-const SUPPORTED_INTEGRITY_ALGORITHMS = ['sha512', 'sha256'] as const
-const SUPPORTED_INTEGRITY_TOKEN_PATTERN = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u
 
 interface InstalledPackage extends Omit<PluginLockEntry, 'alias' | 'specifier'> {}
 
@@ -58,8 +58,6 @@ interface PackageIdentity {
 interface PackageInstallIdentity extends PackageIdentity {
   version: string
 }
-
-type SupportedIntegrityAlgorithm = typeof SUPPORTED_INTEGRITY_ALGORITHMS[number]
 
 export async function installStaticPlugins(
   options: StaticPluginInstallOptions,
@@ -278,7 +276,7 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
 
   try {
     const tarball = Buffer.from(await ofetch<ArrayBuffer, 'arrayBuffer'>(dist.tarball, { responseType: 'arrayBuffer' }))
-    verifyTarballIntegrity(tarball, dist.integrity, `${name}@${version}`)
+    checkIntegrity(tarball, dist.integrity, `${name}@${version}`)
 
     await mkdir(stagingPackageDir, { recursive: true })
     await extractPackageTarball(tarball, stagingPackageDir)
@@ -308,10 +306,6 @@ function isPathInside(path: string, parent: string): boolean {
   const childRelativePath = relative(parent, path)
   return childRelativePath === ''
     || (!childRelativePath.startsWith('..') && !isAbsolute(childRelativePath))
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeRegistry(registry: string): string {
@@ -351,42 +345,5 @@ async function replacePackageDirectory(packageDir: string, stagingPackageDir: st
     if (replaced || !hasBackup) {
       await rm(backupPackageDir, { force: true, recursive: true })
     }
-  }
-}
-
-function verifyTarballIntegrity(tarball: Buffer, integrity: string, specifier: string): void {
-  const supportedTokens = integrity
-    .trim()
-    .split(/\s+/u)
-    .map(token => SUPPORTED_INTEGRITY_TOKEN_PATTERN.exec(token))
-    .filter(match => match !== null)
-    .map(([, algorithm, expected]) => ({
-      algorithm: algorithm as SupportedIntegrityAlgorithm,
-      expected,
-    }))
-
-  if (supportedTokens.length === 0) {
-    throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
-  }
-
-  const strongestAlgorithm = SUPPORTED_INTEGRITY_ALGORITHMS.find(algorithm =>
-    supportedTokens.some(token => token.algorithm === algorithm),
-  )
-
-  if (strongestAlgorithm === undefined) {
-    throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
-  }
-
-  const matches = supportedTokens.some(({ algorithm, expected }) => {
-    if (algorithm !== strongestAlgorithm) {
-      return false
-    }
-
-    const actual = createHash(algorithm).update(tarball).digest('base64')
-    return actual === expected
-  })
-
-  if (!matches) {
-    throw new Error(`Integrity mismatch for "${specifier}".`)
   }
 }

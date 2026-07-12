@@ -20,6 +20,7 @@
   "dependencies": {
     "@alint-js/core": "workspace:*",
     "c12": "catalog:",
+    "es-toolkit": "catalog:",
     "jiti": "catalog:",
     "ofetch": "catalog:",
     "pathe": "catalog:",
