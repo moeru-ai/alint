@@ -18,7 +18,6 @@ import { createGunzip } from 'node:zlib'
 
 import tar from 'tar-stream'
 
-import { isPlainObject } from 'es-toolkit/compat'
 import { ofetch } from 'ofetch'
 
 import { loadStaticConfig } from '../config/load'
@@ -162,12 +161,7 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
 
 async function fetchPackageMetadata(npmRegistry: string, specifier: ParsedPluginSpecifier): Promise<NpmMetadata> {
   const url = `${npmRegistry.replace(/\/$/u, '')}/${specifier.registryPath}`
-  const value = await ofetch<unknown>(url)
-  if (!isPlainObject(value)) {
-    throw new Error(`Npm metadata for "${specifier.name}" must be an object.`)
-  }
-
-  return value as NpmMetadata
+  return ofetch<NpmMetadata>(url)
 }
 
 async function installPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
