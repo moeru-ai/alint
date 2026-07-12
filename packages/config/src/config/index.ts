@@ -1,7 +1,6 @@
 export { loadAlintConfig, loadStaticConfig } from './load'
 export {
   formatPluginSpecifier,
-  listStaticPluginReferences,
   parsePluginSpecifier,
   parseStaticConfig,
   toAlintConfig,

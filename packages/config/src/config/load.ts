@@ -12,7 +12,6 @@ import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } 
 import { importResolvedPluginPackage, resolveLockedPluginPackage } from '../plugins/package'
 import {
   formatPluginSpecifier,
-  listStaticPluginReferences,
   parseStaticConfig,
   toAlintConfig,
 } from './static'
@@ -26,7 +25,7 @@ export async function loadAlintConfig(
   configFile?: string,
 ): Promise<AlintConfig> {
   const staticConfig = await loadStaticConfig(cwd, configFile)
-  const references = listStaticPluginReferences(staticConfig)
+  const references = staticConfig.groups.flatMap(group => group.plugins)
 
   if (references.length === 0) {
     return toAlintConfig(staticConfig, {

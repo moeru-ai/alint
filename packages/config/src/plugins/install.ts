@@ -22,7 +22,6 @@ import { isPlainObject } from 'es-toolkit/compat'
 import { ofetch } from 'ofetch'
 
 import { loadStaticConfig } from '../config/load'
-import { listStaticPluginReferences } from '../config/static'
 import { getProjectPluginStorePath } from '../paths'
 import { isENOENTError } from '../utils/fs'
 import { checkIntegrity } from './integrity'
@@ -54,7 +53,7 @@ export async function installStaticPlugins(
   options: StaticPluginInstallOptions,
 ): Promise<StaticPluginInstallResult> {
   const config = await loadStaticConfig(options.cwd, options.configFile)
-  const references = listStaticPluginReferences(config)
+  const references = config.groups.flatMap(group => group.plugins)
   const rawRegistry = options.registry ?? DEFAULT_REGISTRY
   const registry = rawRegistry.endsWith('/') ? rawRegistry : `${rawRegistry}/`
   const lock = createEmptyPluginLockFile()

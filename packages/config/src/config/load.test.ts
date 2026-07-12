@@ -6,7 +6,7 @@ import { pathToFileURL } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
 import { loadAlintConfig, loadStaticConfig } from './load'
-import { listStaticPluginReferences, parsePluginSpecifier } from './static'
+import { parsePluginSpecifier } from './static'
 
 function createLockEntry(alias: string, specifier: string, entry: string) {
   const name = specifier.slice(0, specifier.lastIndexOf('@'))
@@ -194,7 +194,7 @@ python = "@alint-js/plugin-python@0.3.1"
 
     const config = await loadStaticConfig(cwd)
 
-    expect(listStaticPluginReferences(config)).toEqual([
+    expect(config.groups.flatMap(group => group.plugins)).toEqual([
       {
         alias: 'python',
         specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
