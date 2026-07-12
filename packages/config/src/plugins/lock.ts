@@ -21,7 +21,7 @@ import { getProjectPluginLockPath } from '../paths'
 import { isENOENTError } from '../utils/fs'
 import { parseIntegrity } from './integrity'
 import { resolveLockedPluginPackage } from './package'
-import { formatPluginSpecifier, parsePluginSpecifier } from './spec'
+import { parsePluginSpecifier } from './spec'
 
 const PluginLockEntrySchema = object({
   alias: string(),
@@ -123,13 +123,13 @@ export function parsePluginLockFile(
     file,
     find(reference: StaticPluginReference) {
       const entry = byAlias.get(reference.alias)
-      return entry?.lockEntry.specifier === formatPluginSpecifier(reference.specifier)
+      return entry?.lockEntry.specifier === reference.specifier.raw
         ? entry
         : undefined
     },
     get(reference: StaticPluginReference) {
       const entry = byAlias.get(reference.alias)
-      const expected = formatPluginSpecifier(reference.specifier)
+      const expected = reference.specifier.raw
 
       if (entry === undefined) {
         throw new Error(`Plugin "${reference.alias}" requires ${expected}, but no matching lock entry exists.\nRun: alint plugin install`)

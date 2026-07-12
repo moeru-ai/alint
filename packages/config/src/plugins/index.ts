@@ -7,7 +7,7 @@ export {
   parsePluginLockFile,
   writePluginLockFile,
 } from './lock'
-export { formatPluginSpecifier, parsePluginSpecifier } from './spec'
+export { parsePluginSpecifier } from './spec'
 export type {
   ParsedPluginLockEntry,
   ParsedPluginLockFile,

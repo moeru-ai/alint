@@ -17,9 +17,9 @@ import {
   unknown,
 } from 'valibot'
 
-import { formatPluginSpecifier, parsePluginSpecifier } from '../plugins/spec'
+import { parsePluginSpecifier } from '../plugins/spec'
 
-export { formatPluginSpecifier, parsePluginSpecifier }
+export { parsePluginSpecifier }
 export type { ParsedPluginSpecifier }
 
 export interface NormalizeLoadedAlintConfigOptions {
@@ -212,9 +212,9 @@ function readStaticPluginReferences(
     const specifier = parsePluginSpecifier(plugin)
     const existing = pluginsByAlias.get(alias)
 
-    if (existing !== undefined && formatPluginSpecifier(existing) !== formatPluginSpecifier(specifier)) {
+    if (existing !== undefined && existing.raw !== specifier.raw) {
       throw new Error(
-        `Static plugin "${alias}" is configured with multiple specifiers: "${formatPluginSpecifier(existing)}" and "${formatPluginSpecifier(specifier)}".`,
+        `Static plugin "${alias}" is configured with multiple specifiers: "${existing.raw}" and "${specifier.raw}".`,
       )
     }
 
@@ -250,7 +250,7 @@ async function resolveStaticPlugins(
       throw new Error(`Static plugin "${alias}" is missing a parsed plugin reference.`)
     }
 
-    const pluginCacheKey = formatPluginSpecifier(reference.specifier)
+    const pluginCacheKey = reference.specifier.raw
     let resolvedPlugin = pluginCache.get(pluginCacheKey)
 
     if (resolvedPlugin === undefined) {

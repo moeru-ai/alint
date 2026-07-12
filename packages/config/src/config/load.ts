@@ -11,7 +11,6 @@ import { createJiti } from 'jiti/static'
 import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from '../plugins/lock'
 import { importResolvedPluginPackage, resolveLockedPluginPackage } from '../plugins/package'
 import {
-  formatPluginSpecifier,
   parseStaticConfig,
   toAlintConfig,
 } from './static'
@@ -91,12 +90,12 @@ export async function loadStaticConfig(
 
 function formatPluginLockEntries(entries: readonly ParsedPluginLockEntry[]): string {
   return entries
-    .map(entry => `${entry.alias} (${formatPluginSpecifier(entry.specifier)})`)
+    .map(entry => `${entry.alias} (${entry.specifier.raw})`)
     .join(', ')
 }
 
 function formatStaticPluginReferences(references: readonly StaticPluginReference[]): string {
   return references
-    .map(reference => `${reference.alias} (${formatPluginSpecifier(reference.specifier)})`)
+    .map(reference => `${reference.alias} (${reference.specifier.raw})`)
     .join(', ')
 }

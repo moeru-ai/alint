@@ -26,7 +26,6 @@ import { isENOENTError, isPathInside } from '../utils/fs'
 import { checkIntegrity } from './integrity'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
 import { resolveInstalledPackageRelativeEntry } from './package'
-import { formatPluginSpecifier } from './spec'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
 
@@ -57,7 +56,7 @@ export async function installStaticPlugins(
   const packageInstallationsBySpecifier = new Map<string, Promise<InstalledPackage>>()
 
   for (const configuredPlugin of configuredPlugins) {
-    const specifier = formatPluginSpecifier(configuredPlugin.specifier)
+    const specifier = configuredPlugin.specifier.raw
     let packageInstallation = packageInstallationsBySpecifier.get(specifier)
 
     if (packageInstallation === undefined) {

@@ -8,10 +8,6 @@ export interface ParsedPluginSpecifier {
   version: string
 }
 
-export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string {
-  return specifier.raw
-}
-
 export function parsePluginSpecifier(value: string): ParsedPluginSpecifier {
   const versionSeparator = value.lastIndexOf('@')
 
