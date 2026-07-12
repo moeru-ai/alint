@@ -1,6 +1,7 @@
 import { readFile, realpath, stat } from 'node:fs/promises'
 
 import { dirname, extname, isAbsolute, relative, resolve } from 'pathe'
+import { exports as resolvePackageExport } from 'resolve.exports'
 
 export interface VerifiedPluginPackage {
   apiVersion: string
@@ -18,14 +19,15 @@ export interface VerifyExtractedPluginPackageOptions {
 interface PluginPackageJson {
   alint?: {
     apiVersion?: unknown
-    entry?: unknown
   }
   bundledDependencies?: unknown
   bundleDependencies?: unknown
   dependencies?: unknown
+  exports?: unknown
   name?: unknown
   optionalDependencies?: unknown
   peerDependencies?: unknown
+  type?: unknown
   version?: unknown
 }
 
@@ -89,17 +91,14 @@ export async function verifyExtractedPluginPackage(
     throw new Error(`Plugin package ${options.expectedName}@${options.expectedVersion} declares alint apiVersion "${String(packageJson.alint?.apiVersion)}", but this alint binary supports "${options.supportedApiVersion}".`)
   }
 
-  if (typeof packageJson.alint.entry !== 'string' || packageJson.alint.entry.length === 0) {
-    throw new Error(`Plugin package ${options.expectedName}@${options.expectedVersion} must declare alint.entry.`)
-  }
-
-  assertSafeLocalImportSpecifier(packageJson.alint.entry)
-  const entry = isAbsolute(packageJson.alint.entry)
-    ? resolve(packageJson.alint.entry)
-    : resolveInside(root, packageJson.alint.entry, 'entry')
-  assertEsmEntry(entry)
+  const entrySpecifier = resolvePluginPackageEntry(packageJson, options.expectedName, options.expectedVersion)
+  assertSafeLocalImportSpecifier(entrySpecifier)
+  const entry = isAbsolute(entrySpecifier)
+    ? resolve(entrySpecifier)
+    : resolveInside(root, entrySpecifier, 'entry')
+  assertEsmEntry(entry, packageJson)
   const canonicalEntry = await assertFileExists(entry, 'entry', root)
-  await assertNoExternalImports(canonicalEntry, canonicalRoot)
+  await assertNoExternalImports(canonicalEntry, canonicalRoot, packageJson)
 
   return {
     apiVersion: options.supportedApiVersion,
@@ -109,10 +108,18 @@ export async function verifyExtractedPluginPackage(
   }
 }
 
-function assertEsmEntry(entry: string): void {
-  if (extname(entry) !== '.mjs') {
-    throw new Error('Plugin package entry must be an ESM .mjs file.')
+function assertEsmEntry(entry: string, packageJson: PluginPackageJson): void {
+  const extension = extname(entry)
+
+  if (extension === '.mjs') {
+    return
   }
+
+  if (extension === '.js' && packageJson.type === 'module') {
+    return
+  }
+
+  throw new Error('Plugin package entry must be an ESM .mjs file or a .js file in a module package.')
 }
 
 async function assertFileExists(path: string, label: string, root?: string): Promise<string> {
@@ -160,8 +167,8 @@ function assertNoDeclaredDependencies(packageJson: PluginPackageJson, expectedNa
   }
 }
 
-async function assertNoExternalImports(entry: string, packageDir: string): Promise<void> {
-  await scanPackageLocalImports(entry, packageDir, new Set())
+async function assertNoExternalImports(entry: string, packageDir: string, packageJson: PluginPackageJson): Promise<void> {
+  await scanPackageLocalImports(entry, packageDir, packageJson, new Set())
 }
 
 function assertNoRuntimeEscapeAccess(source: string, modulePath: string, packageDir: string): void {
@@ -944,6 +951,34 @@ function resolveInside(root: string, path: string, label: string): string {
   return resolved
 }
 
+function resolvePluginPackageEntry(
+  packageJson: PluginPackageJson,
+  expectedName: string,
+  expectedVersion: string,
+): string {
+  let entries
+
+  try {
+    entries = resolvePackageExport(packageJson, '.', {
+      browser: false,
+      require: false,
+    })
+  }
+  catch (error) {
+    throw new Error(`Plugin package ${expectedName}@${expectedVersion} must export an ESM entry at ".".`, {
+      cause: error,
+    })
+  }
+
+  const entry = entries?.[0]
+
+  if (typeof entry !== 'string' || entry.length === 0) {
+    throw new Error(`Plugin package ${expectedName}@${expectedVersion} must export an ESM entry at ".".`)
+  }
+
+  return entry
+}
+
 function scanCodeComputedMemberAccess(source: string, startIndex: number, endIndex: number): boolean {
   let index = startIndex
   const containerStack: string[] = []
@@ -1076,6 +1111,7 @@ function scanCodeIdentifierIndexes(
 async function scanPackageLocalImports(
   modulePath: string,
   packageDir: string,
+  packageJson: PluginPackageJson,
   visited: Set<string>,
 ): Promise<void> {
   if (visited.has(modulePath)) {
@@ -1099,9 +1135,9 @@ async function scanPackageLocalImports(
         ? resolve(specifier)
         : resolveInside(packageDir, resolve(dirname(modulePath), specifier), `import "${specifier}"`)
 
-      assertEsmEntry(importedPath)
+      assertEsmEntry(importedPath, packageJson)
       const canonicalImportedPath = await assertFileExists(importedPath, `import "${specifier}"`, packageDir)
-      await scanPackageLocalImports(canonicalImportedPath, packageDir, visited)
+      await scanPackageLocalImports(canonicalImportedPath, packageDir, packageJson, visited)
       continue
     }
 

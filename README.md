@@ -162,7 +162,6 @@ alint output inspect alint-output.json
 
 ```bash
 alint plugin install
-alint plugin verify ./plugin-package.tgz
 ```
 
 `plugin install` reads static config plugin references, downloads exact npm package tarballs, verifies integrity, and writes `.alint/plugins/lock.json`. It does not install transitive npm dependencies.

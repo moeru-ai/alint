@@ -22,7 +22,8 @@ describe('extractNpmTarball', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),

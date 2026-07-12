@@ -1281,7 +1281,6 @@ export default [
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('Manage static config plugins')
     expect(io.stdoutText).toContain('plugin install')
-    expect(io.stdoutText).toContain('plugin verify <path>')
   })
 
   it('reports when plugin install finds no static plugins', async () => {
@@ -1313,7 +1312,8 @@ export default {
 }
 `,
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1428,171 +1428,6 @@ python = "@alint-js/plugin-python@0.3.1"
       '--config',
       '',
     ], io)).rejects.toThrow('Config file path must be a non-empty string.')
-  })
-
-  it('verifies a local static plugin package directory', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    }))
-
-    const exitCode = await executeCli(['node', 'alint', 'plugin', 'verify', packageDir], io)
-
-    expect(exitCode).toBe(0)
-    expect(io.stdoutText).toContain('Verified @alint-js/plugin-python@0.3.1')
-  })
-
-  it('verifies plugin paths that begin with a dash after --', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, '-plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    }))
-
-    const exitCode = await executeCli(['node', 'alint', 'plugin', 'verify', '--', '-plugin-python'], io)
-
-    expect(exitCode).toBe(0)
-    expect(io.stdoutText).toContain('Verified @alint-js/plugin-python@0.3.1')
-  })
-
-  it('rejects plugin packages without name or version', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: ' ',
-      version: '0.3.1',
-    }))
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir], io))
-      .rejects
-      .toThrow('must declare a non-empty package.json name')
-  })
-
-  it('rejects plugin packages with invalid package identity', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: 'bad name',
-      version: 'not-semver',
-    }))
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir], io))
-      .rejects
-      .toThrow('must declare a valid npm package name')
-  })
-
-  it('rejects plugin packages with reserved npm package names', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: 'node_modules',
-      version: '0.3.1',
-    }))
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir], io))
-      .rejects
-      .toThrow('must declare a valid npm package name')
-  })
-
-  it('rejects plugin packages with invalid versions', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(join(packageDir, 'dist'), { recursive: true })
-    await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: {} }\n')
-    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: './dist/index.mjs' },
-      name: '@alint-js/plugin-python',
-      version: 'latest',
-    }))
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir], io))
-      .rejects
-      .toThrow('must use an exact version')
-  })
-
-  it('rejects plugin packages with missing or invalid package.json files', async () => {
-    const io = await createTestIo()
-    const missingPackageDir = join(io.cwd, 'missing-package-json')
-    const invalidPackageDir = join(io.cwd, 'invalid-package-json')
-    await mkdir(missingPackageDir, { recursive: true })
-    await mkdir(invalidPackageDir, { recursive: true })
-    await writeFile(join(invalidPackageDir, 'package.json'), '{')
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', missingPackageDir], io))
-      .rejects
-      .toThrow('must include package.json')
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', invalidPackageDir], io))
-      .rejects
-      .toThrow('has invalid package.json')
-  })
-
-  it('rejects extra plugin verify arguments and install-only options', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(packageDir, { recursive: true })
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir, 'extra'], io))
-      .rejects
-      .toThrow('Unexpected argument extra.')
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir, '--config', 'alint.config.toml'], io))
-      .rejects
-      .toThrow('plugin verify does not support --config.')
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir, '--registry', 'https://registry.npmjs.org/'], io))
-      .rejects
-      .toThrow('plugin verify does not support --registry.')
-  })
-
-  it('rejects unknown plugin verify options', async () => {
-    const io = await createTestIo()
-    const packageDir = join(io.cwd, 'plugin-python')
-    await mkdir(packageDir, { recursive: true })
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', packageDir, '--bogus'], io))
-      .rejects
-      .toThrow('Unsupported option --bogus.')
-  })
-
-  it('cleans up temporary plugin verify directories after tarball extraction failures', async () => {
-    const io = await createTestIo()
-    const tarballPath = join(io.cwd, 'bad.tgz')
-    const before = new Set((await readdir(tmpdir())).filter(name => name.startsWith('alint-plugin-verify-')))
-    await writeFile(tarballPath, 'not a gzip tarball')
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', tarballPath], io))
-      .rejects
-      .toThrow('Failed to extract plugin tarball')
-
-    const after = (await readdir(tmpdir())).filter(name => name.startsWith('alint-plugin-verify-'))
-    expect(after.filter(name => !before.has(name))).toEqual([])
-  })
-
-  it('reports missing plugin verify targets', async () => {
-    const io = await createTestIo()
-
-    await expect(executeCli(['node', 'alint', 'plugin', 'verify', 'missing.tgz'], io))
-      .rejects
-      .toThrow('Plugin verify target "missing.tgz" does not exist.')
   })
 
   it('returns 2 when non-interactive setup is missing provider endpoint', async () => {

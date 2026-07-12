@@ -12,7 +12,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export const rules = {}\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -30,11 +31,40 @@ describe('verifyExtractedPluginPackage', () => {
     })
   })
 
+  it('accepts package exports conditions for module .js entries', async () => {
+    const root = await createPackage({
+      'dist/index.js': 'export default { rules: {} }\n',
+      'package.json': JSON.stringify({
+        alint: { apiVersion: '1' },
+        exports: {
+          '.': {
+            import: './dist/index.js',
+          },
+        },
+        name: '@alint-js/plugin-python',
+        type: 'module',
+        version: '0.3.1',
+      }),
+    })
+
+    await expect(verifyExtractedPluginPackage(root, {
+      expectedName: '@alint-js/plugin-python',
+      expectedVersion: '0.3.1',
+      supportedApiVersion: '1',
+    })).resolves.toEqual({
+      apiVersion: '1',
+      entry: await realpath(join(root, 'dist', 'index.js')),
+      name: '@alint-js/plugin-python',
+      version: '0.3.1',
+    })
+  })
+
   it('rejects package identity mismatches', async () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-ruby',
         version: '0.3.1',
       }),
@@ -51,7 +81,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '2', entry: './dist/index.mjs' },
+        alint: { apiVersion: '2' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -68,9 +99,10 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
         dependencies: { valibot: '^1.0.0' },
         devDependencies: { tsdown: '^0.14.0' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -87,8 +119,9 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
         dependencies: ['valibot'],
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         optionalDependencies: 'valibot',
         version: '0.3.1',
@@ -106,8 +139,9 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
         dependencies: [],
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -124,8 +158,9 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
         bundledDependencies: ['valibot'],
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -142,7 +177,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: '../index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: '../index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -159,7 +195,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       '%2e%2e/%2e%2e/outside.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './%2e%2e/%2e%2e/outside.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './%2e%2e/%2e%2e/outside.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -176,7 +213,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       '\\x2e\\x2e/\\x2e\\x2e/outside.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './\\x2e\\x2e/\\x2e\\x2e/outside.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './\\x2e\\x2e/\\x2e\\x2e/outside.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -192,7 +230,8 @@ describe('verifyExtractedPluginPackage', () => {
   it('rejects missing entries', async () => {
     const root = await createPackage({
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -209,7 +248,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import "valibot"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -227,7 +267,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'import "valibot"\nexport const rules = {}\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -245,7 +286,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'import{sys}from"typescript"\nexport const rules = { sys }\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -263,7 +305,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'import {\n  definePlugin\n} from "@alint-js/core"\nexport const rules = { definePlugin }\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -281,7 +324,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'import { marker } from\n/* comment */\n"valibot"\nexport const rules = { marker }\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -298,7 +342,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { object /* { */ } from "valibot"\nexport default { rules: { object } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -315,7 +360,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { "{" as object } from "valibot"\nexport default { rules: { object } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -332,7 +378,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const marker = "//"\nimport { object } from "valibot"\nexport default { rules: { marker, object } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -349,7 +396,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': '// comment\rimport { object } from "valibot"\nexport default { rules: { object } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -366,7 +414,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { object } // "comment"\nfrom "valibot"\nexport default { rules: { object } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -383,7 +432,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export { object as "{" } from "valibot"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -400,7 +450,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "type" + "script"\nexport default { rules: { async load() { return import(name) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -417,7 +468,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "typescript"\nexport default { rules: { load() { return require(name) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -435,7 +487,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'const name = "typescript"\nexport const rules = { load() { return require(name) } }\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -452,7 +505,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = require\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -469,7 +523,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "typescript"\nexport default { rules: { async load() { return import/* webpackIgnore: true */(name) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -486,7 +541,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "typescript"\nexport default { rules: { async load() { return import\n(name) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -503,7 +559,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "typescript"\nexport default { rules: { async load() { return import // comment\n(name) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -520,7 +577,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { async load() { return import // comment\r("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -537,7 +595,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n// comment\u2028const load = process.getBuiltinModule("module").createRequire(import.meta.url)\nload("valibot")\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -555,7 +614,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export default {}\n',
       'dist/index.mjs': 'export default { rules: { async load() { return import\n("./chunk.mjs", { with: { type: "json" } }) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -573,7 +633,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export default {}\n',
       'dist/index.mjs': 'export default { rules: { async load() { return import("./chunk.mjs", { with: { type: "json" } }) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -591,7 +652,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export default {}\n',
       'dist/index.mjs': 'export default { rules: { async load() { return import(/* local */ "./chunk.mjs") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -612,7 +674,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export default {}\n',
       'dist/index.mjs': 'export default { rules: { async load() { return import(/* ) */ "./chunk.mjs") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -633,7 +696,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.mjs': 'export default {}\n',
       'dist/index.mjs': 'export default { rules: { async load() { return import("./chunk.mjs" /* local */) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -653,7 +717,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { extname } from "node:path"\nexport default { rules: { extname } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -674,7 +739,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { execFileSync } from "node:child_process"\nexport default { rules: { execFileSync } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -691,7 +757,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { createRequire } from "node:module"\nconst load = createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -708,7 +775,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { createRequire } from /* comment */ "node:module"\nconst load = createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -725,7 +793,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import * as p from "node:process"\nconst load = p["get" + "Builtin" + "Module"]("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -742,7 +811,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = process.getBuiltinModule("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -759,7 +829,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = process["getBuiltinModule"]("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -776,7 +847,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const p = globalThis["pro" + "cess"]\nconst gbm = p["get" + "Builtin" + "Module"]\nconst load = gbm("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -793,7 +865,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = global["pro" + "cess"]["getBuiltinModule"]("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -810,7 +883,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = global\\u0054his["pro" + "cess"].get\\u0042uiltinModule("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -827,7 +901,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import { runInThisContext } from "node:vm"\nconst makeRequire = runInThisContext("process.getBuiltinModule(\\"module\\").createRequire")\nconst load = makeRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -844,7 +919,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const load = ({}).constructor.constructor("return process")().getBuiltinModule("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -861,7 +937,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const make = ({}).__proto__["con" + "structor"]["con" + "structor"]\nconst load = make("return process")()["get" + "Builtin" + "Module"]("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -878,7 +955,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const make = ({})["constructor"]["constructor"]\nconst load = make("return process")()["getBuiltinModule"]("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -895,7 +973,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const make = ({})?.["constructor"]?.["constructor"]\nconst cp = make("return process")()?.["get" + "Builtin" + "Module"]("child_process")\nexport default { rules: { run() { return cp.execFileSync("echo", ["owned"]) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -912,7 +991,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const make = ({}) /* gap */ ["con" + "structor"] /* gap */ ["con" + "structor"]\nconst p = make("return pro" + "cess")()\nconst load = p /* gap */ ["get" + "Builtin" + "Module"]("module").createRequire(import.meta.url)\nload("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -929,7 +1009,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const a = "x"["constructor"]\nconst b = `x`["constructor"]\nconst c = /x/["constructor"]\nconst d = 0["constructor"]\nexport default { rules: { a, b, c, d } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -946,7 +1027,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { "constructor": make } = `x`["constructor"]\nconst load = make("return process.getBuiltinModule(\'module\').createRequire(import.meta.url)")()\nload("node:child_process").execFileSync("sh", ["-c", "true"])\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -963,7 +1045,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { "constructor": make } = function () {}\nmake("return process.getBuiltinModule(\\"child_process\\").execFileSync(\\"sh\\", [\\"-c\\", \\"true\\"])")()\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -980,7 +1063,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { "constr\\u0075ctor": make } = function () {}\nmake("return process.getBuiltinModule(\\"child_process\\").execFileSync(\\"sh\\", [\\"-c\\", \\"true\\"])")()\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -997,7 +1081,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { constructor: make } = function () {}\nmake("return process")()\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1014,7 +1099,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { "\\x63onstructor": make } = function () {}\nexport default { rules: { async load() { return make("return import(\'node:child_process\')")() } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1031,7 +1117,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'class DiagnosticError extends Error {\n  constructor(message) {\n    super(message)\n  }\n}\nexport default { rules: { DiagnosticError } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1051,7 +1138,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { "construc\\\ntor": make } = function () {}\nconst load = make("return process")()\nexport default { rules: { load } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1068,7 +1156,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const 对象 = {}\nconst 原型 = 对象["con" + "structor"]\nconst 函数 = 原型["con" + "structor"]\nconst 进程 = 函数("return pro" + "cess")()\nconst 模块 = 进程["get" + "Builtin" + "Module"]("module")\n模块.createRequire(import.meta.url)("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1085,7 +1174,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const 𝒶 = {}\nconst 𝒷 = 𝒶["con" + "structor"]\nconst 𝒸 = 𝒷["con" + "structor"]\nconst 𝒹 = 𝒸("return pro" + "cess")()\nconst 𝑒 = 𝒹["get" + "Builtin" + "Module"]("module")\nconst 𝒻 = 𝑒.createRequire(import.meta.url)\n𝒻("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1102,7 +1192,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { ["con" + "structor"]: C } = async function () {}\nconst p = await C("return pro" + "cess")()\nconst { ["get" + "Builtin" + "Module"]: gbm } = p\nconst { createRequire: cr } = gbm("module")\ncr(import.meta.url)("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1119,7 +1210,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const { ignored, ["con" + "structor"]: C } = async function () {}\nconst p = await C("return pro" + "cess")()\nconst { ignoredAgain, ["get" + "Builtin" + "Module"]: gbm } = p\nconst { createRequire: cr } = gbm("module")\ncr(import.meta.url)("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1136,7 +1228,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const make = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(function () {}), "constructor").value\nconst load = make("return process")().getBuiltinModule("module").createRequire(import.meta.url)\nexport default { rules: { load() { return load("valibot") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1153,7 +1246,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { async load() { return fetch("https://example.com/plugin-data") } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1170,7 +1264,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { run() { return Bun.spawnSync(["sh", "-c", "echo owned"]) } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1188,7 +1283,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/index.mjs': 'new Worker(new URL("./worker.mjs", import.meta.url), { type: "module" })\nexport default { rules: {} }\n',
       'dist/worker.mjs': 'import "node:child_process"\nfetch("https://example.com")\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1205,7 +1301,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const keys = Object.keys({ value: 1 })\nexport default { rules: { keys } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1222,7 +1319,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { fetch: {} } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1239,7 +1337,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const [first] = [1]\nconst nested = [first, [2]]\nconst call = (value, fallback) => value ?? fallback\nconst result = call(first, [3])\nexport default { rules: { first, nested, result } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1259,7 +1358,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const items = [1]\nconst first = items[0]\nexport default { rules: { first } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1276,7 +1376,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': '// comment\rconst make = ({})["con" + "structor"]["con" + "structor"]\nconst p = make("return " + "pro" + "cess")()\nconst load = p["get" + "Builtin" + "Module"]("module").createRequire(import.meta.url)\nload("valibot")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1293,7 +1394,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const note = "import \\"valibot\\"; from \\"typescript\\""\nexport default { rules: { note } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1313,7 +1415,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const from = true\nfrom\n"valibot"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1333,7 +1436,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const message = "Object"\nexport default { rules: { demo: { message } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1353,7 +1457,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': '/* {"constructor": true} */\nconst note = `{"constructor": true}`\nconst pattern = /"constructor":/\nexport default { rules: { note, pattern } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1373,7 +1478,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const loader = { import(value) { return value } }\nconst value = loader.import("valibot")\nexport default { rules: { value } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1390,7 +1496,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'if (true) { import("valibot") }\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1407,7 +1514,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const values = [1, import("valibot")]\nexport default { rules: { values } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1424,7 +1532,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': '/*\nimport { marker } from "valibot"\n*/\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1444,7 +1553,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const note = `$' + '{1}: import "valibot" from "typescript" process`\nexport default { rules: { note } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1464,7 +1574,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const value = 1 / process.getBuiltinModule("module").createRequire(import.meta.url)("valibot") / 1\nexport default { rules: { value } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1481,7 +1592,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'let value = 1\nconst result = value++ / process.getBuiltinModule("module").createRequire(import.meta.url)("valibot") / 1\nexport default { rules: { result } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1498,7 +1610,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const pattern = /[/*]/\nconst load = process.getBuiltinModule("module").createRequire(import.meta.url)\nload("valibot")\nexport default { rules: { pattern } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1515,7 +1628,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'function pattern() { return /[/*]/ }\nconst load = process.getBuiltinModule("module").createRequire(import.meta.url)\nload("valibot")\nexport default { rules: { pattern } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1532,7 +1646,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'function pattern() { return /process|globalThis/ }\nexport default { rules: { pattern } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1552,7 +1667,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'if (true) /process|globalThis/.test("x")\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1569,7 +1685,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const value = 1 / import("valibot") / 1\nexport default { rules: { value } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1586,7 +1703,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'let value = 1\nconst result = value++ / import("valibot") / 1\nexport default { rules: { result } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1603,7 +1721,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'const name = "valibot"\nconst value = 1 / import(name) / 1\nexport default { rules: { value } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1620,7 +1739,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { load() { return `$' + '{globalThis["pro" + "cess"].getBuiltinModule("module")}` } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1637,7 +1757,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: { load() { return `$' + '{/[}]/, process.getBuiltinModule("module").createRequire(import.meta.url)("valibot")}` } } }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1654,7 +1775,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import/* comment */"node:module"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1671,7 +1793,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.cjs': 'module.exports = { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.cjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.cjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1681,7 +1804,7 @@ describe('verifyExtractedPluginPackage', () => {
       expectedName: '@alint-js/plugin-python',
       expectedVersion: '0.3.1',
       supportedApiVersion: '1',
-    })).rejects.toThrow('entry must be an ESM .mjs file')
+    })).rejects.toThrow('entry must be an ESM .mjs file or a .js file in a module package')
   })
 
   it('rejects commonjs chunks imported by esm entries', async () => {
@@ -1689,7 +1812,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/chunk.cjs': 'const load = module["re" + "quire"]\nload("valibot")\n',
       'dist/index.mjs': 'import "./chunk.cjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1699,14 +1823,15 @@ describe('verifyExtractedPluginPackage', () => {
       expectedName: '@alint-js/plugin-python',
       expectedVersion: '0.3.1',
       supportedApiVersion: '1',
-    })).rejects.toThrow('entry must be an ESM .mjs file')
+    })).rejects.toThrow('entry must be an ESM .mjs file or a .js file in a module package')
   })
 
   it('allows absolute imports that resolve inside the package root', async () => {
     const root = await createPackage({
       'dist/chunk.mjs': 'export const rules = {}\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1725,59 +1850,29 @@ describe('verifyExtractedPluginPackage', () => {
     })
   })
 
-  it('allows absolute entries that realpath inside the package root', async () => {
+  it('rejects missing package exports', async () => {
     const root = await createPackage({
       'dist/index.mjs': 'export default { rules: {} }\n',
-      'package.json': '{}',
+      'package.json': JSON.stringify({
+        alint: { apiVersion: '1' },
+        name: '@alint-js/plugin-python',
+        version: '0.3.1',
+      }),
     })
-    await writeFile(join(root, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: join(root, 'dist', 'index.mjs') },
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    }))
 
     await expect(verifyExtractedPluginPackage(root, {
       expectedName: '@alint-js/plugin-python',
       expectedVersion: '0.3.1',
       supportedApiVersion: '1',
-    })).resolves.toEqual({
-      apiVersion: '1',
-      entry: await realpath(join(root, 'dist', 'index.mjs')),
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    })
-  })
-
-  it('returns canonical entries for absolute paths through symlinks', async () => {
-    const root = await createPackage({
-      'dist/index.mjs': 'export default { rules: {} }\n',
-      'package.json': '{}',
-    })
-    const outside = join(await mkdtemp(join(tmpdir(), 'alint-plugin-outside-entry-')), 'entry.mjs')
-    await symlink(join(root, 'dist', 'index.mjs'), outside)
-    await writeFile(join(root, 'package.json'), JSON.stringify({
-      alint: { apiVersion: '1', entry: outside },
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    }))
-
-    await expect(verifyExtractedPluginPackage(root, {
-      expectedName: '@alint-js/plugin-python',
-      expectedVersion: '0.3.1',
-      supportedApiVersion: '1',
-    })).resolves.toEqual({
-      apiVersion: '1',
-      entry: await realpath(join(root, 'dist', 'index.mjs')),
-      name: '@alint-js/plugin-python',
-      version: '0.3.1',
-    })
+    })).rejects.toThrow('must export an ESM entry at "."')
   })
 
   it('rejects relative imports that escape the package root', async () => {
     const root = await createPackage({
       'dist/index.mjs': 'import "../../outside.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1795,7 +1890,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/%2e%2e/%2e%2e/outside.mjs': 'export default {}\n',
       'dist/index.mjs': 'import "./%2e%2e/%2e%2e/outside.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1813,7 +1909,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/\\x2e\\x2e/\\x2e\\x2e/outside.mjs': 'export default {}\n',
       'dist/index.mjs': 'import "./\\x2e\\x2e/\\x2e\\x2e/outside.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1831,7 +1928,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/\\u002e\\u002e/\\u002e\\u002e/outside.mjs': 'export default {}\n',
       'dist/index.mjs': 'import "./\\u002e\\u002e/\\u002e\\u002e/outside.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1849,7 +1947,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/..\\/../outside.mjs': 'export default {}\n',
       'dist/index.mjs': 'import "./..\\/../outside.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1866,7 +1965,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import "./missing.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1883,7 +1983,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       '..entry.mjs': 'export default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './..entry.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './..entry.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1903,7 +2004,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'import "./chunk.mjs"\nexport default { rules: {} }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1926,7 +2028,8 @@ describe('verifyExtractedPluginPackage', () => {
       'dist/evil.mjs': 'export default {}\n',
       'dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -1944,7 +2047,8 @@ describe('verifyExtractedPluginPackage', () => {
     const root = await createPackage({
       'dist/index.mjs': 'throw new Error("entry executed")\n',
       'package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),

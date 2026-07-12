@@ -24,7 +24,8 @@ describe('installStaticPlugin', () => {
       'package/dist/chunk.mjs': 'export const rules = {}\n',
       'package/dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -86,7 +87,8 @@ describe('installStaticPlugin', () => {
     const goodTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -94,7 +96,8 @@ describe('installStaticPlugin', () => {
     const badTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '2', entry: './dist/index.mjs' },
+        alint: { apiVersion: '2' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -167,7 +170,8 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -221,7 +225,8 @@ describe('installStaticPlugin', () => {
     const oldTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -229,7 +234,8 @@ describe('installStaticPlugin', () => {
     const newTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -297,7 +303,8 @@ describe('installStaticPlugin', () => {
     const oldTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -305,7 +312,8 @@ describe('installStaticPlugin', () => {
     const newTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -379,7 +387,8 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
@@ -431,7 +440,8 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1', entry: './dist/index.mjs' },
+        alint: { apiVersion: '1' },
+        exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
       }),
