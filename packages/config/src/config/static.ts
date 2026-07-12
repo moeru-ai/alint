@@ -93,6 +93,10 @@ export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string 
   return specifier.raw
 }
 
+export function listStaticPluginReferences(config: ParsedStaticConfig): StaticPluginReference[] {
+  return config.groups.flatMap(group => group.plugins)
+}
+
 export function normalizeLoadedAlintConfig(
   value: unknown,
   options: NormalizeLoadedAlintConfigOptions = {},

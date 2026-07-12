@@ -1,11 +1,21 @@
 import type { AlintConfig } from '@alint-js/core'
 
+import type { ParsedPluginLockEntry } from '../plugins/types'
+import type { ParsedStaticConfig, StaticPluginReference } from './static'
+
 import { resolve } from 'node:path'
 
 import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
-import { normalizeLoadedAlintConfig } from './static'
+import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from '../plugins/lock'
+import { importResolvedPluginPackage, resolveLockedPluginPackage } from '../plugins/package'
+import {
+  formatPluginSpecifier,
+  listStaticPluginReferences,
+  parseStaticConfig,
+  toAlintConfig,
+} from './static'
 
 interface C12LoadConfigResult {
   _configFile?: string
@@ -15,6 +25,42 @@ export async function loadAlintConfig(
   cwd: string,
   configFile?: string,
 ): Promise<AlintConfig> {
+  const staticConfig = await loadStaticConfig(cwd, configFile)
+  const references = listStaticPluginReferences(staticConfig)
+
+  if (references.length === 0) {
+    return toAlintConfig(staticConfig, {
+      pluginResolver: async (reference) => {
+        throw new Error(`Static plugin "${reference.alias}" was not expected to require resolution.`)
+      },
+    })
+  }
+
+  const lock = parsePluginLockFile(await loadPluginLockFile(cwd), { cwd })
+  const missing = listMissing(staticConfig, lock)
+
+  if (missing.length > 0) {
+    throw new Error(`Static plugin references are missing from the lock file: ${formatStaticPluginReferences(missing)}.\nRun: alint plugin install`)
+  }
+
+  const unresolved = await listUnresolved(staticConfig, lock)
+
+  if (unresolved.length > 0) {
+    throw new Error(`Static plugin packages could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`)
+  }
+
+  return toAlintConfig(staticConfig, {
+    async pluginResolver(reference) {
+      const resolved = await resolveLockedPluginPackage(lock.get(reference))
+      return importResolvedPluginPackage(resolved)
+    },
+  })
+}
+
+export async function loadStaticConfig(
+  cwd: string,
+  configFile?: string,
+): Promise<ParsedStaticConfig> {
   const result = await loadConfig({
     configFile,
     cwd,
@@ -36,10 +82,22 @@ export async function loadAlintConfig(
   // resolved config-file marker is the only result field that distinguishes
   // "not found" from an intentionally exported empty object.
   if ((result as C12LoadConfigResult)._configFile === undefined) {
-    return []
+    return parseStaticConfig(undefined)
   }
 
-  return normalizeLoadedAlintConfig(result.config, {
+  return parseStaticConfig(result.config, {
     configFile: (result as C12LoadConfigResult)._configFile,
   })
+}
+
+function formatPluginLockEntries(entries: readonly ParsedPluginLockEntry[]): string {
+  return entries
+    .map(entry => `${entry.alias} (${formatPluginSpecifier(entry.specifier)})`)
+    .join(', ')
+}
+
+function formatStaticPluginReferences(references: readonly StaticPluginReference[]): string {
+  return references
+    .map(reference => `${reference.alias} (${formatPluginSpecifier(reference.specifier)})`)
+    .join(', ')
 }

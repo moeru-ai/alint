@@ -1,5 +1,6 @@
-export { loadAlintConfig } from './config/load'
+export { loadAlintConfig, loadStaticConfig } from './config/load'
 export {
+  listStaticPluginReferences,
   parsePluginSpecifier,
   parseStaticConfig,
   toAlintConfig,
