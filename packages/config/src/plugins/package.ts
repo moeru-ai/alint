@@ -72,6 +72,12 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
   }
 
   const packageDir = getLockedPackageDir(projectRoot, pluginRoot, entry)
+  const physicalPackageDir = await realpath(packageDir)
+  const expectedPhysicalPackageDir = join(physicalPluginRoot, ...getPackagePathSegments(entry.lockEntry.name), entry.lockEntry.version, 'package')
+
+  if (physicalPackageDir !== expectedPhysicalPackageDir) {
+    throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the locked package directory.`)
+  }
 
   if (!isPathInside(resolvedEntry, packageDir)) {
     throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the locked package directory.`)

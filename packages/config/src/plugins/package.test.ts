@@ -128,6 +128,31 @@ describe('plugin package resolution', () => {
       .toThrow('Plugin lock entry "python" resolves outside the plugin store.')
   })
 
+  it('rejects a lock entry that escapes the locked package through a store symlink', async () => {
+    const projectRoot = await createTempProject()
+    const pythonPackageDir = await writeInstalledPackage(projectRoot)
+    const otherPackageDir = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-other', '1.0.0', 'package')
+    const otherDistDir = join(otherPackageDir, 'dist')
+
+    await rm(pythonPackageDir, { force: true, recursive: true })
+    await mkdir(otherDistDir, { recursive: true })
+    await writeFile(join(otherPackageDir, 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name: '@alint-js/plugin-other',
+      type: 'module',
+      version: '1.0.0',
+    }), 'utf8')
+    await writeFile(join(otherDistDir, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+    await symlink(otherPackageDir, pythonPackageDir, 'dir')
+
+    await expect(resolveLockedPluginPackage(createLockEntry(
+      projectRoot,
+      '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+    )))
+      .rejects
+      .toThrow('Plugin lock entry "python" resolves outside the locked package directory.')
+  })
+
   it('rejects a lock entry inside the plugins directory but outside the plugin store', async () => {
     const projectRoot = await createTempProject()
     const packageDir = join(projectRoot, '.alint', 'plugins', 'other', 'package')
