@@ -1,5 +1,6 @@
 import type { Readable } from 'node:stream'
 
+import type { ParsedPluginSpecifier } from '../config/static'
 import type {
   PluginLockEntry,
   StaticPluginInstallOptions,
@@ -7,8 +8,9 @@ import type {
 } from './types'
 
 import { Buffer } from 'node:buffer'
+import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, rm } from 'node:fs/promises'
+import { mkdir, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
 import { Readable as NodeReadable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -31,7 +33,7 @@ interface InstallPackageOptions {
   cwd: string
   installedSpecifiers: Map<string, Promise<InstalledPackage>>
   registry: string
-  specifier: string
+  specifier: ParsedPluginSpecifier
 }
 
 interface NpmMetadata {
@@ -64,7 +66,7 @@ export async function installStaticPlugins(
       cwd: options.cwd,
       installedSpecifiers,
       registry,
-      specifier,
+      specifier: reference.specifier,
     })
 
     lock.plugins[reference.alias] = {
@@ -183,19 +185,35 @@ async function fetchPackageMetadata(registry: string, identity: PackageIdentity)
 }
 
 async function getOrInstallPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
-  const existing = options.installedSpecifiers.get(options.specifier)
+  const specifier = formatPluginSpecifier(options.specifier)
+  const existing = options.installedSpecifiers.get(specifier)
 
   if (existing !== undefined) {
     return existing
   }
 
   const installed = installPackage(options)
-  options.installedSpecifiers.set(options.specifier, installed)
+  options.installedSpecifiers.set(specifier, installed)
   return installed
 }
 
+function getPackageInstallIdentity(specifier: ParsedPluginSpecifier): PackageIdentity & { version: string } {
+  if (specifier.version === undefined || specifier.version === '') {
+    throw new Error(`Static plugin specifier "${specifier.raw}" must include an exact package version.`)
+  }
+
+  return {
+    name: specifier.name,
+    registryPath: specifier.name.startsWith('@')
+      ? specifier.name.replace('/', '%2f')
+      : encodeURIComponent(specifier.name),
+    segments: specifier.name.split('/'),
+    version: specifier.version,
+  }
+}
+
 async function installPackage(options: Omit<InstallPackageOptions, 'installedSpecifiers'>): Promise<InstalledPackage> {
-  const { name, registryPath, segments, version } = parseVersionedPackageSpecifier(options.specifier)
+  const { name, registryPath, segments, version } = getPackageInstallIdentity(options.specifier)
   const identity = { name, registryPath, segments }
   const metadata = await fetchPackageMetadata(options.registry, identity)
   const dist = metadata.versions?.[version]?.dist
@@ -205,11 +223,21 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
   }
 
   const packageDir = join(getProjectPluginStorePath(options.cwd), ...segments, version, 'package')
-  await rm(packageDir, { force: true, recursive: true })
-  await mkdir(packageDir, { recursive: true })
-  await extractPackageTarball(await downloadBuffer(dist.tarball), packageDir)
+  const packageParentDir = dirname(packageDir)
+  const stagingPackageDir = join(packageParentDir, `package-staging-${randomUUID()}`)
 
-  const relativeEntry = await resolveInstalledPackageRelativeEntry(packageDir)
+  let relativeEntry: string
+
+  try {
+    await mkdir(stagingPackageDir, { recursive: true })
+    await extractPackageTarball(await downloadBuffer(dist.tarball), stagingPackageDir)
+    relativeEntry = await resolveInstalledPackageRelativeEntry(stagingPackageDir)
+    await replacePackageDirectory(packageDir, stagingPackageDir)
+  }
+  catch (error) {
+    await rm(stagingPackageDir, { force: true, recursive: true })
+    throw error
+  }
 
   return {
     entry: posix.join('.alint/plugins/store', ...segments, version, 'package', relativeEntry.split(/[\\/]/u).join('/')),
@@ -219,6 +247,10 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
     tarball: dist.tarball,
     version,
   }
+}
+
+function isNodeError(error: unknown): error is NodeJS.ErrnoException {
+  return error instanceof Error && 'code' in error
 }
 
 function isPathInside(path: string, parent: string): boolean {
@@ -235,22 +267,31 @@ function normalizeRegistry(registry: string): string {
   return registry.endsWith('/') ? registry : `${registry}/`
 }
 
-function parseVersionedPackageSpecifier(specifier: string): PackageIdentity & { version: string } {
-  const versionSeparator = specifier.lastIndexOf('@')
+async function replacePackageDirectory(packageDir: string, stagingPackageDir: string): Promise<void> {
+  const backupPackageDir = join(dirname(packageDir), `package-backup-${randomUUID()}`)
+  let hasBackup = false
 
-  if (versionSeparator <= 0 || versionSeparator === specifier.length - 1) {
-    throw new Error(`Static plugin specifier "${specifier}" must include an exact package version.`)
+  try {
+    await rename(packageDir, backupPackageDir)
+    hasBackup = true
+  }
+  catch (error) {
+    if (!isNodeError(error) || error.code !== 'ENOENT') {
+      throw error
+    }
   }
 
-  const name = specifier.slice(0, versionSeparator)
-  const version = specifier.slice(versionSeparator + 1)
+  try {
+    await rename(stagingPackageDir, packageDir)
+  }
+  catch (error) {
+    if (hasBackup) {
+      await rename(backupPackageDir, packageDir)
+    }
 
-  return {
-    name,
-    registryPath: name.startsWith('@')
-      ? name.replace('/', '%2f')
-      : encodeURIComponent(name),
-    segments: name.split('/'),
-    version,
+    throw error
+  }
+  finally {
+    await rm(backupPackageDir, { force: true, recursive: true })
   }
 }

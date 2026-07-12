@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net'
 
 import { Buffer } from 'node:buffer'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -214,5 +214,37 @@ export default [
     await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
       .rejects
       .toThrow('Plugin tarball entry "package/../evil.txt" escapes the package directory.')
+  })
+
+  it('keeps an existing installed package intact when reinstalling a package with a missing export fails', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const existingEntryPath = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs')
+    await mkdir(join(existingEntryPath, '..'), { recursive: true })
+    await writeFile(existingEntryPath, 'export default { rules: { existing: {} } }\n', 'utf8')
+    await writeFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name: '@alint-js/plugin-python',
+      type: 'module',
+      version: '0.3.1',
+    }), 'utf8')
+    const registry = await startRegistry(await createTarball({
+      'package/dist/index.mjs': 'export default { rules: { broken: {} } }\n',
+      'package/package.json': JSON.stringify({
+        name: '@alint-js/plugin-python',
+        type: 'module',
+        version: '0.3.1',
+      }),
+    }))
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('does not define a resolvable "." export')
+    await expect(readFile(existingEntryPath, 'utf8'))
+      .resolves
+      .toBe('export default { rules: { existing: {} } }\n')
   })
 })

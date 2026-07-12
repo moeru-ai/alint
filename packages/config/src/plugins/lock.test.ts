@@ -1,11 +1,11 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 
 import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { parseStaticConfig } from '../config/static'
-import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from './lock'
+import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile, writePluginLockFile } from './lock'
 import { parsePluginSpecifier } from './spec'
 
 function createLockEntry(alias: string, specifier: string, entry: string) {
@@ -329,5 +329,35 @@ describe('plugin lock disk loading', () => {
     await writeFile(join(lockDir, 'lock.json'), '{ "version": 1,', 'utf8')
 
     await expect(loadPluginLockFile(root)).rejects.toThrow()
+  })
+
+  it('keeps an existing lock file when the replacement lock fails validation', async () => {
+    const root = await createTempRoot()
+    const lockPath = join(root, '.alint', 'plugins', 'lock.json')
+    await writePluginLock(root, {
+      plugins: {
+        python: createLockEntry(
+          'python',
+          '@alint-js/plugin-python@0.3.1',
+          '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+        ),
+      },
+      version: 1,
+    })
+    const originalLock = await readFile(lockPath, 'utf8')
+
+    await expect(writePluginLockFile(root, {
+      plugins: {
+        python: {
+          ...createLockEntry(
+            'javascript',
+            '@alint-js/plugin-js@1.2.3',
+            '.alint/plugins/store/@alint-js/plugin-js/1.2.3/package/dist/index.mjs',
+          ),
+        },
+      },
+      version: 1,
+    })).rejects.toThrow('Plugin lock entry key "python" must match alias "javascript".')
+    await expect(readFile(lockPath, 'utf8')).resolves.toBe(originalLock)
   })
 })

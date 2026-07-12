@@ -5,8 +5,9 @@ import type {
   PluginLockFile,
 } from './types'
 
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
-import { dirname } from 'node:path'
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 import {
   literal,
@@ -146,9 +147,21 @@ export function parsePluginLockFile(
 }
 
 export async function writePluginLockFile(cwd: string, lock: PluginLockFile): Promise<void> {
+  const content = `${JSON.stringify(parsePluginLockFileValue(lock), null, 2)}\n`
   const lockPath = getProjectPluginLockPath(cwd)
-  await mkdir(dirname(lockPath), { recursive: true })
-  await writeFile(lockPath, `${JSON.stringify(parsePluginLockFileValue(lock), null, 2)}\n`, 'utf8')
+  const lockDir = dirname(lockPath)
+  const tempPath = join(lockDir, `lock.${randomUUID()}.tmp`)
+
+  await mkdir(lockDir, { recursive: true })
+
+  try {
+    await writeFile(tempPath, content, 'utf8')
+    await rename(tempPath, lockPath)
+  }
+  catch (error) {
+    await rm(tempPath, { force: true })
+    throw error
+  }
 }
 
 function parsePluginLockFileValue(value: unknown): PluginLockFile {
