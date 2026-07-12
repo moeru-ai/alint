@@ -1,15 +1,13 @@
-import type { AddressInfo } from 'node:net'
-
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
 import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
-import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { gzip } from 'node:zlib'
 
 import tar from 'tar-stream'
 
+import { createApp, defineEventHandler, serve, setResponseHeader, setResponseStatus } from 'h3/node'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { installStaticPlugins } from './install'
@@ -73,53 +71,50 @@ describe('static plugin installation', () => {
     let metadataRequests = 0
     let tarballRequests = 0
 
-    const server = createServer((request, response) => {
-      if (request.url === '/@alint-js%2fplugin-python') {
-        metadataRequests += 1
-        const host = request.headers.host
+    const app = createApp()
 
-        if (host === undefined) {
-          response.statusCode = 400
-          response.end('missing host')
-          return
-        }
+    app.get('/@alint-js%2fplugin-python', defineEventHandler((event) => {
+      const host = event.req.headers.get('host')
 
-        response.setHeader('content-type', 'application/json')
-        response.end(JSON.stringify({
-          versions: {
-            '0.3.1': {
-              dist: {
-                ...(integrity === null ? {} : { integrity }),
-                tarball: `http://${host}/plugin-python-0.3.1.tgz`,
-              },
+      if (host === null) {
+        setResponseStatus(event, 400)
+        return 'missing host'
+      }
+
+      metadataRequests += 1
+      setResponseHeader(event, 'content-type', 'application/json')
+      return {
+        versions: {
+          '0.3.1': {
+            dist: {
+              ...(integrity === null ? {} : { integrity }),
+              tarball: `http://${host}/plugin-python-0.3.1.tgz`,
             },
           },
-        }))
-        return
+        },
       }
+    }))
 
-      if (request.url === '/plugin-python-0.3.1.tgz') {
-        tarballRequests += 1
-        response.setHeader('content-type', 'application/octet-stream')
-        response.end(tarball)
-        return
-      }
+    app.get('/plugin-python-0.3.1.tgz', defineEventHandler((event) => {
+      tarballRequests += 1
+      setResponseHeader(event, 'content-type', 'application/octet-stream')
+      return tarball
+    }))
 
-      response.statusCode = 404
-      response.end('not found')
-    })
+    app.all('/**', defineEventHandler((event) => {
+      setResponseStatus(event, 404)
+      return 'not found'
+    }))
 
-    await new Promise<void>((resolve, reject) => {
-      server.listen(0, '127.0.0.1', resolve)
-      server.on('error', reject)
-    })
+    const server = await serve(app, {
+      hostname: '127.0.0.1',
+      port: 0,
+      silent: true,
+    }).ready()
 
-    const { port } = server.address() as AddressInfo
-    const registry = `http://127.0.0.1:${port}/`
+    const registry = server.url!
     servers.push({
-      close: () => new Promise((resolve, reject) => {
-        server.close(error => error ? reject(error) : resolve())
-      }),
+      close: () => server.close(true),
       metadataRequests: () => metadataRequests,
       registry,
       tarballRequests: () => tarballRequests,
