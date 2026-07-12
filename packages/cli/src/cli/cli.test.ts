@@ -529,7 +529,7 @@ describe('executeCli', () => {
     const exitCode = await executeCli(['node', 'alint', '--config', 'empty.config.ts', 'plugin', 'install'], io)
 
     expect(exitCode).toBe(0)
-    expect(io.stdoutText).toBe('No static plugin references found. Wrote empty plugin lock.\n')
+    expect(io.stdoutText).toBe('No static plugins configured. Wrote empty plugin lock.\n')
     expect(io.stderrText).toBe('')
   })
 

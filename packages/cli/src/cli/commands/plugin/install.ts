@@ -15,8 +15,8 @@ export const install = defineCommand({
       registry: options.registry,
     })
 
-    if (result.referenceCount === 0) {
-      context.io.stdout.write('No static plugin references found. Wrote empty plugin lock.\n')
+    if (result.configuredPluginCount === 0) {
+      context.io.stdout.write('No static plugins configured. Wrote empty plugin lock.\n')
       return 0
     }
 

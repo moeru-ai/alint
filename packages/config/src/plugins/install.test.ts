@@ -285,7 +285,7 @@ export default [
     const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
 
     expect(result.installedCount).toBe(0)
-    expect(result.referenceCount).toBe(0)
+    expect(result.configuredPluginCount).toBe(0)
     expect(lock).toEqual({ plugins: {}, version: 1 })
   })
 

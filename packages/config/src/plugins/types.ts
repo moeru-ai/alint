@@ -45,7 +45,7 @@ export interface StaticPluginInstallOptions {
 }
 
 export interface StaticPluginInstallResult {
+  configuredPluginCount: number
   installedCount: number
   lock: PluginLockFile
-  referenceCount: number
 }

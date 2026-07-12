@@ -35,8 +35,7 @@ interface InstalledPackage extends Omit<PluginLockEntry, 'alias' | 'specifier'> 
 
 interface InstallPackageOptions {
   cwd: string
-  installedSpecifiers: Map<string, Promise<InstalledPackage>>
-  registry: string
+  npmRegistry: string
   specifier: ParsedPluginSpecifier
 }
 
@@ -53,39 +52,44 @@ export async function installStaticPlugins(
   options: StaticPluginInstallOptions,
 ): Promise<StaticPluginInstallResult> {
   const config = await loadStaticConfig(options.cwd, options.configFile)
-  const references = config.groups.flatMap(group => group.plugins)
-  const rawRegistry = options.registry ?? DEFAULT_REGISTRY
-  const registry = rawRegistry.endsWith('/') ? rawRegistry : `${rawRegistry}/`
-  const lock = createEmptyPluginLockFile()
-  const installedSpecifiers = new Map<string, Promise<InstalledPackage>>()
+  const configuredPlugins = config.groups.flatMap(group => group.plugins)
+  const npmRegistry = options.registry ?? DEFAULT_REGISTRY
+  const lockFile = createEmptyPluginLockFile()
+  const packageInstallationsBySpecifier = new Map<string, Promise<InstalledPackage>>()
 
-  for (const reference of references) {
-    const specifier = formatPluginSpecifier(reference.specifier)
-    const installed = await getOrInstallPackage({
-      cwd: options.cwd,
-      installedSpecifiers,
-      registry,
-      specifier: reference.specifier,
-    })
+  for (const configuredPlugin of configuredPlugins) {
+    const specifier = formatPluginSpecifier(configuredPlugin.specifier)
+    let packageInstallation = packageInstallationsBySpecifier.get(specifier)
 
-    lock.plugins[reference.alias] = {
-      alias: reference.alias,
-      entry: installed.entry,
-      integrity: installed.integrity,
-      name: installed.name,
-      registry,
+    if (packageInstallation === undefined) {
+      packageInstallation = installPackage({
+        cwd: options.cwd,
+        npmRegistry,
+        specifier: configuredPlugin.specifier,
+      })
+      packageInstallationsBySpecifier.set(specifier, packageInstallation)
+    }
+
+    const installedPackage = await packageInstallation
+
+    lockFile.plugins[configuredPlugin.alias] = {
+      alias: configuredPlugin.alias,
+      entry: installedPackage.entry,
+      integrity: installedPackage.integrity,
+      name: installedPackage.name,
+      registry: installedPackage.registry,
       specifier,
-      tarball: installed.tarball,
-      version: installed.version,
+      tarball: installedPackage.tarball,
+      version: installedPackage.version,
     }
   }
 
-  await writePluginLockFile(options.cwd, lock)
+  await writePluginLockFile(options.cwd, lockFile)
 
   return {
-    installedCount: installedSpecifiers.size,
-    lock,
-    referenceCount: references.length,
+    configuredPluginCount: configuredPlugins.length,
+    installedCount: packageInstallationsBySpecifier.size,
+    lock: lockFile,
   }
 }
 
@@ -156,8 +160,8 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
   )
 }
 
-async function fetchPackageMetadata(registry: string, specifier: ParsedPluginSpecifier): Promise<NpmMetadata> {
-  const url = `${registry.replace(/\/$/u, '')}/${specifier.registryPath}`
+async function fetchPackageMetadata(npmRegistry: string, specifier: ParsedPluginSpecifier): Promise<NpmMetadata> {
+  const url = `${npmRegistry.replace(/\/$/u, '')}/${specifier.registryPath}`
   const value = await ofetch<unknown>(url)
   if (!isPlainObject(value)) {
     throw new Error(`Npm metadata for "${specifier.name}" must be an object.`)
@@ -166,22 +170,10 @@ async function fetchPackageMetadata(registry: string, specifier: ParsedPluginSpe
   return value as NpmMetadata
 }
 
-async function getOrInstallPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
-  const specifier = formatPluginSpecifier(options.specifier)
-  const existing = options.installedSpecifiers.get(specifier)
-
-  if (existing !== undefined) {
-    return existing
-  }
-
-  const installed = installPackage(options)
-  options.installedSpecifiers.set(specifier, installed)
-  return installed
-}
-
-async function installPackage(options: Omit<InstallPackageOptions, 'installedSpecifiers'>): Promise<InstalledPackage> {
+async function installPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
   const { name, segments, version } = options.specifier
-  const metadata = await fetchPackageMetadata(options.registry, options.specifier)
+  const npmRegistry = options.npmRegistry.endsWith('/') ? options.npmRegistry : `${options.npmRegistry}/`
+  const metadata = await fetchPackageMetadata(npmRegistry, options.specifier)
   const dist = metadata.versions?.[version]?.dist
 
   if (dist?.tarball === undefined) {
@@ -222,7 +214,7 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
     entry: posix.join('.alint/plugins/store', ...segments, version, 'package', relativeEntry.split(/[\\/]/u).join('/')),
     integrity: dist.integrity,
     name,
-    registry: options.registry,
+    registry: npmRegistry,
     tarball: dist.tarball,
     version,
   }

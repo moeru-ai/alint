@@ -144,8 +144,8 @@ export function parsePluginLockFile(
   }
 }
 
-export async function writePluginLockFile(cwd: string, lock: PluginLockFile): Promise<void> {
-  const content = `${JSON.stringify(parsePluginLockFileValue(lock), null, 2)}\n`
+export async function writePluginLockFile(cwd: string, lockFile: PluginLockFile): Promise<void> {
+  const content = `${JSON.stringify(parsePluginLockFileValue(lockFile), null, 2)}\n`
   const lockPath = getProjectPluginLockPath(cwd)
   const lockDir = dirname(lockPath)
   const tempPath = join(lockDir, `lock.${randomUUID()}.tmp`)
