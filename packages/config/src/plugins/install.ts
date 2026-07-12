@@ -1,6 +1,6 @@
 import type { Readable } from 'node:stream'
 
-import type { ParsedPluginSpecifier } from '../config/static'
+import type { ParsedPluginSpecifier } from './spec'
 import type {
   PluginLockEntry,
   StaticPluginInstallOptions,
@@ -47,16 +47,6 @@ interface NpmMetadata {
       tarball?: string
     }
   }>
-}
-
-interface PackageIdentity {
-  name: string
-  registryPath: string
-  segments: string[]
-}
-
-interface PackageInstallIdentity extends PackageIdentity {
-  version: string
 }
 
 export async function installStaticPlugins(
@@ -166,11 +156,11 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
   )
 }
 
-async function fetchPackageMetadata(registry: string, identity: PackageIdentity): Promise<NpmMetadata> {
-  const url = `${registry.replace(/\/$/u, '')}/${identity.registryPath}`
+async function fetchPackageMetadata(registry: string, specifier: ParsedPluginSpecifier): Promise<NpmMetadata> {
+  const url = `${registry.replace(/\/$/u, '')}/${specifier.registryPath}`
   const value = await ofetch<unknown>(url)
   if (!isPlainObject(value)) {
-    throw new Error(`Npm metadata for "${identity.name}" must be an object.`)
+    throw new Error(`Npm metadata for "${specifier.name}" must be an object.`)
   }
 
   return value as NpmMetadata
@@ -189,70 +179,9 @@ async function getOrInstallPackage(options: InstallPackageOptions): Promise<Inst
   return installed
 }
 
-function getPackageInstallIdentity(specifier: ParsedPluginSpecifier): PackageInstallIdentity {
-  if (specifier.version === undefined || specifier.version === '') {
-    throw new Error(`Static plugin specifier "${specifier.raw}" must include an exact package version.`)
-  }
-
-  const segments = getSafePackageNameSegments(specifier.name)
-
-  return {
-    name: specifier.name,
-    registryPath: specifier.name.startsWith('@')
-      ? specifier.name.replace('/', '%2f')
-      : encodeURIComponent(specifier.name),
-    segments,
-    version: specifier.version,
-  }
-}
-
-function getSafePackageNameSegments(name: string): string[] {
-  if (
-    name === ''
-    || name.includes('\\')
-    || isAbsolute(name)
-    || posix.isAbsolute(name)
-  ) {
-    throw new Error(`Invalid static plugin package name "${name}".`)
-  }
-
-  const segments = name.split('/')
-
-  if (segments.some(segment => segment === '' || segment === '.' || segment === '..')) {
-    throw new Error(`Invalid static plugin package name "${name}".`)
-  }
-
-  const segmentPattern = /^[a-z0-9][a-z0-9._~-]*$/u
-
-  if (name.startsWith('@')) {
-    const [scope, packageName, extraSegment] = segments
-
-    if (
-      segments.length !== 2
-      || scope === undefined
-      || packageName === undefined
-      || extraSegment !== undefined
-      || !scope.startsWith('@')
-      || !segmentPattern.test(scope.slice(1))
-      || !segmentPattern.test(packageName)
-    ) {
-      throw new Error(`Invalid static plugin package name "${name}".`)
-    }
-
-    return segments
-  }
-
-  if (segments.length !== 1 || !segmentPattern.test(segments[0]!)) {
-    throw new Error(`Invalid static plugin package name "${name}".`)
-  }
-
-  return segments
-}
-
 async function installPackage(options: Omit<InstallPackageOptions, 'installedSpecifiers'>): Promise<InstalledPackage> {
-  const { name, registryPath, segments, version } = getPackageInstallIdentity(options.specifier)
-  const identity = { name, registryPath, segments }
-  const metadata = await fetchPackageMetadata(options.registry, identity)
+  const { name, segments, version } = options.specifier
+  const metadata = await fetchPackageMetadata(options.registry, options.specifier)
   const dist = metadata.versions?.[version]?.dist
 
   if (dist?.tarball === undefined) {

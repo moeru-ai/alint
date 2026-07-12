@@ -108,7 +108,7 @@ function getLockedPackageDir(projectRoot: string, pluginRoot: string, entry: Par
     throw new Error(`Plugin lock entry "${entry.alias}" package name does not match its specifier.`)
   }
 
-  if (entry.specifier.version !== undefined && entry.specifier.version !== version) {
+  if (entry.specifier.version !== version) {
     throw new Error(`Plugin lock entry "${entry.alias}" package version does not match its specifier.`)
   }
 

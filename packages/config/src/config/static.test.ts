@@ -61,6 +61,18 @@ describe('static config parsing', () => {
     )
   })
 
+  it('rejects static plugin specifiers without an exact package version while parsing', () => {
+    expect(() => parseStaticConfig([
+      { plugins: { python: '@alint-js/plugin-python' } },
+    ])).toThrow('Static plugin specifier "@alint-js/plugin-python" must include an exact package version.')
+  })
+
+  it('rejects invalid static plugin package names while parsing', () => {
+    expect(() => parseStaticConfig([
+      { plugins: { python: '../../outside@1.0.0' } },
+    ])).toThrow('Invalid static plugin package name "../../outside".')
+  })
+
   it('rejects invalid static config item shapes while parsing', () => {
     expect(() => parseStaticConfig(
       {

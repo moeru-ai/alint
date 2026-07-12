@@ -1,5 +1,7 @@
 import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/core'
 
+import type { ParsedPluginSpecifier } from '../plugins/spec'
+
 import { extname } from 'pathe'
 import {
   array,
@@ -15,14 +17,13 @@ import {
   unknown,
 } from 'valibot'
 
+import { formatPluginSpecifier, parsePluginSpecifier } from '../plugins/spec'
+
+export { formatPluginSpecifier, parsePluginSpecifier }
+export type { ParsedPluginSpecifier }
+
 export interface NormalizeLoadedAlintConfigOptions {
   configFile?: string
-}
-
-export interface ParsedPluginSpecifier {
-  name: string
-  raw: string
-  version?: string
 }
 
 export interface ParsedStaticConfig {
@@ -63,9 +64,9 @@ interface StaticConfigWrapper {
   }
 }
 
+const filePatternSchema = union([string(), array(string())])
 const ruleSeveritySchema = picklist(['error', 'off', 'warn'])
 const ruleConfigEntrySchema = union([ruleSeveritySchema, tuple([ruleSeveritySchema])])
-const filePatternSchema = union([string(), array(string())])
 const staticConfigItemSchema = looseObject({
   agent: optional(unknown()),
   basePath: optional(string()),
@@ -89,10 +90,6 @@ const staticConfigItemSchema = looseObject({
   settings: optional(record(string(), unknown())),
 })
 
-export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string {
-  return specifier.raw
-}
-
 export function listStaticPluginReferences(config: ParsedStaticConfig): StaticPluginReference[] {
   return config.groups.flatMap(group => group.plugins)
 }
@@ -105,23 +102,6 @@ export function normalizeLoadedAlintConfig(
   assertStaticPluginsResolved(items)
 
   return items as AlintConfig
-}
-
-export function parsePluginSpecifier(value: string): ParsedPluginSpecifier {
-  const versionSeparator = value.lastIndexOf('@')
-
-  if (versionSeparator > 0) {
-    return {
-      name: value.slice(0, versionSeparator),
-      raw: value,
-      version: value.slice(versionSeparator + 1),
-    }
-  }
-
-  return {
-    name: value,
-    raw: value,
-  }
 }
 
 export function parseStaticConfig(
