@@ -301,4 +301,33 @@ export default [
       },
     ])
   })
+
+  it('loads JS config with plugin objects when the lock file is malformed', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-plugin-object-malformed-lock-'))
+    await writeFile(join(cwd, 'alint.config.mjs'), `
+export default [
+  {
+    plugins: {
+      local: { rules: { example: {} } },
+    },
+  },
+]
+`)
+    await mkdir(join(cwd, '.alint', 'plugins'), { recursive: true })
+    await writeFile(join(cwd, '.alint', 'plugins', 'lock.json'), '{', 'utf8')
+
+    const config = await loadAlintConfig(cwd)
+
+    expect(config).toEqual([
+      {
+        plugins: {
+          local: {
+            rules: {
+              example: {},
+            },
+          },
+        },
+      },
+    ])
+  })
 })
