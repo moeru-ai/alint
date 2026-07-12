@@ -228,7 +228,7 @@ export default [
     }
   })
 
-  it('accepts multiple-token npm integrity when a supported digest matches', async () => {
+  it('rejects multiple-token npm integrity when strongest supported digest does not match', async () => {
     const projectRoot = await createProject(`
 export default [
   { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
@@ -236,6 +236,22 @@ export default [
 `)
     const tarball = await createPluginTarball()
     const integrity = `${createIntegrity(Buffer.from('different'))} ${createIntegrity(tarball, 'sha256')}`
+    const registry = await startRegistry(tarball, integrity)
+
+    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
+      .rejects
+      .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
+    expect(registry.tarballRequests()).toBe(1)
+  })
+
+  it('accepts multiple-token npm integrity when strongest supported digest matches', async () => {
+    const projectRoot = await createProject(`
+export default [
+  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
+]
+`)
+    const tarball = await createPluginTarball()
+    const integrity = `${createIntegrity(tarball, 'sha256')} ${createIntegrity(tarball)}`
     const registry = await startRegistry(tarball, integrity)
 
     const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })

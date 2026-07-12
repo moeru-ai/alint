@@ -26,6 +26,7 @@ import { resolveInstalledPackageRelativeEntry } from './package'
 import { formatPluginSpecifier } from './spec'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
+const SUPPORTED_INTEGRITY_ALGORITHMS = ['sha512', 'sha256'] as const
 const SUPPORTED_INTEGRITY_TOKEN_PATTERN = /^(sha512|sha256)-([A-Za-z0-9+/]+={0,2})$/u
 
 interface InstalledPackage extends Omit<PluginLockEntry, 'alias' | 'specifier'> {}
@@ -55,6 +56,8 @@ interface PackageIdentity {
 interface PackageInstallIdentity extends PackageIdentity {
   version: string
 }
+
+type SupportedIntegrityAlgorithm = typeof SUPPORTED_INTEGRITY_ALGORITHMS[number]
 
 export async function installStaticPlugins(
   options: StaticPluginInstallOptions,
@@ -372,12 +375,28 @@ function verifyTarballIntegrity(tarball: Buffer, integrity: string, specifier: s
     .split(/\s+/u)
     .map(token => SUPPORTED_INTEGRITY_TOKEN_PATTERN.exec(token))
     .filter(match => match !== null)
+    .map(([, algorithm, expected]) => ({
+      algorithm: algorithm as SupportedIntegrityAlgorithm,
+      expected,
+    }))
 
   if (supportedTokens.length === 0) {
     throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
   }
 
-  const matches = supportedTokens.some(([, algorithm, expected]) => {
+  const strongestAlgorithm = SUPPORTED_INTEGRITY_ALGORITHMS.find(algorithm =>
+    supportedTokens.some(token => token.algorithm === algorithm),
+  )
+
+  if (strongestAlgorithm === undefined) {
+    throw new Error(`Unsupported npm integrity format for "${specifier}": "${integrity}".`)
+  }
+
+  const matches = supportedTokens.some(({ algorithm, expected }) => {
+    if (algorithm !== strongestAlgorithm) {
+      return false
+    }
+
     const actual = createHash(algorithm).update(tarball).digest('base64')
     return actual === expected
   })
