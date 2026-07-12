@@ -53,7 +53,7 @@ export async function resolveInstalledPackageRelativeEntry(packageDir: string): 
 
 export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): Promise<ResolvedPluginPackage> {
   const projectRoot = resolve(entry.cwd)
-  const pluginRoot = join(projectRoot, '.alint', 'plugins')
+  const pluginRoot = join(projectRoot, '.alint', 'plugins', 'store')
   const rawEntryPath = entry.lockEntry.entry
   const resolvedEntry = isAbsolute(rawEntryPath)
     ? resolve(rawEntryPath)
@@ -101,7 +101,7 @@ function getDefaultExport(value: unknown): unknown {
     return value
   }
 
-  return value.default ?? value
+  return Object.hasOwn(value, 'default') ? value.default : value
 }
 
 function getPackageName(packageJson: Record<string, unknown>): string {

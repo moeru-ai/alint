@@ -100,6 +100,27 @@ describe('plugin package resolution', () => {
       .toThrow('Plugin lock entry "python" resolves outside the project root.')
   })
 
+  it('rejects a lock entry inside the plugins directory but outside the plugin store', async () => {
+    const projectRoot = await createTempProject()
+    const packageDir = join(projectRoot, '.alint', 'plugins', 'other', 'package')
+    const distDir = join(packageDir, 'dist')
+    await mkdir(join(projectRoot, '.alint', 'plugins', 'store'), { recursive: true })
+    await mkdir(distDir, { recursive: true })
+    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
+      name: '@alint-js/plugin-python',
+      type: 'module',
+      version: '0.3.1',
+    }), 'utf8')
+    await writeFile(join(distDir, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+
+    await expect(resolveLockedPluginPackage(createLockEntry(
+      projectRoot,
+      '.alint/plugins/other/package/dist/index.mjs',
+    )))
+      .rejects
+      .toThrow('Plugin lock entry "python" resolves outside the project root.')
+  })
+
   it('resolves the package exports entry for an installed plugin package', async () => {
     const projectRoot = await createTempProject()
     const packageDir = await writeInstalledPackage(projectRoot)
@@ -135,5 +156,19 @@ describe('plugin package resolution', () => {
       packageDir,
       packageJson: { name: 'invalid' },
     })).rejects.toThrow('Plugin package "invalid" must export a plugin object.')
+  })
+
+  it('rejects a plugin module with a null default export', async () => {
+    const projectRoot = await createTempProject()
+    const packageDir = join(projectRoot, '.alint', 'plugins', 'store', 'invalid-null', '1.0.0', 'package')
+    const distDir = join(packageDir, 'dist')
+    await mkdir(distDir, { recursive: true })
+    await writeFile(join(distDir, 'index.mjs'), 'export default null\n', 'utf8')
+
+    await expect(importResolvedPluginPackage({
+      entry: join(distDir, 'index.mjs'),
+      packageDir,
+      packageJson: { name: 'invalid-null' },
+    })).rejects.toThrow('Plugin package "invalid-null" must export a plugin object.')
   })
 })
