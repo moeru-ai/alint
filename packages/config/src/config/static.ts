@@ -97,7 +97,10 @@ export function normalizeLoadedAlintConfig(
   value: unknown,
   options: NormalizeLoadedAlintConfigOptions = {},
 ): AlintConfig {
-  return toAlintConfigItems(value, options) as AlintConfig
+  const items = toAlintConfigItems(value, options)
+  assertStaticPluginsResolved(items)
+
+  return items as AlintConfig
 }
 
 export function parsePluginSpecifier(value: string): ParsedPluginSpecifier {
@@ -144,6 +147,20 @@ export async function toAlintConfig(
   return Promise.all(config.groups.map(group =>
     resolveStaticPlugins(group, options, pluginCache),
   ))
+}
+
+function assertStaticPluginsResolved(items: readonly StaticConfigItem[]): void {
+  for (const item of items) {
+    if (!isPlainObject(item.plugins)) {
+      continue
+    }
+
+    for (const [alias, plugin] of Object.entries(item.plugins)) {
+      if (typeof plugin === 'string') {
+        throw new TypeError(`Static plugin "${alias}" requires async plugin resolution.`)
+      }
+    }
+  }
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

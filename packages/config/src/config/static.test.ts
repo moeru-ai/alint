@@ -160,6 +160,21 @@ describe('static config parsing', () => {
     ])
   })
 
+  it('rejects unresolved static plugin strings during sync normalization', () => {
+    expect(() => normalizeLoadedAlintConfig(
+      [
+        {
+          plugins: {
+            python: '@alint-js/plugin-python@0.3.1',
+          },
+        },
+      ],
+      {
+        configFile: '/repo/alint.config.json',
+      },
+    )).toThrow('Static plugin "python" requires async plugin resolution.')
+  })
+
   it('keeps top-level array config as flat config', () => {
     const config = normalizeLoadedAlintConfig(
       [
