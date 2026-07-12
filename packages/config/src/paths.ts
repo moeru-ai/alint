@@ -17,6 +17,10 @@ export function getGlobalSetupConfigPath(
   return join(resolveAlintHome(env, options), 'config.toml')
 }
 
+export function getProjectPluginLockPath(cwd: string): string {
+  return join(cwd, '.alint', 'plugins', 'lock.json')
+}
+
 export function getProjectSetupConfigPath(cwd: string): string {
   return join(cwd, '.alint', 'config.toml')
 }

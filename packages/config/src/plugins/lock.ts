@@ -7,7 +7,6 @@ import type {
 
 import { readFile } from 'node:fs/promises'
 
-import { join } from 'pathe'
 import {
   literal,
   object,
@@ -16,9 +15,8 @@ import {
   string,
 } from 'valibot'
 
+import { getProjectPluginLockPath } from '../paths'
 import { formatPluginSpecifier, parsePluginSpecifier } from './spec'
-
-export const emptyPluginLockFile: PluginLockFile = { plugins: {}, version: 1 }
 
 const PluginLockEntrySchema = object({
   alias: string(),
@@ -36,12 +34,20 @@ const PluginLockFileSchema = object({
   version: literal(1),
 })
 
+export function createEmptyPluginLockFile(): PluginLockFile {
+  return { plugins: {}, version: 1 }
+}
+
 export async function loadPluginLockFile(cwd: string): Promise<PluginLockFile> {
   try {
-    return parsePluginLockFileValue(await readFile(getPluginLockFilePath(cwd), 'utf8'))
+    return parsePluginLockFileValue(await readFile(getProjectPluginLockPath(cwd), 'utf8'))
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (
+      error instanceof Error
+      && 'code' in error
+      && error.code === 'ENOENT'
+    ) {
       return createEmptyPluginLockFile()
     }
 
@@ -89,20 +95,15 @@ export function parsePluginLockFile(
   }
 }
 
-function createEmptyPluginLockFile(): PluginLockFile {
-  return { plugins: {}, version: 1 }
-}
-
-function getPluginLockFilePath(cwd: string): string {
-  return join(cwd, '.alint', 'plugins', 'lock.json')
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
 function parsePluginLockFileValue(value: unknown): PluginLockFile {
   const parsedValue = typeof value === 'string' ? JSON.parse(value) as unknown : value
+  const file = parse(PluginLockFileSchema, parsedValue)
 
-  return parse(PluginLockFileSchema, parsedValue)
+  for (const [alias, entry] of Object.entries(file.plugins)) {
+    if (entry.alias !== alias) {
+      throw new Error(`Plugin lock entry key "${alias}" must match alias "${entry.alias}".`)
+    }
+  }
+
+  return file
 }
