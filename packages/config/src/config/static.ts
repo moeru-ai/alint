@@ -30,12 +30,18 @@ export interface ParsedStaticConfig {
 }
 
 export interface ParsedStaticConfigGroup {
-  item: AlintConfigItem
+  item: StaticConfigItem
   plugins: StaticPluginReference[]
 }
 
 export interface ParseStaticConfigOptions {
   configFile?: string
+}
+
+export type StaticConfigInput = readonly StaticConfigInput[] | StaticConfigItem
+
+export interface StaticConfigItem extends Omit<AlintConfigItem, 'plugins'> {
+  plugins?: Record<string, PluginDefinition | string>
 }
 
 export interface StaticPluginReference {
@@ -82,7 +88,6 @@ const staticConfigItemSchema = looseObject({
   runner: optional(unknown()),
   settings: optional(record(string(), unknown())),
 })
-const staticConfigItemsSchema = array(staticConfigItemSchema)
 
 export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string {
   return specifier.raw
@@ -122,7 +127,7 @@ export function parseStaticConfig(
     const plugins = readStaticPluginReferences(item, pluginsByAlias)
 
     return {
-      item: item as AlintConfigItem,
+      item,
       plugins,
     }
   })
@@ -149,6 +154,31 @@ function isTomlConfig(configFile: string | undefined): boolean {
   return extname(configFile ?? '').toLowerCase() === '.toml'
 }
 
+function parseStaticConfigInputArray(
+  value: readonly unknown[],
+  arrayStack: readonly (readonly unknown[])[] = [],
+): StaticConfigItem[] {
+  if (arrayStack.includes(value)) {
+    throw new Error('Circular static config array.')
+  }
+
+  return value.flatMap(item =>
+    Array.isArray(item) ? parseStaticConfigInputArray(item, [...arrayStack, value]) : [parseStaticConfigItem(item)],
+  )
+}
+
+function parseStaticConfigItem(value: unknown): StaticConfigItem {
+  if (Array.isArray(value)) {
+    throw new TypeError('Invalid type: Expected Object but received Array')
+  }
+
+  return parse(staticConfigItemSchema, value) as StaticConfigItem
+}
+
+function parseStaticConfigItems(value: readonly unknown[]): StaticConfigItem[] {
+  return value.map(parseStaticConfigItem)
+}
+
 function readConfigGroup(value: unknown): undefined | unknown[] {
   if (!isPlainObject(value)) {
     return undefined
@@ -168,10 +198,10 @@ function readConfigGroup(value: unknown): undefined | unknown[] {
 }
 
 function readStaticPluginReferences(
-  item: unknown,
+  item: StaticConfigItem,
   pluginsByAlias: Map<string, ParsedPluginSpecifier>,
 ): StaticPluginReference[] {
-  if (!isPlainObject(item) || !isPlainObject(item.plugins)) {
+  if (!isPlainObject(item.plugins)) {
     return []
   }
 
@@ -203,30 +233,32 @@ async function resolveStaticPlugins(
   options: ToAlintConfigOptions,
   pluginCache: Map<string, Promise<PluginDefinition>>,
 ): Promise<AlintConfigItem> {
-  if (group.plugins.length === 0) {
-    return group.item
+  if (group.item.plugins === undefined) {
+    const { plugins: _plugins, ...item } = group.item
+
+    return item
   }
 
-  const rawPlugins = group.item.plugins as Record<string, PluginDefinition | string>
   const plugins: Record<string, PluginDefinition> = {}
 
-  for (const [alias, plugin] of Object.entries(rawPlugins)) {
+  for (const [alias, plugin] of Object.entries(group.item.plugins)) {
     if (typeof plugin !== 'string') {
       plugins[alias] = plugin
       continue
     }
 
-    let resolvedPlugin = pluginCache.get(alias)
+    const reference = group.plugins.find(item => item.alias === alias)
+
+    if (reference === undefined) {
+      throw new Error(`Static plugin "${alias}" is missing a parsed plugin reference.`)
+    }
+
+    const pluginCacheKey = formatPluginSpecifier(reference.specifier)
+    let resolvedPlugin = pluginCache.get(pluginCacheKey)
 
     if (resolvedPlugin === undefined) {
-      const reference = group.plugins.find(item => item.alias === alias)
-
-      if (reference === undefined) {
-        throw new Error(`Static plugin "${alias}" is missing a parsed plugin reference.`)
-      }
-
       resolvedPlugin = options.pluginResolver(reference)
-      pluginCache.set(alias, resolvedPlugin)
+      pluginCache.set(pluginCacheKey, resolvedPlugin)
     }
 
     plugins[alias] = await resolvedPlugin
@@ -238,15 +270,15 @@ async function resolveStaticPlugins(
 function toAlintConfigItems(
   value: unknown,
   options: ParseStaticConfigOptions = {},
-): AlintConfigItem[] {
+): StaticConfigItem[] {
   if (Array.isArray(value)) {
-    return parse(staticConfigItemsSchema, value) as AlintConfigItem[]
+    return parseStaticConfigInputArray(value)
   }
 
   const group = readConfigGroup(value)
 
   if (group !== undefined) {
-    return parse(staticConfigItemsSchema, group) as AlintConfigItem[]
+    return parseStaticConfigItems(group)
   }
 
   if (isTomlConfig(options.configFile)) {

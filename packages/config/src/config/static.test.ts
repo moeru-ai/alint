@@ -42,6 +42,7 @@ describe('static config parsing', () => {
       },
       rules: { 'python/semantic-boundary': 'warn' },
     })
+    expect(config.groups[0]?.item.plugins?.python).toBe('@alint-js/plugin-python@0.3.1')
   })
 
   it('rejects repeated static plugin aliases with different specifiers while parsing', () => {
@@ -96,6 +97,42 @@ describe('static config parsing', () => {
     ])
   })
 
+  it('reuses resolved static plugins with the same specifier across aliases', async () => {
+    const plugin = { rules: {} }
+    const references: string[] = []
+    const config = await toAlintConfig(parseStaticConfig([
+      {
+        plugins: {
+          python: '@alint-js/plugin-python@0.3.1',
+        },
+      },
+      {
+        plugins: {
+          py: '@alint-js/plugin-python@0.3.1',
+        },
+      },
+    ]), {
+      pluginResolver: async (reference) => {
+        references.push(reference.alias)
+        return plugin
+      },
+    })
+
+    expect(references).toEqual(['python'])
+    expect(config).toEqual([
+      {
+        plugins: {
+          python: plugin,
+        },
+      },
+      {
+        plugins: {
+          py: plugin,
+        },
+      },
+    ])
+  })
+
   it('maps TOML config.group wrapper to flat config items', () => {
     const config = normalizeLoadedAlintConfig(
       {
@@ -142,6 +179,58 @@ describe('static config parsing', () => {
         rules: { 'go/responsibility-boundary': 'error' },
       },
     ])
+  })
+
+  it('accepts nested top-level config arrays and flattens parsed groups', () => {
+    const config = parseStaticConfig(
+      [
+        {
+          name: 'root',
+        },
+        [
+          {
+            files: ['**/*.go'],
+            rules: { 'go/responsibility-boundary': 'error' },
+          },
+        ],
+      ],
+      {
+        configFile: '/repo/alint.config.ts',
+      },
+    )
+
+    expect(config.groups).toEqual([
+      {
+        item: {
+          name: 'root',
+        },
+        plugins: [],
+      },
+      {
+        item: {
+          files: ['**/*.go'],
+          rules: { 'go/responsibility-boundary': 'error' },
+        },
+        plugins: [],
+      },
+    ])
+  })
+
+  it('keeps config.group validation flat', () => {
+    expect(() => parseStaticConfig(
+      {
+        config: {
+          group: [
+            [
+              {
+                name: 'nested',
+              },
+            ],
+          ],
+        },
+      },
+      { configFile: '/repo/alint.config.toml' },
+    )).toThrow('Invalid type')
   })
 
   it('rejects TOML config without config.group', () => {

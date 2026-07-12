@@ -9,7 +9,10 @@ export type {
   ParsedStaticConfig,
   ParsedStaticConfigGroup,
   ParseStaticConfigOptions,
+  StaticConfigInput,
+  StaticConfigItem,
   StaticPluginReference,
+  StaticPluginResolver,
   ToAlintConfigOptions,
 } from './config/static'
 export {
