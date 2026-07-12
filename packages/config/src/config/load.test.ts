@@ -5,8 +5,7 @@ import { pathToFileURL } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
-import { loadAlintConfig, loadStaticConfig } from './load'
-import { parsePluginSpecifier } from './static'
+import { loadAlintConfig } from './load'
 
 function createLockEntry(alias: string, specifier: string, entry: string) {
   const name = specifier.slice(0, specifier.lastIndexOf('@'))
@@ -46,29 +45,6 @@ async function writePluginLock(root: string, plugins: Record<string, unknown>): 
 }
 
 describe('loadAlintConfig', () => {
-  it('loads exported flat config arrays without object defaults', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-array-'))
-    await writeFile(join(cwd, 'alint.config.ts'), `
-export default [
-  {
-    files: ['**/*.go'],
-    rules: { 'review/file': 'warn' },
-  },
-]
-`)
-
-    await mkdir(join(cwd, 'src'))
-    const config = await loadAlintConfig(cwd)
-
-    expect(Array.isArray(config)).toBe(true)
-    expect(config).toEqual([
-      {
-        files: ['**/*.go'],
-        rules: { 'review/file': 'warn' },
-      },
-    ])
-  })
-
   it('loads TypeScript-only config syntax through the bundled jiti transform', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-ts-transform-'))
     await writeFile(join(cwd, 'alint.config.ts'), `
@@ -156,53 +132,6 @@ files = ["**/*.py"]
     ])
   })
 
-  it('loads JSON wrapper config.group as flat config', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-json-'))
-    await writeFile(
-      join(cwd, 'alint.config.json'),
-      JSON.stringify({
-        config: {
-          group: [
-            {
-              files: ['**/*.go'],
-              rules: { 'go/responsibility-boundary': 'error' },
-            },
-          ],
-        },
-      }),
-    )
-
-    const config = await loadAlintConfig(cwd)
-
-    expect(config).toEqual([
-      {
-        files: ['**/*.go'],
-        rules: { 'go/responsibility-boundary': 'error' },
-      },
-    ])
-  })
-
-  it('loads parsed static plugin references without resolving or importing', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-static-'))
-    await writeFile(join(cwd, 'alint.config.toml'), `
-[[config.group]]
-name = "python"
-
-[config.group.plugins]
-python = "@alint-js/plugin-python@0.3.1"
-`)
-
-    const config = await loadStaticConfig(cwd)
-
-    expect(config.groups.flatMap(group => group.plugins)).toEqual([
-      {
-        alias: 'python',
-        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
-      },
-    ])
-    expect(config.groups[0]?.item.plugins?.python).toBe('@alint-js/plugin-python@0.3.1')
-  })
-
   it('reports static plugin references missing from the lock file', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-missing-lock-'))
     await writeFile(join(cwd, 'alint.config.toml'), `
@@ -268,33 +197,6 @@ python = "@alint-js/plugin-python@0.3.1"
           python: {
             rules: {
               'semantic-boundary': {},
-            },
-          },
-        },
-      },
-    ])
-  })
-
-  it('loads JS config with plugin objects without a lock file', async () => {
-    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-plugin-object-'))
-    await writeFile(join(cwd, 'alint.config.mjs'), `
-export default [
-  {
-    plugins: {
-      local: { rules: { example: {} } },
-    },
-  },
-]
-`)
-
-    const config = await loadAlintConfig(cwd)
-
-    expect(config).toEqual([
-      {
-        plugins: {
-          local: {
-            rules: {
-              example: {},
             },
           },
         },

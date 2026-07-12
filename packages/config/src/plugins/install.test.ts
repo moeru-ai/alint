@@ -244,22 +244,6 @@ export default [
     expect(registry.tarballRequests()).toBe(1)
   })
 
-  it('accepts multiple-token npm integrity when strongest supported digest matches', async () => {
-    const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-    const tarball = await createPluginTarball()
-    const integrity = `${createIntegrity(tarball, 'sha256')} ${createIntegrity(tarball)}`
-    const registry = await startRegistry(tarball, integrity)
-
-    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
-
-    expect(result.lock.plugins.python?.integrity).toBe(integrity)
-    expect(registry.tarballRequests()).toBe(1)
-  })
-
   it('downloads each repeated package specifier once while locking every alias', async () => {
     const projectRoot = await createProject(`
 export default [

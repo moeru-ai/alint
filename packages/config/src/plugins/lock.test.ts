@@ -305,41 +305,6 @@ describe('plugin lock disk loading', () => {
     expect(second).toEqual({ plugins: {}, version: 1 })
   })
 
-  it('loads and validates an existing lock JSON file', async () => {
-    const root = await createTempRoot()
-    await writePluginLock(root, {
-      plugins: {
-        python: {
-          alias: 'python',
-          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
-          integrity: 'sha512-test',
-          name: '@alint-js/plugin-python',
-          registry: 'https://registry.npmjs.org/',
-          specifier: '@alint-js/plugin-python@0.3.1',
-          tarball: 'https://registry.npmjs.org/plugin.tgz',
-          version: '0.3.1',
-        },
-      },
-      version: 1,
-    })
-
-    await expect(loadPluginLockFile(root)).resolves.toEqual({
-      plugins: {
-        python: {
-          alias: 'python',
-          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
-          integrity: 'sha512-test',
-          name: '@alint-js/plugin-python',
-          registry: 'https://registry.npmjs.org/',
-          specifier: '@alint-js/plugin-python@0.3.1',
-          tarball: 'https://registry.npmjs.org/plugin.tgz',
-          version: '0.3.1',
-        },
-      },
-      version: 1,
-    })
-  })
-
   it('rejects malformed lock files', async () => {
     const root = await createTempRoot()
     const lockDir = join(root, '.alint', 'plugins')

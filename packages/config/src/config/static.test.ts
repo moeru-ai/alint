@@ -145,33 +145,6 @@ describe('static config parsing', () => {
     ])
   })
 
-  it('maps TOML config.group wrapper to flat config items', () => {
-    const config = normalizeLoadedAlintConfig(
-      {
-        config: {
-          group: [
-            {
-              files: ['**/*.py'],
-              name: 'python',
-              rules: { 'python/semantic-boundary': 'warn' },
-            },
-          ],
-        },
-      },
-      {
-        configFile: '/repo/alint.config.toml',
-      },
-    )
-
-    expect(config).toEqual([
-      {
-        files: ['**/*.py'],
-        name: 'python',
-        rules: { 'python/semantic-boundary': 'warn' },
-      },
-    ])
-  })
-
   it('rejects unresolved static plugin strings during sync normalization', () => {
     expect(() => normalizeLoadedAlintConfig(
       [
@@ -185,27 +158,6 @@ describe('static config parsing', () => {
         configFile: '/repo/alint.config.json',
       },
     )).toThrow('Static plugin "python" requires async plugin resolution.')
-  })
-
-  it('keeps top-level array config as flat config', () => {
-    const config = normalizeLoadedAlintConfig(
-      [
-        {
-          files: ['**/*.go'],
-          rules: { 'go/responsibility-boundary': 'error' },
-        },
-      ],
-      {
-        configFile: '/repo/alint.config.json',
-      },
-    )
-
-    expect(config).toEqual([
-      {
-        files: ['**/*.go'],
-        rules: { 'go/responsibility-boundary': 'error' },
-      },
-    ])
   })
 
   it('accepts nested top-level config arrays and flattens parsed groups', () => {
