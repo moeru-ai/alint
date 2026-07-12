@@ -11,7 +11,7 @@ import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
 import { mkdir, rename, rm } from 'node:fs/promises'
-import { dirname, isAbsolute, join, posix, relative, resolve } from 'node:path'
+import { dirname, join, posix, resolve } from 'node:path'
 import { Readable as NodeReadable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
@@ -22,7 +22,7 @@ import { ofetch } from 'ofetch'
 
 import { loadStaticConfig } from '../config/load'
 import { getProjectPluginStorePath } from '../paths'
-import { isENOENTError } from '../utils/fs'
+import { isENOENTError, isPathInside } from '../utils/fs'
 import { checkIntegrity } from './integrity'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
 import { resolveInstalledPackageRelativeEntry } from './package'
@@ -208,12 +208,6 @@ async function installPackage(options: InstallPackageOptions): Promise<Installed
     tarball: dist.tarball,
     version,
   }
-}
-
-function isPathInside(path: string, parent: string): boolean {
-  const childRelativePath = relative(parent, path)
-  return childRelativePath === ''
-    || (!childRelativePath.startsWith('..') && !isAbsolute(childRelativePath))
 }
 
 async function replacePackageDirectory(packageDir: string, stagingPackageDir: string): Promise<void> {

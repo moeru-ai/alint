@@ -12,9 +12,10 @@ import {
 } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
+import { isPlainObject } from 'es-toolkit/compat'
 import { exports as resolvePackageExports } from 'resolve.exports'
 
-import { exists, isENOENTError } from '../utils/fs'
+import { exists, isENOENTError, isPathInside } from '../utils/fs'
 
 export async function importResolvedPluginPackage(resolved: ResolvedPluginPackage): Promise<PluginDefinition> {
   const importedModule: unknown = await import(pathToFileURL(resolved.entry).href)
@@ -87,19 +88,19 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
 }
 
 function assertPluginDefinition(value: unknown, packageName: string): asserts value is PluginDefinition {
-  if (!isPlainObject(value)) {
+  if (!isRecord(value)) {
     throw new Error(`Plugin package "${packageName}" must export a plugin object.`)
   }
 
   for (const property of ['configs', 'languages', 'processors', 'rules'] as const) {
-    if (value[property] !== undefined && !isPlainObject(value[property])) {
+    if (value[property] !== undefined && !isRecord(value[property])) {
       throw new Error(`Plugin package "${packageName}" must export "${property}" as an object when provided.`)
     }
   }
 }
 
 function getDefaultExport<T = unknown>(value: unknown): T {
-  if (!isPlainObject(value)) {
+  if (!isRecord(value)) {
     return value as T
   }
 
@@ -158,19 +159,8 @@ function getPackagePathSegments(name: string): string[] {
   return segments
 }
 
-function isPathInside(path: string, parent: string): boolean {
-  const childRelativePath = relative(parent, path)
-  return childRelativePath === ''
-    || (!childRelativePath.startsWith('..') && !isAbsolute(childRelativePath))
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  if (value === null || typeof value !== 'object') {
-    return false
-  }
-
-  const prototype = Object.getPrototypeOf(value)
-  return prototype === Object.prototype || prototype === null
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return isPlainObject(value)
 }
 
 async function nearestExistingParent(path: string): Promise<string> {
@@ -194,7 +184,7 @@ function normalizePackageRelativeEntry(entry: string): string {
 async function readPackageJson(packageDir: string): Promise<Record<string, unknown>> {
   const packageJson = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')) as unknown
 
-  if (!isPlainObject(packageJson)) {
+  if (!isRecord(packageJson)) {
     throw new Error(`Package at "${packageDir}" must have an object package.json.`)
   }
 

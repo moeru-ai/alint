@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { isAbsolute, relative } from 'node:path'
 
 import { isError } from '@moeru/std/error'
 
@@ -22,4 +23,10 @@ export function isENOENTError(error: unknown): boolean {
 
 export function isNodeErrorCode(error: unknown, code: string): boolean {
   return isError(error) && 'code' in error && error.code === code
+}
+
+export function isPathInside(path: string, parent: string): boolean {
+  const childRelativePath = relative(parent, path)
+  return childRelativePath === ''
+    || (!childRelativePath.startsWith('..') && !isAbsolute(childRelativePath))
 }
