@@ -63,6 +63,8 @@ native = 'C:\alint\plugins\native-plugin'
 
 Run installation after adding or changing configured source specifiers, or after moving a local directory or changing its symlink target. An ordinary rebuild or content change within the same local root does not require reinstalling. Local directory registration does not build the plugin or install its dependencies. Directory sources bypass the registry, package store, and integrity checks.
 
+Local plugin root and entry containment checks validate the registered source identity; they are not a sandbox. The plugin and all transitive dependencies execute as fully trusted Node.js code and may access resources outside the registered directory.
+
 On load, the root package manifest, export, and entry content are re-resolved; the root entry content hash cache-busts imports, so rebuilt root output is visible without reinstalling. Unbundled transitive imports retain normal Node.js ESM caching within a process, so transitive-only changes require a new CLI process. A root rebuild or change refreshes those dependencies only when their content is bundled or copied into the changed root entry. Lock version 2 distinguishes directory identities from registry package snapshots, which include registry and integrity metadata.
 
 ## When to use

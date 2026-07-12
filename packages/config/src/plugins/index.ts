@@ -7,7 +7,7 @@ export {
   parsePluginLockFile,
   writePluginLockFile,
 } from './lock'
-export { isDirectoryPluginSpecifier, parsePluginSpecifier } from './spec'
+export { parsePluginSpecifier } from './spec'
 export type {
   DirectoryPluginLockEntry,
   ParsedDirectoryPluginLockEntry,

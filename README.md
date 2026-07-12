@@ -263,6 +263,8 @@ native = 'C:\alint\plugins\native-plugin'
 
 Run `alint plugin install` after adding or changing configured source specifiers, or after moving a local directory or changing its symlink target. An ordinary rebuild or content change within the same local root does not require reinstalling. Registry packages are downloaded into `.alint/plugins/store`; local directories are registered in place. Registration does not build the plugin or install its dependencies. Directory sources bypass the registry, package store, and integrity checks.
 
+Local plugin root and entry containment checks validate the registered source identity; they are not a sandbox. The plugin and all transitive dependencies execute as fully trusted Node.js code and may access resources outside the registered directory.
+
 For a local directory, `alint` re-resolves the root package manifest, export, and entry content. The root entry content hash cache-busts imports, so rebuilt root output is visible without reinstalling the plugin. Unbundled transitive imports retain normal Node.js ESM caching within a process, so transitive-only changes require a new CLI process. A root rebuild or change refreshes those dependencies only when their content is bundled or copied into the changed root entry.
 
 `.alint/plugins/lock.json` uses lock version 2 for both source types. Registry entries record an installed package snapshot and integrity metadata; directory entries record source identity and resolve the current directory contents at runtime.

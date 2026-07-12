@@ -21,7 +21,7 @@ import {
 import { getProjectPluginLockPath } from '../paths'
 import { isENOENTError } from '../utils/fs'
 import { parseIntegrity } from './integrity'
-import { resolveLockedPluginPackage } from './package'
+import { resolvePluginImportTarget } from './resolve'
 import { getPluginSpecifierKey, isDirectoryPluginSpecifier, parsePluginSpecifier } from './spec'
 
 const PluginLockEntrySchema = variant('type', [
@@ -90,7 +90,7 @@ export async function listUnresolved(
       checkedAliases.add(entry.alias)
 
       try {
-        await resolveLockedPluginPackage(entry)
+        await resolvePluginImportTarget(entry)
       }
       catch (error) {
         unresolved.push({ ...entry, resolutionError: error })

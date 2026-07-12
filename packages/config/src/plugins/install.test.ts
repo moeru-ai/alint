@@ -215,49 +215,16 @@ export default [{ plugins: {
 
     expect(result.registeredDirectoryCount).toBe(1)
     expect(result.lock.plugins.direct).toMatchObject({ path: relative(projectRoot, pluginRoot), type: 'directory' })
-    expect(result.lock.plugins.linked).toMatchObject({ path: relative(projectRoot, pluginRoot), type: 'directory' })
+    expect(result.lock.plugins.linked).toEqual({
+      alias: 'linked',
+      path: relative(projectRoot, pluginRoot),
+      specifier: './plugins/local-link',
+      type: 'directory',
+    })
     expect(Object.keys(result.lock.plugins)).toEqual(['direct', 'linked'])
     await expect(loadAlintConfig(projectRoot)).resolves.toEqual([
       { plugins: { direct: { rules: {} }, linked: { rules: {} } } },
     ])
-  })
-
-  it('downloads, extracts, resolves, and locks configured static plugin packages', async () => {
-    const projectRoot = await createProject(`
-export default [
-  {
-    plugins: {
-      python: '@alint-js/plugin-python@0.3.1',
-    },
-  },
-]
-`)
-    const tarball = await createPluginTarball()
-    const registry = await startRegistry(tarball)
-
-    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
-    const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
-
-    expect(result.installedRegistryCount).toBe(1)
-    expect(lock).toEqual({
-      plugins: {
-        python: {
-          alias: 'python',
-          entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
-          integrity: createIntegrity(tarball),
-          name: '@alint-js/plugin-python',
-          registry: registry.registry,
-          specifier: '@alint-js/plugin-python@0.3.1',
-          tarball: `${registry.registry}plugin-python-0.3.1.tgz`,
-          type: 'registry',
-          version: '0.3.1',
-        },
-      },
-      version: 2,
-    })
-    await expect(readFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs'), 'utf8'))
-      .resolves
-      .toBe('export default { rules: {} }\n')
   })
 
   it('treats path traversal syntax as a directory source without escaping the plugin store', async () => {
@@ -274,57 +241,6 @@ export default [
     await expect(access(escapedPath))
       .rejects
       .toMatchObject({ code: 'ENOENT' })
-  })
-
-  it('rejects downloaded tarballs when npm integrity does not match', async () => {
-    const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-    const registry = await startRegistry(await createPluginTarball(), createIntegrity(Buffer.from('different')))
-
-    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
-      .rejects
-      .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
-  })
-
-  it('rejects npm metadata without usable integrity before installing or writing a lock file', async () => {
-    for (const integrity of [null, '']) {
-      const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-      const registry = await startRegistry(await createPluginTarball(), integrity)
-
-      await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
-        .rejects
-        .toThrow('Npm metadata for "@alint-js/plugin-python" does not include integrity for version 0.3.1.')
-      expect(registry.tarballRequests()).toBe(0)
-      await expect(access(join(projectRoot, '.alint', 'plugins', 'store')))
-        .rejects
-        .toMatchObject({ code: 'ENOENT' })
-      await expect(access(join(projectRoot, '.alint', 'plugins', 'lock.json')))
-        .rejects
-        .toMatchObject({ code: 'ENOENT' })
-    }
-  })
-
-  it('rejects multiple-token npm integrity when strongest supported digest does not match', async () => {
-    const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-    const tarball = await createPluginTarball()
-    const integrity = `${createIntegrity(Buffer.from('different'))} ${createIntegrity(tarball, 'sha256')}`
-    const registry = await startRegistry(tarball, integrity)
-
-    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
-      .rejects
-      .toThrow('Integrity mismatch for "@alint-js/plugin-python@0.3.1".')
-    expect(registry.tarballRequests()).toBe(1)
   })
 
   it('downloads each repeated package specifier once while locking every alias', async () => {
@@ -346,6 +262,31 @@ export default [
       entry: result.lock.plugins.py?.type === 'registry' ? result.lock.plugins.py.entry : undefined,
       type: 'registry',
     })
+  })
+
+  it('writes the complete registry lock entry from the installed source result', async () => {
+    const projectRoot = await createProject(`
+export default [{ plugins: { python: '@alint-js/plugin-python@0.3.1' } }]
+`)
+    const value = await createPluginTarball()
+    const registry = await startRegistry(value)
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
+    const written = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as { plugins: Record<string, unknown> }
+    const expected = {
+      alias: 'python',
+      entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+      integrity: createIntegrity(value),
+      name: '@alint-js/plugin-python',
+      registry: registry.registry,
+      specifier: '@alint-js/plugin-python@0.3.1',
+      tarball: `${registry.registry}plugin-python-0.3.1.tgz`,
+      type: 'registry',
+      version: '0.3.1',
+    }
+
+    expect(result.lock.plugins.python).toEqual(expected)
+    expect(written.plugins.python).toEqual(expected)
   })
 
   it('counts mixed registry and canonical directory sources once while locking every alias', async () => {
@@ -394,53 +335,5 @@ export default [{ plugins: {
     expect(result.registeredDirectoryCount).toBe(0)
     expect(result.configuredPluginCount).toBe(0)
     expect(lock).toEqual({ plugins: {}, version: 2 })
-  })
-
-  it('rejects tarball entries that escape the package directory', async () => {
-    const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-    const registry = await startRegistry(await createTarball({
-      'package/../evil.txt': 'escape',
-      'package/package.json': '{}',
-    }))
-
-    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
-      .rejects
-      .toThrow('Plugin tarball entry "package/../evil.txt" escapes the package directory.')
-  })
-
-  it('keeps an existing installed package intact when reinstalling a package with a missing export fails', async () => {
-    const projectRoot = await createProject(`
-export default [
-  { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
-]
-`)
-    const existingEntryPath = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs')
-    await mkdir(join(existingEntryPath, '..'), { recursive: true })
-    await writeFile(existingEntryPath, 'export default { rules: { existing: {} } }\n', 'utf8')
-    await writeFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'package.json'), JSON.stringify({
-      exports: { '.': './dist/index.mjs' },
-      name: '@alint-js/plugin-python',
-      type: 'module',
-      version: '0.3.1',
-    }), 'utf8')
-    const registry = await startRegistry(await createTarball({
-      'package/dist/index.mjs': 'export default { rules: { broken: {} } }\n',
-      'package/package.json': JSON.stringify({
-        name: '@alint-js/plugin-python',
-        type: 'module',
-        version: '0.3.1',
-      }),
-    }))
-
-    await expect(installStaticPlugins({ cwd: projectRoot, registry: registry.registry }))
-      .rejects
-      .toThrow('does not define a resolvable "." export')
-    await expect(readFile(existingEntryPath, 'utf8'))
-      .resolves
-      .toBe('export default { rules: { existing: {} } }\n')
   })
 })

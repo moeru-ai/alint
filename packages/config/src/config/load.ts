@@ -10,7 +10,8 @@ import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
 import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from '../plugins/lock'
-import { importResolvedPluginPackage, resolveLockedPluginPackage } from '../plugins/package'
+import { resolvePluginImportTarget } from '../plugins/resolve'
+import { importPlugin } from '../plugins/sources/import'
 import {
   parseStaticConfig,
   toAlintConfig,
@@ -57,8 +58,8 @@ export async function loadAlintConfig(
 
   return toAlintConfig(staticConfig, {
     async pluginResolver(reference) {
-      const resolved = await resolveLockedPluginPackage(lock.get(reference))
-      return importResolvedPluginPackage(resolved)
+      const resolved = await resolvePluginImportTarget(lock.get(reference))
+      return importPlugin(resolved)
     },
   })
 }

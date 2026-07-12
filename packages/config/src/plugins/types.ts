@@ -1,5 +1,3 @@
-import type { PackageJson } from '@package-json/types'
-
 import type { StaticPluginReference } from '../config/static'
 import type { DirectoryPluginSpecifier, RegistryPluginSpecifier } from './spec'
 
@@ -55,13 +53,6 @@ export interface RegistryPluginLockEntry {
   tarball: string
   type: 'registry'
   version: string
-}
-
-export interface ResolvedPluginPackage {
-  entry: string
-  live?: boolean
-  packageDir: string
-  packageJson: PackageJson
 }
 
 export interface StaticPluginInstallOptions {
