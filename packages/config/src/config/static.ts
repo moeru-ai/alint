@@ -1,9 +1,41 @@
-import type { AlintConfig } from '@alint-js/core'
+import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/core'
 
 import { extname } from 'pathe'
 
 export interface NormalizeLoadedAlintConfigOptions {
   configFile?: string
+}
+
+export interface ParsedPluginSpecifier {
+  name: string
+  raw: string
+  version?: string
+}
+
+export interface ParsedStaticConfig {
+  groups: ParsedStaticConfigGroup[]
+}
+
+export interface ParsedStaticConfigGroup {
+  item: AlintConfigItem
+  plugins: StaticPluginReference[]
+}
+
+export interface ParseStaticConfigOptions {
+  configFile?: string
+}
+
+export interface StaticPluginReference {
+  alias: string
+  specifier: ParsedPluginSpecifier
+}
+
+export type StaticPluginResolver = (
+  reference: StaticPluginReference,
+) => Promise<PluginDefinition>
+
+export interface ToAlintConfigOptions {
+  pluginResolver: StaticPluginResolver
 }
 
 interface StaticConfigWrapper {
@@ -12,31 +44,61 @@ interface StaticConfigWrapper {
   }
 }
 
+export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string {
+  return specifier.raw
+}
+
 export function normalizeLoadedAlintConfig(
   value: unknown,
   options: NormalizeLoadedAlintConfigOptions = {},
 ): AlintConfig {
-  if (Array.isArray(value)) {
-    return value as AlintConfig
+  return toAlintConfigItems(value, options) as AlintConfig
+}
+
+export function parsePluginSpecifier(value: string): ParsedPluginSpecifier {
+  const versionSeparator = value.lastIndexOf('@')
+
+  if (versionSeparator > 0) {
+    return {
+      name: value.slice(0, versionSeparator),
+      raw: value,
+      version: value.slice(versionSeparator + 1),
+    }
   }
 
-  const group = readConfigGroup(value)
-
-  if (group !== undefined) {
-    return group as AlintConfig
+  return {
+    name: value,
+    raw: value,
   }
+}
 
-  if (isTomlConfig(options.configFile)) {
-    throw new Error('Static TOML config must use [[config.group]].')
-  }
+export function parseStaticConfig(
+  value: unknown,
+  options: ParseStaticConfigOptions = {},
+): ParsedStaticConfig {
+  const items = toAlintConfigItems(value, options)
+  const pluginsByAlias = new Map<string, ParsedPluginSpecifier>()
+  const groups = items.map((item): ParsedStaticConfigGroup => {
+    const plugins = readStaticPluginReferences(item, pluginsByAlias)
 
-  if (value === undefined || value === null) {
-    return []
-  }
+    return {
+      item: item as AlintConfigItem,
+      plugins,
+    }
+  })
 
-  throw new Error(
-    'Static config must be a flat config array or { config: { group: [...] } }.',
-  )
+  return { groups }
+}
+
+export async function toAlintConfig(
+  config: ParsedStaticConfig,
+  options: ToAlintConfigOptions,
+): Promise<AlintConfig> {
+  const pluginCache = new Map<string, Promise<PluginDefinition>>()
+
+  return Promise.all(config.groups.map(group =>
+    resolveStaticPlugins(group, options, pluginCache),
+  ))
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -63,4 +125,99 @@ function readConfigGroup(value: unknown): undefined | unknown[] {
   }
 
   return wrapper.config.group
+}
+
+function readStaticPluginReferences(
+  item: unknown,
+  pluginsByAlias: Map<string, ParsedPluginSpecifier>,
+): StaticPluginReference[] {
+  if (!isPlainObject(item) || !isPlainObject(item.plugins)) {
+    return []
+  }
+
+  const references: StaticPluginReference[] = []
+
+  for (const [alias, plugin] of Object.entries(item.plugins)) {
+    if (typeof plugin !== 'string') {
+      continue
+    }
+
+    const specifier = parsePluginSpecifier(plugin)
+    const existing = pluginsByAlias.get(alias)
+
+    if (existing !== undefined && formatPluginSpecifier(existing) !== formatPluginSpecifier(specifier)) {
+      throw new Error(
+        `Static plugin "${alias}" is configured with multiple specifiers: "${formatPluginSpecifier(existing)}" and "${formatPluginSpecifier(specifier)}".`,
+      )
+    }
+
+    pluginsByAlias.set(alias, specifier)
+    references.push({ alias, specifier })
+  }
+
+  return references
+}
+
+async function resolveStaticPlugins(
+  group: ParsedStaticConfigGroup,
+  options: ToAlintConfigOptions,
+  pluginCache: Map<string, Promise<PluginDefinition>>,
+): Promise<AlintConfigItem> {
+  if (group.plugins.length === 0) {
+    return group.item
+  }
+
+  const rawPlugins = group.item.plugins as Record<string, PluginDefinition | string>
+  const plugins: Record<string, PluginDefinition> = {}
+
+  for (const [alias, plugin] of Object.entries(rawPlugins)) {
+    if (typeof plugin !== 'string') {
+      plugins[alias] = plugin
+      continue
+    }
+
+    let resolvedPlugin = pluginCache.get(alias)
+
+    if (resolvedPlugin === undefined) {
+      const reference = group.plugins.find(item => item.alias === alias)
+
+      if (reference === undefined) {
+        throw new Error(`Static plugin "${alias}" is missing a parsed plugin reference.`)
+      }
+
+      resolvedPlugin = options.pluginResolver(reference)
+      pluginCache.set(alias, resolvedPlugin)
+    }
+
+    plugins[alias] = await resolvedPlugin
+  }
+
+  return { ...group.item, plugins }
+}
+
+function toAlintConfigItems(
+  value: unknown,
+  options: ParseStaticConfigOptions = {},
+): unknown[] {
+  if (Array.isArray(value)) {
+    return value
+  }
+
+  const group = readConfigGroup(value)
+
+  if (group !== undefined) {
+    return group
+  }
+
+  if (isTomlConfig(options.configFile)) {
+    throw new Error('Static TOML config must use [[config.group]].')
+  }
+
+  if (value === undefined || value === null) {
+    return []
+  }
+
+  throw new Error(
+    'Static config must be a flat config array or { config: { group: [...] } }.',
+  )
 }

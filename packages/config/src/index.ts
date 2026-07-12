@@ -1,5 +1,18 @@
 export { loadAlintConfig } from './config/load'
 export {
+  parsePluginSpecifier,
+  parseStaticConfig,
+  toAlintConfig,
+} from './config/static'
+export type {
+  ParsedPluginSpecifier,
+  ParsedStaticConfig,
+  ParsedStaticConfigGroup,
+  ParseStaticConfigOptions,
+  StaticPluginReference,
+  ToAlintConfigOptions,
+} from './config/static'
+export {
   ignorePatternsAIAgents,
   ignorePatternsBuildOutputs,
   ignorePatternsCaches,
