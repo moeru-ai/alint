@@ -7,7 +7,7 @@ import {
   ignorePatternsCommon,
   ignorePatternsEslintDefaults,
   ignorePatternsGenerated,
-} from './ignore-patterns'
+} from './ignore'
 
 describe('ignore pattern presets', () => {
   it('includes ESLint default ignored directories', () => {

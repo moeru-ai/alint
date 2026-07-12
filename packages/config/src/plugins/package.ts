@@ -2,8 +2,7 @@ import type { PluginDefinition } from '@alint-js/core'
 
 import type { ParsedPluginLockEntry, ResolvedPluginPackage } from './types'
 
-import { constants } from 'node:fs'
-import { access, readFile, realpath } from 'node:fs/promises'
+import { readFile, realpath } from 'node:fs/promises'
 import {
   dirname,
   isAbsolute,
@@ -14,6 +13,8 @@ import {
 import { pathToFileURL } from 'node:url'
 
 import { exports as resolvePackageExports } from 'resolve.exports'
+
+import { exists, isENOENTError } from '../utils/fs'
 
 export async function importResolvedPluginPackage(resolved: ResolvedPluginPackage): Promise<PluginDefinition> {
   const importedModule: unknown = await import(pathToFileURL(resolved.entry).href)
@@ -152,10 +153,6 @@ function getPackagePathSegments(name: string): string[] {
   return segments
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
 function isPathInside(path: string, parent: string): boolean {
   const childRelativePath = relative(parent, path)
   return childRelativePath === ''
@@ -175,14 +172,8 @@ async function nearestExistingParent(path: string): Promise<string> {
   let current = path
 
   while (current !== dirname(current)) {
-    try {
-      await access(current, constants.F_OK)
+    if (await exists(current)) {
       return current
-    }
-    catch (error) {
-      if (!isNodeError(error) || error.code !== 'ENOENT') {
-        throw error
-      }
     }
 
     current = dirname(current)
@@ -210,7 +201,7 @@ async function resolvePhysicalPath(path: string): Promise<string> {
     return await realpath(path)
   }
   catch (error) {
-    if (!isNodeError(error) || error.code !== 'ENOENT') {
+    if (!isENOENTError(error)) {
       throw error
     }
   }

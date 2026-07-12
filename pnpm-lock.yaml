@@ -416,6 +416,9 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.18
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)

@@ -24,6 +24,7 @@ import { ofetch } from 'ofetch'
 import { loadStaticConfig } from '../config/load'
 import { listStaticPluginReferences } from '../config/static'
 import { getProjectPluginStorePath } from '../paths'
+import { isENOENTError } from '../utils/fs'
 import { checkIntegrity } from './integrity'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
 import { resolveInstalledPackageRelativeEntry } from './package'
@@ -228,10 +229,6 @@ async function installPackage(options: Omit<InstallPackageOptions, 'installedSpe
   }
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
 function isPathInside(path: string, parent: string): boolean {
   const childRelativePath = relative(parent, path)
   return childRelativePath === ''
@@ -248,7 +245,7 @@ async function replacePackageDirectory(packageDir: string, stagingPackageDir: st
     hasBackup = true
   }
   catch (error) {
-    if (!isNodeError(error) || error.code !== 'ENOENT') {
+    if (!isENOENTError(error)) {
       throw error
     }
   }

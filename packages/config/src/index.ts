@@ -24,7 +24,7 @@ export {
   ignorePatternsCommon,
   ignorePatternsEslintDefaults,
   ignorePatternsGenerated,
-} from './ignore-patterns'
+} from './constants/patterns/ignore'
 export {
   getGlobalSetupConfigPath,
   getProjectPluginLockPath,
@@ -33,23 +33,7 @@ export {
   getStatsDir,
 } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
-export {
-  createEmptyPluginLockFile,
-  installStaticPlugins,
-  listMissing,
-  listUnresolved,
-  loadPluginLockFile,
-  parsePluginLockFile,
-  writePluginLockFile,
-} from './plugins'
-export type {
-  ParsedPluginLockEntry,
-  ParsedPluginLockFile,
-  PluginLockEntry,
-  PluginLockFile,
-  StaticPluginInstallOptions,
-  StaticPluginInstallResult,
-} from './plugins'
+export * from './plugins'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'

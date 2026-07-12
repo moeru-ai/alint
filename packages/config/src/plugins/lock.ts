@@ -18,6 +18,7 @@ import {
 } from 'valibot'
 
 import { getProjectPluginLockPath } from '../paths'
+import { isENOENTError } from '../utils/fs'
 import { parseIntegrity } from './integrity'
 import { resolveLockedPluginPackage } from './package'
 import { formatPluginSpecifier, parsePluginSpecifier } from './spec'
@@ -95,11 +96,7 @@ export async function loadPluginLockFile(cwd: string): Promise<PluginLockFile> {
     return parsePluginLockFileValue(await readFile(getProjectPluginLockPath(cwd), 'utf8'))
   }
   catch (error) {
-    if (
-      error instanceof Error
-      && 'code' in error
-      && error.code === 'ENOENT'
-    ) {
+    if (isENOENTError(error)) {
       return createEmptyPluginLockFile()
     }
 
