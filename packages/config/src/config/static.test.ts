@@ -60,6 +60,21 @@ describe('static config parsing', () => {
     )
   })
 
+  it('rejects invalid static config item shapes while parsing', () => {
+    expect(() => parseStaticConfig(
+      {
+        config: {
+          group: [
+            {
+              files: '**/*.py',
+            },
+          ],
+        },
+      },
+      { configFile: '/repo/alint.config.toml' },
+    )).toThrow('Invalid type')
+  })
+
   it('resolves parsed static plugin references', async () => {
     const plugin = { rules: {} }
     const config = await toAlintConfig(parseStaticConfig([

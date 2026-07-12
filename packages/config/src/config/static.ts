@@ -1,6 +1,19 @@
 import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/core'
 
 import { extname } from 'pathe'
+import {
+  array,
+  boolean,
+  looseObject,
+  optional,
+  parse,
+  picklist,
+  record,
+  string,
+  tuple,
+  union,
+  unknown,
+} from 'valibot'
 
 export interface NormalizeLoadedAlintConfigOptions {
   configFile?: string
@@ -43,6 +56,33 @@ interface StaticConfigWrapper {
     group?: unknown
   }
 }
+
+const ruleSeveritySchema = picklist(['error', 'off', 'warn'])
+const ruleConfigEntrySchema = union([ruleSeveritySchema, tuple([ruleSeveritySchema])])
+const filePatternSchema = union([string(), array(string())])
+const staticConfigItemSchema = looseObject({
+  agent: optional(unknown()),
+  basePath: optional(string()),
+  extends: optional(array(unknown())),
+  files: optional(array(filePatternSchema)),
+  ignore: optional(looseObject({
+    gitignore: optional(boolean()),
+  })),
+  ignores: optional(array(string())),
+  language: optional(string()),
+  languageOptions: optional(record(string(), unknown())),
+  linterOptions: optional(looseObject({
+    noInlineConfig: optional(boolean()),
+    reportUnusedDisableDirectives: optional(ruleSeveritySchema),
+  })),
+  name: optional(string()),
+  plugins: optional(record(string(), unknown())),
+  processor: optional(unknown()),
+  rules: optional(record(string(), ruleConfigEntrySchema)),
+  runner: optional(unknown()),
+  settings: optional(record(string(), unknown())),
+})
+const staticConfigItemsSchema = array(staticConfigItemSchema)
 
 export function formatPluginSpecifier(specifier: ParsedPluginSpecifier): string {
   return specifier.raw
@@ -198,15 +238,15 @@ async function resolveStaticPlugins(
 function toAlintConfigItems(
   value: unknown,
   options: ParseStaticConfigOptions = {},
-): unknown[] {
+): AlintConfigItem[] {
   if (Array.isArray(value)) {
-    return value
+    return parse(staticConfigItemsSchema, value) as AlintConfigItem[]
   }
 
   const group = readConfigGroup(value)
 
   if (group !== undefined) {
-    return group
+    return parse(staticConfigItemsSchema, group) as AlintConfigItem[]
   }
 
   if (isTomlConfig(options.configFile)) {

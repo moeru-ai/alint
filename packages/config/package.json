@@ -23,6 +23,7 @@
     "jiti": "catalog:",
     "pathe": "catalog:",
     "smol-toml": "catalog:",
+    "valibot": "catalog:",
     "xdg-basedir": "catalog:"
   },
   "devDependencies": {

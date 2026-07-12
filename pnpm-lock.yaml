@@ -416,6 +416,9 @@ importers:
       smol-toml:
         specifier: 'catalog:'
         version: 1.7.0
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.1(typescript@6.0.3)
       xdg-basedir:
         specifier: 'catalog:'
         version: 5.1.0
