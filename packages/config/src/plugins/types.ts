@@ -1,14 +1,21 @@
 import type { PluginDefinition } from '@alint-js/core'
 
+export interface ParsedPluginPackageName {
+  name: string
+  registryPath: string
+  scope?: string
+  unscopedName: string
+}
+
 export interface ParsedPluginSpecifier {
   name: string
+  packageName: ParsedPluginPackageName
   raw: string
   version: string
 }
 
 export interface PluginLockEntry {
   alias: string
-  apiVersion: string
   entry: string
   integrity: string
   name: string

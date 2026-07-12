@@ -3,6 +3,7 @@ import { createServer } from 'node:http'
 import { describe, expect, it } from 'vitest'
 
 import { fetchNpmPackageVersion } from './npm'
+import { parsePluginSpecifier } from './spec'
 
 describe('fetchNpmPackageVersion', () => {
   it('fetches exact scoped package metadata from a registry', async () => {
@@ -27,9 +28,8 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await expect(fetchNpmPackageVersion({
-        name: '@alint-js/plugin-python',
         registry: endpoint,
-        version: '0.3.1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).resolves.toEqual({
         integrity: 'sha512-test',
         name: '@alint-js/plugin-python',
@@ -65,9 +65,8 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await fetchNpmPackageVersion({
-        name: 'alint-plugin-go',
         registry: endpoint,
-        version: '1.2.3',
+        specifier: parsePluginSpecifier('alint-plugin-go@1.2.3'),
       })
 
       expect(requests).toEqual(['/alint-plugin-go'])
@@ -97,41 +96,11 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await fetchNpmPackageVersion({
-        name: '@alint-js/plugin-python',
         registry: `${endpoint}npm`,
-        version: '0.3.1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })
 
       expect(requests).toEqual(['/npm/@alint-js%2fplugin-python'])
-    }
-    finally {
-      await close(server)
-    }
-  })
-
-  it('rejects package names that can alter registry request URLs', async () => {
-    const server = createServer((_, response) => {
-      response.statusCode = 500
-      response.end()
-    })
-    const endpoint = await listen(server)
-
-    try {
-      for (const name of [
-        '../escape',
-        '../../escape',
-        'foo?bar',
-        'foo#bar',
-        '@scope/pkg/extra',
-        '@scope/',
-        'scope/pkg',
-      ]) {
-        await expect(fetchNpmPackageVersion({
-          name,
-          registry: endpoint,
-          version: '1.2.3',
-        })).rejects.toThrow(`Invalid npm package name "${name}".`)
-      }
     }
     finally {
       await close(server)
@@ -147,9 +116,8 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await expect(fetchNpmPackageVersion({
-        name: '@alint-js/plugin-python',
         registry: endpoint,
-        version: '9.9.9',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@9.9.9'),
       })).rejects.toThrow('Package @alint-js/plugin-python does not have version 9.9.9.')
     }
     finally {
@@ -174,9 +142,8 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await expect(fetchNpmPackageVersion({
-        name: '@alint-js/plugin-python',
         registry: endpoint,
-        version: '0.3.1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('Package @alint-js/plugin-python@0.3.1 is missing tarball integrity metadata.')
     }
     finally {
@@ -193,9 +160,8 @@ describe('fetchNpmPackageVersion', () => {
 
     try {
       await expect(fetchNpmPackageVersion({
-        name: '@alint-js/plugin-python',
         registry: endpoint,
-        version: '0.3.1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('Failed to fetch npm metadata for @alint-js/plugin-python: HTTP 404.')
     }
     finally {

@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createLockedPluginResolver } from './load'
 import { writePluginLockFile } from './lock'
+import { parsePluginSpecifier } from './spec'
 
 describe('createLockedPluginResolver', () => {
   it('loads a plugin by alias and specifier from the lock file', async () => {
@@ -17,7 +18,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -34,11 +34,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).resolves.toEqual({ rules: {} })
   })
 
@@ -48,11 +44,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" requires @alint-js/plugin-python@0.3.1, but no matching lock entry exists.')
   })
 
@@ -70,7 +62,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.0/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -86,11 +77,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" is locked to @alint-js/plugin-python@0.3.0, but config requires @alint-js/plugin-python@0.3.1.')
   })
 
@@ -103,7 +90,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -119,11 +105,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" default export must be an alint plugin object.')
   })
 
@@ -135,7 +117,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: 'outside.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -151,11 +132,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -167,7 +144,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry,
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -183,11 +159,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -197,7 +169,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/../outside.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -213,11 +184,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -232,7 +199,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -248,11 +214,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -268,7 +230,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -284,11 +245,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -303,7 +260,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -319,11 +275,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -339,7 +291,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -355,11 +306,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry must point inside .alint/plugins/store.')
   })
 
@@ -369,7 +316,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -385,11 +331,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" lock entry is missing from .alint/plugins/store.\nRun: alint plugin install')
   })
 
@@ -402,7 +344,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -418,11 +359,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" default export must be an alint plugin object.')
   })
 
@@ -435,7 +372,6 @@ describe('createLockedPluginResolver', () => {
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',
@@ -451,11 +387,7 @@ describe('createLockedPluginResolver', () => {
 
     await expect(resolver({
       alias: 'python',
-      specifier: {
-        name: '@alint-js/plugin-python',
-        raw: '@alint-js/plugin-python@0.3.1',
-        version: '0.3.1',
-      },
+      specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
     })).rejects.toThrow('Plugin "python" default export must be an alint plugin object.')
   })
 })

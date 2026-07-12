@@ -164,7 +164,7 @@ alint output inspect alint-output.json
 alint plugin install
 ```
 
-`plugin install` reads static config plugin references, downloads exact npm package tarballs, verifies integrity, and writes `.alint/plugins/lock.json`. It does not install transitive npm dependencies.
+`plugin install` reads static config plugin references, downloads exact npm package tarballs, checks npm tarball integrity, and writes `.alint/plugins/lock.json`. It does not install transitive npm dependencies.
 
 ## Concepts
 

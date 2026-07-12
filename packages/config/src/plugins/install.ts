@@ -7,14 +7,15 @@ import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/
 import { setTimeout as sleep } from 'node:timers/promises'
 
 import { dirname, join, relative, resolve } from 'pathe'
+import { exports as resolvePackageExport } from 'resolve.exports'
 import { object, parse, string } from 'valibot'
 
+import { isNodeError } from '../nodeError'
 import { loadPluginLockFile, writePluginLockFile } from './lock'
 import { fetchNpmPackageVersion } from './npm'
 import { getProjectPluginDir, getStoredPluginPackageDir } from './paths'
 import { formatPluginSpecifier } from './spec'
 import { extractNpmTarball, verifyIntegrity } from './tarball'
-import { verifyExtractedPluginPackage } from './verify'
 
 const STORE_MANIFEST_FILE = '.alint-plugin-store.json'
 
@@ -34,15 +35,19 @@ export interface InstallStaticPluginOptions {
   installLockTimeoutMs?: number
   registry: string
   specifier: ParsedPluginSpecifier
-  supportedApiVersion: string
 }
 
-interface InstallVerifiedPackageOptions {
+interface StoredPluginPackage {
+  dir: string
+  resolveRelativeImportEntry: (cwd: string) => Promise<string>
+}
+
+interface StorePackageOptions {
   cwd: string
   integrity: string
   metadataTarball: string
   options: InstallStaticPluginOptions
-  packageDir: string
+  pluginPackage: StoredPluginPackage
   registry: string
   stagingDir: string
 }
@@ -53,9 +58,8 @@ export async function installStaticPlugin(
 ): Promise<InstalledStaticPlugin> {
   const registry = normalizeRegistryUrl(options.registry)
   const metadata = await fetchNpmPackageVersion({
-    name: options.specifier.name,
     registry,
-    version: options.specifier.version,
+    specifier: options.specifier,
   })
   const response = await fetch(metadata.tarball)
 
@@ -66,30 +70,25 @@ export async function installStaticPlugin(
   const body = Buffer.from(await response.arrayBuffer())
   verifyIntegrity(body, metadata.integrity)
 
-  const packageDir = getStoredPluginPackageDir(cwd, options.specifier.name, options.specifier.version)
-  const stagingDir = uniqueSiblingDir(packageDir, 'staging')
+  const pluginPackage = createStoredPluginPackage(cwd, options.specifier)
+  const stagingDir = uniqueSiblingDir(pluginPackage.dir, 'staging')
 
   await rm(stagingDir, { force: true, recursive: true })
 
   try {
     await extractNpmTarball(body, stagingDir)
-    await verifyExtractedPluginPackage(stagingDir, {
-      expectedName: options.specifier.name,
-      expectedVersion: options.specifier.version,
-      supportedApiVersion: options.supportedApiVersion,
-    })
     await writeStoreManifest(stagingDir, {
       integrity: metadata.integrity,
       name: options.specifier.name,
       version: options.specifier.version,
     })
 
-    const lockEntry = await withPluginInstallLock(cwd, async () => installVerifiedPackage({
+    const lockEntry = await withPluginInstallLock(cwd, async () => storePackage({
       cwd,
       integrity: metadata.integrity,
       metadataTarball: metadata.tarball,
       options,
-      packageDir,
+      pluginPackage,
       registry,
       stagingDir,
     }), options.installLockTimeoutMs)
@@ -105,41 +104,33 @@ export async function installStaticPlugin(
   }
 }
 
-async function installVerifiedPackage(input: InstallVerifiedPackageOptions): Promise<PluginLockEntry> {
-  const lock = await loadPluginLockFile(input.cwd)
-  const conflictingEntry = Object.values(lock.plugins).find(entry =>
-    entry.name === input.options.specifier.name
-    && entry.version === input.options.specifier.version
-    && entry.integrity !== input.integrity,
-  )
+async function assertStoreManifestMatches(input: StorePackageOptions): Promise<void> {
+  const manifest = await loadStoreManifest(input.pluginPackage.dir)
 
-  if (conflictingEntry !== undefined) {
+  if (
+    manifest.name !== input.options.specifier.name
+    || manifest.version !== input.options.specifier.version
+  ) {
+    throw new Error(`Existing plugin package store manifest does not match ${formatPluginSpecifier(input.options.specifier)}.`)
+  }
+
+  if (manifest.integrity !== input.integrity) {
     throw new Error(`Plugin package ${formatPluginSpecifier(input.options.specifier)} is already installed with different integrity.`)
   }
-
-  await mkdir(dirname(input.packageDir), { recursive: true })
-
-  try {
-    await stat(input.packageDir)
-  }
-  catch (error) {
-    if (!isNodeError(error) || error.code !== 'ENOENT') {
-      throw error
-    }
-
-    await rename(input.stagingDir, input.packageDir)
-    return await writeVerifiedPackageLockEntry(input, lock)
-  }
-
-  return await reuseInstalledPackage(input, lock)
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
+function createStoredPluginPackage(cwd: string, specifier: ParsedPluginSpecifier): StoredPluginPackage {
+  const dir = getStoredPluginPackageDir(cwd, specifier)
 
-function isPluginIntegrityConflict(error: unknown): error is Error {
-  return error instanceof Error && error.message.includes('already installed with different integrity')
+  return {
+    dir,
+    async resolveRelativeImportEntry(cwd) {
+      const canonicalPackageDir = await realpath(dir)
+      const entry = await resolvePluginPackageEntry(dir)
+
+      return storeRelativeEntry(cwd, dir, canonicalPackageDir, resolve(dir, entry))
+    },
+  }
 }
 
 async function loadStoreManifest(packageDir: string): Promise<ReturnType<typeof parseStoreManifest>> {
@@ -158,57 +149,61 @@ function parseStoreManifest(content: string): {
   return parse(StoreManifestSchema, JSON.parse(content))
 }
 
-async function reuseInstalledPackage(
-  input: InstallVerifiedPackageOptions,
-  lock: Awaited<ReturnType<typeof loadPluginLockFile>>,
-): Promise<PluginLockEntry> {
+async function resolvePluginPackageEntry(packageDir: string): Promise<string> {
+  const packageJson = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')) as Record<string, unknown>
+  const exportedEntries = resolvePackageExport(packageJson, '.', {
+    browser: false,
+    require: false,
+  })
+  const packageEntry = exportedEntries?.[0]
+
+  if (typeof packageEntry === 'string' && packageEntry.length > 0) {
+    return packageEntry
+  }
+
+  throw new Error(`Plugin package ${String(packageJson.name ?? '<unknown>')} must export "." in package.json.`)
+}
+
+async function storePackage(input: StorePackageOptions): Promise<PluginLockEntry> {
+  const lock = await loadPluginLockFile(input.cwd)
+  const conflictingEntry = Object.values(lock.plugins).find(entry =>
+    entry.name === input.options.specifier.name
+    && entry.version === input.options.specifier.version
+    && entry.integrity !== input.integrity,
+  )
+
+  if (conflictingEntry !== undefined) {
+    throw new Error(`Plugin package ${formatPluginSpecifier(input.options.specifier)} is already installed with different integrity.`)
+  }
+
+  await mkdir(dirname(input.pluginPackage.dir), { recursive: true })
+
   try {
-    return await writeVerifiedPackageLockEntry(input, lock)
+    await stat(input.pluginPackage.dir)
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (!isNodeError(error) || error.code !== 'ENOENT') {
       throw error
     }
 
-    if (isPluginIntegrityConflict(error)) {
-      throw error
-    }
+    await rename(input.stagingDir, input.pluginPackage.dir)
+    return await writePackageLockEntry(input, lock)
+  }
 
-    throw new Error(`Existing plugin package ${formatPluginSpecifier(input.options.specifier)} is invalid. Remove ${input.packageDir} and run alint plugin install again.`, {
-      cause: error,
-    })
-  }
-  finally {
-    await rm(input.stagingDir, { force: true, recursive: true })
-  }
+  return await writeExistingPackageLockEntry(input, lock)
 }
 
 function storeRelativeEntry(
   cwd: string,
   packageDir: string,
   canonicalPackageDir: string,
-  verifiedEntry: string,
+  entry: string,
 ): string {
-  return relative(cwd, resolve(packageDir, relative(canonicalPackageDir, verifiedEntry)))
+  return relative(cwd, resolve(packageDir, relative(canonicalPackageDir, entry)))
 }
 
 function uniqueSiblingDir(path: string, label: string): string {
   return `${path}.${label}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`
-}
-
-async function verifyStoreManifest(input: InstallVerifiedPackageOptions): Promise<void> {
-  const manifest = await loadStoreManifest(input.packageDir)
-
-  if (
-    manifest.name !== input.options.specifier.name
-    || manifest.version !== input.options.specifier.version
-  ) {
-    throw new Error(`Existing plugin package store manifest does not match ${formatPluginSpecifier(input.options.specifier)}.`)
-  }
-
-  if (manifest.integrity !== input.integrity) {
-    throw new Error(`Plugin package ${formatPluginSpecifier(input.options.specifier)} is already installed with different integrity.`)
-  }
 }
 
 async function withPluginInstallLock<T>(
@@ -246,29 +241,40 @@ async function withPluginInstallLock<T>(
   }
 }
 
-async function writeStoreManifest(
-  packageDir: string,
-  manifest: ReturnType<typeof parseStoreManifest>,
-): Promise<void> {
-  await writeFile(join(packageDir, STORE_MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`)
-}
-
-async function writeVerifiedPackageLockEntry(
-  input: InstallVerifiedPackageOptions,
+async function writeExistingPackageLockEntry(
+  input: StorePackageOptions,
   lock: Awaited<ReturnType<typeof loadPluginLockFile>>,
 ): Promise<PluginLockEntry> {
-  await verifyStoreManifest(input)
+  try {
+    return await writePackageLockEntry(input, lock)
+  }
+  catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      throw error
+    }
 
-  const verified = await verifyExtractedPluginPackage(input.packageDir, {
-    expectedName: input.options.specifier.name,
-    expectedVersion: input.options.specifier.version,
-    supportedApiVersion: input.options.supportedApiVersion,
-  })
-  const canonicalPackageDir = await realpath(input.packageDir)
+    if (error instanceof Error && error.message.includes('already installed with different integrity')) {
+      throw error
+    }
+
+    throw new Error(`Existing plugin package ${formatPluginSpecifier(input.options.specifier)} is invalid. Remove ${input.pluginPackage.dir} and run alint plugin install again.`, {
+      cause: error,
+    })
+  }
+  finally {
+    await rm(input.stagingDir, { force: true, recursive: true })
+  }
+}
+
+async function writePackageLockEntry(
+  input: StorePackageOptions,
+  lock: Awaited<ReturnType<typeof loadPluginLockFile>>,
+): Promise<PluginLockEntry> {
+  await assertStoreManifestMatches(input)
+
   const lockEntry: PluginLockEntry = {
     alias: input.options.alias,
-    apiVersion: verified.apiVersion,
-    entry: storeRelativeEntry(input.cwd, input.packageDir, canonicalPackageDir, verified.entry),
+    entry: await input.pluginPackage.resolveRelativeImportEntry(input.cwd),
     integrity: input.integrity,
     name: input.options.specifier.name,
     registry: input.registry,
@@ -281,4 +287,11 @@ async function writeVerifiedPackageLockEntry(
   await writePluginLockFile(input.cwd, lock)
 
   return lockEntry
+}
+
+async function writeStoreManifest(
+  packageDir: string,
+  manifest: ReturnType<typeof parseStoreManifest>,
+): Promise<void> {
+  await writeFile(join(packageDir, STORE_MANIFEST_FILE), `${JSON.stringify(manifest, null, 2)}\n`)
 }

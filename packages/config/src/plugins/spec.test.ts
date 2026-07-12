@@ -6,6 +6,12 @@ describe('parsePluginSpecifier', () => {
   it('parses scoped package exact versions', () => {
     expect(parsePluginSpecifier('@alint-js/plugin-python@0.3.1')).toEqual({
       name: '@alint-js/plugin-python',
+      packageName: {
+        name: '@alint-js/plugin-python',
+        registryPath: '@alint-js%2fplugin-python',
+        scope: 'alint-js',
+        unscopedName: 'plugin-python',
+      },
       raw: '@alint-js/plugin-python@0.3.1',
       version: '0.3.1',
     })
@@ -14,6 +20,11 @@ describe('parsePluginSpecifier', () => {
   it('parses unscoped package exact versions', () => {
     expect(parsePluginSpecifier('alint-plugin-go@1.2.3')).toEqual({
       name: 'alint-plugin-go',
+      packageName: {
+        name: 'alint-plugin-go',
+        registryPath: 'alint-plugin-go',
+        unscopedName: 'alint-plugin-go',
+      },
       raw: 'alint-plugin-go@1.2.3',
       version: '1.2.3',
     })
@@ -22,11 +33,23 @@ describe('parsePluginSpecifier', () => {
   it('parses exact versions with prerelease and build metadata', () => {
     expect(parsePluginSpecifier('@alint-js/plugin-python@1.2.3-beta.1+build.7')).toEqual({
       name: '@alint-js/plugin-python',
+      packageName: {
+        name: '@alint-js/plugin-python',
+        registryPath: '@alint-js%2fplugin-python',
+        scope: 'alint-js',
+        unscopedName: 'plugin-python',
+      },
       raw: '@alint-js/plugin-python@1.2.3-beta.1+build.7',
       version: '1.2.3-beta.1+build.7',
     })
     expect(parsePluginSpecifier('@alint-js/plugin-python@1.2.3-0A')).toEqual({
       name: '@alint-js/plugin-python',
+      packageName: {
+        name: '@alint-js/plugin-python',
+        registryPath: '@alint-js%2fplugin-python',
+        scope: 'alint-js',
+        unscopedName: 'plugin-python',
+      },
       raw: '@alint-js/plugin-python@1.2.3-0A',
       version: '1.2.3-0A',
     })
@@ -42,6 +65,20 @@ describe('parsePluginSpecifier', () => {
     expect(() => parsePluginSpecifier('@alint-js/plugin-python@^0.3.1')).toThrow(
       'Static plugin specifier "@alint-js/plugin-python@^0.3.1" must use an exact version.',
     )
+  })
+
+  it('rejects package names that can alter registry request URLs', () => {
+    for (const name of [
+      '../escape',
+      '../../escape',
+      'foo?bar',
+      'foo#bar',
+      '@scope/pkg/extra',
+      '@scope/',
+      'scope/pkg',
+    ]) {
+      expect(() => parsePluginSpecifier(`${name}@1.2.3`)).toThrow(`Invalid npm package name "${name}".`)
+    }
   })
 
   it('rejects malformed semver versions', () => {
@@ -65,6 +102,12 @@ describe('parsePluginSpecifier', () => {
   it('formats parsed specifiers', () => {
     expect(formatPluginSpecifier({
       name: '@alint-js/plugin-python',
+      packageName: {
+        name: '@alint-js/plugin-python',
+        registryPath: '@alint-js%2fplugin-python',
+        scope: 'alint-js',
+        unscopedName: 'plugin-python',
+      },
       raw: '@alint-js/plugin-python@0.3.1',
       version: '0.3.1',
     })).toBe('@alint-js/plugin-python@0.3.1')

@@ -1,4 +1,8 @@
+import type { ParsedPluginSpecifier } from './types'
+
 import { join } from 'pathe'
+
+import { pluginPackagePathSegments } from './spec'
 
 export function getProjectPluginDir(cwd: string): string {
   return join(cwd, '.alint', 'plugins')
@@ -14,24 +18,14 @@ export function getProjectPluginStoreDir(cwd: string): string {
 
 export function getStoredPluginPackageDir(
   cwd: string,
-  name: string,
-  version: string,
+  specifier: ParsedPluginSpecifier,
 ): string {
-  return join(getProjectPluginStoreDir(cwd), ...splitPackageName(name), validateVersionSegment(version), 'package')
-}
-
-function splitPackageName(name: string): string[] {
-  const parts = name.split('/')
-
-  if (
-    (parts.length !== 1 && parts.length !== 2)
-    || parts.some(part => part === '' || part === '.' || part === '..' || part.includes('\\'))
-    || (parts.length === 2 && !parts[0]!.startsWith('@'))
-  ) {
-    throw new Error(`Invalid plugin package name "${name}".`)
-  }
-
-  return parts
+  return join(
+    getProjectPluginStoreDir(cwd),
+    ...pluginPackagePathSegments(specifier.packageName),
+    validateVersionSegment(specifier.version),
+    'package',
+  )
 }
 
 function validateVersionSegment(version: string): string {

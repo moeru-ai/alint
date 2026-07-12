@@ -4,6 +4,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { parsePluginSpecifier } from '../plugins/spec'
 import { loadAlintConfig } from './load'
 
 describe('loadAlintConfig', () => {
@@ -129,11 +130,7 @@ python = "@alint-js/plugin-python@0.3.1"
       async pluginResolver(reference) {
         expect(reference).toEqual({
           alias: 'python',
-          specifier: {
-            name: '@alint-js/plugin-python',
-            raw: '@alint-js/plugin-python@0.3.1',
-            version: '0.3.1',
-          },
+          specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
         })
 
         return plugin

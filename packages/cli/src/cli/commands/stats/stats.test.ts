@@ -87,7 +87,6 @@ python = "@alint-js/plugin-python@0.3.1"
       plugins: {
         python: {
           alias: 'python',
-          apiVersion: '1',
           entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
           integrity: 'sha512-test',
           name: '@alint-js/plugin-python',

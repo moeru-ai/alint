@@ -6,6 +6,7 @@ import type {
 
 import { readFile } from 'node:fs/promises'
 
+import { isNodeError } from '../nodeError'
 import { parseSetupConfigToml } from './toml'
 
 export const emptySetupConfig: SetupConfig = { providers: [], version: 1 }
@@ -129,10 +130,6 @@ function cloneProvider(provider: ProviderDefinition): ProviderDefinition {
 
 function createEmptySetupConfig(): SetupConfig {
   return { providers: [], version: 1 }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 function mergeModel(

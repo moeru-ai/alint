@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
-import { normalizeLoadedAlintConfig } from './static'
+import { toAlintConfig } from './static'
 
 export interface LoadAlintConfigOptions {
   pluginResolver?: StaticPluginResolver
@@ -46,7 +46,7 @@ export async function loadAlintConfig(
     return []
   }
 
-  return normalizeLoadedAlintConfig(result.config, {
+  return toAlintConfig(result.config, {
     configFile: (result as C12LoadConfigResult)._configFile,
     pluginResolver: options.pluginResolver,
   })

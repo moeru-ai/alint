@@ -14,17 +14,17 @@ import { describe, expect, it } from 'vitest'
 
 import { installStaticPlugin } from './install'
 import { loadPluginLockFile } from './lock'
+import { parsePluginSpecifier } from './spec'
 
 const gzipAsync = promisify(gzip)
 
 describe('installStaticPlugin', () => {
-  it('downloads, verifies, extracts, and locks a plugin package', async () => {
+  it('downloads, extracts, and locks a plugin package', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-plugin-install-'))
     const tarball = await createTarball({
       'package/dist/chunk.mjs': 'export const rules = {}\n',
       'package/dist/index.mjs': 'import { rules } from "./chunk.mjs"\nexport default { rules }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -57,12 +57,7 @@ describe('installStaticPlugin', () => {
       const entry = await installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })
       const lock = await loadPluginLockFile(cwd)
 
@@ -82,12 +77,56 @@ describe('installStaticPlugin', () => {
     }
   })
 
-  it('keeps an existing verified package when replacement verification fails', async () => {
+  it('requires package.json exports for the plugin entry', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-plugin-install-exports-'))
+    const tarball = await createTarball({
+      'package/dist/index.mjs': 'export default { rules: {} }\n',
+      'package/package.json': JSON.stringify({
+        main: './dist/index.mjs',
+        name: '@alint-js/plugin-python',
+        version: '0.3.1',
+      }),
+    })
+    const integrity = `sha512-${createHash('sha512').update(tarball).digest('base64')}`
+    let endpoint = ''
+    const server = createServer((request, response) => {
+      if (request.url === '/@alint-js%2fplugin-python') {
+        response.setHeader('content-type', 'application/json')
+        response.end(JSON.stringify({
+          versions: {
+            '0.3.1': {
+              dist: {
+                integrity,
+                tarball: `${endpoint}/plugin-python-0.3.1.tgz`,
+              },
+            },
+          },
+        }))
+        return
+      }
+
+      response.setHeader('content-type', 'application/octet-stream')
+      response.end(tarball)
+    })
+    endpoint = await listen(server)
+
+    try {
+      await expect(installStaticPlugin(cwd, {
+        alias: 'python',
+        registry: endpoint,
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
+      })).rejects.toThrow('must export "." in package.json')
+    }
+    finally {
+      await close(server)
+    }
+  })
+
+  it('keeps an existing package when replacement integrity differs', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-plugin-install-keep-'))
     const goodTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -96,7 +135,6 @@ describe('installStaticPlugin', () => {
     const badTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '2' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -136,24 +174,14 @@ describe('installStaticPlugin', () => {
       const entry = await installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })
 
       await expect(installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
-      })).rejects.toThrow('declares alint apiVersion "2"')
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
+      })).rejects.toThrow('already installed with different integrity')
 
       const lock = await loadPluginLockFile(cwd)
 
@@ -170,7 +198,6 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -203,12 +230,7 @@ describe('installStaticPlugin', () => {
       await Promise.all(['python', 'py'].map(alias => installStaticPlugin(cwd, {
         alias,
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })))
       const lock = await loadPluginLockFile(cwd)
 
@@ -220,12 +242,11 @@ describe('installStaticPlugin', () => {
     }
   })
 
-  it('reuses an existing verified package instead of replacing live files', async () => {
+  it('reuses an existing package instead of replacing live files', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-plugin-install-reuse-'))
     const oldTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -234,7 +255,6 @@ describe('installStaticPlugin', () => {
     const newTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -272,23 +292,13 @@ describe('installStaticPlugin', () => {
       const first = await installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })
 
       await expect(installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('already installed with different integrity')
 
       await expect(readFile(first.entry, 'utf8')).resolves.toContain('"old"')
@@ -303,7 +313,6 @@ describe('installStaticPlugin', () => {
     const oldTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "old"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -312,7 +321,6 @@ describe('installStaticPlugin', () => {
     const newTarball = await createTarball({
       'package/dist/index.mjs': 'export const marker = "new"\nexport default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -350,12 +358,7 @@ describe('installStaticPlugin', () => {
       const first = await installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })
 
       await rm(join(cwd, '.alint', 'plugins', 'lock.json'))
@@ -363,12 +366,7 @@ describe('installStaticPlugin', () => {
       await expect(installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('already installed with different integrity')
 
       await expect(readFile(first.entry, 'utf8')).resolves.toContain('"old"')
@@ -387,7 +385,6 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -422,12 +419,7 @@ describe('installStaticPlugin', () => {
         alias: 'python',
         installLockTimeoutMs: 1,
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('Timed out waiting for plugin install lock')
     }
     finally {
@@ -440,7 +432,6 @@ describe('installStaticPlugin', () => {
     const tarball = await createTarball({
       'package/dist/index.mjs': 'export default { rules: {} }\n',
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -472,12 +463,7 @@ describe('installStaticPlugin', () => {
       await expect(installStaticPlugin(cwd, {
         alias: 'python',
         registry: endpoint,
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
-        supportedApiVersion: '1',
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       })).rejects.toThrow('Tarball integrity mismatch')
     }
     finally {

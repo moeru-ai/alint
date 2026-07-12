@@ -8,6 +8,7 @@ import { createLockedPluginResolver, loadAlintConfig } from '@alint-js/config'
 import { AlintRunError, runAlint } from '@alint-js/core'
 import { resolve } from 'pathe'
 
+import { isNodeError } from '../../nodeError'
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
@@ -52,10 +53,6 @@ async function assertConfigExists(cwd: string, configPath: string): Promise<void
 
     throw error
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 async function runLintCommand(

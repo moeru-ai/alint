@@ -6,12 +6,13 @@ import { describe, expect, it } from 'vitest'
 
 import { emptyPluginLockFile, loadPluginLockFile, writePluginLockFile } from './lock'
 import { getProjectPluginLockPath, getProjectPluginStoreDir, getStoredPluginPackageDir } from './paths'
+import { parsePluginSpecifier } from './spec'
 
 describe('plugin lock files', () => {
   it('resolves project plugin paths under .alint/plugins', () => {
     expect(getProjectPluginStoreDir('/repo')).toBe(join('/repo', '.alint', 'plugins', 'store'))
     expect(getProjectPluginLockPath('/repo')).toBe(join('/repo', '.alint', 'plugins', 'lock.json'))
-    expect(getStoredPluginPackageDir('/repo', '@alint-js/plugin-python', '0.3.1')).toBe(join(
+    expect(getStoredPluginPackageDir('/repo', parsePluginSpecifier('@alint-js/plugin-python@0.3.1'))).toBe(join(
       '/repo',
       '.alint',
       'plugins',
@@ -21,21 +22,6 @@ describe('plugin lock files', () => {
       '0.3.1',
       'package',
     ))
-  })
-
-  it('rejects stored package names that can escape the plugin store', () => {
-    for (const name of [
-      '../outside',
-      '../../outside',
-      '@scope/../outside',
-      '@scope/',
-      'scope/package',
-      'plugin\\outside',
-    ]) {
-      expect(() => getStoredPluginPackageDir('/repo', name, '1.2.3')).toThrow(
-        `Invalid plugin package name "${name}".`,
-      )
-    }
   })
 
   it('rejects stored package versions that can escape the plugin store', () => {
@@ -48,7 +34,10 @@ describe('plugin lock files', () => {
       '1.2.3/../../outside',
       '1.2.3\\outside',
     ]) {
-      expect(() => getStoredPluginPackageDir('/repo', '@alint-js/plugin-python', version)).toThrow(
+      expect(() => getStoredPluginPackageDir('/repo', {
+        ...parsePluginSpecifier('@alint-js/plugin-python@1.2.3'),
+        version,
+      })).toThrow(
         `Invalid plugin package version "${version}".`,
       )
     }
@@ -65,7 +54,6 @@ describe('plugin lock files', () => {
     const lock = emptyPluginLockFile()
     lock.plugins.python = {
       alias: 'python',
-      apiVersion: '1',
       entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
       integrity: 'sha512-test',
       name: '@alint-js/plugin-python',

@@ -1,7 +1,7 @@
 export { loadAlintConfig } from './config/load'
 export type { LoadAlintConfigOptions } from './config/load'
-export { normalizeLoadedAlintConfig } from './config/static'
-export type { NormalizeLoadedAlintConfigOptions } from './config/static'
+export { toAlintConfig } from './config/static'
+export type { ToAlintConfigOptions } from './config/static'
 export {
   ignorePatternsAIAgents,
   ignorePatternsBuildOutputs,
@@ -16,8 +16,6 @@ export { installStaticPlugin } from './plugins/install'
 export type { InstalledStaticPlugin, InstallStaticPluginOptions } from './plugins/install'
 export { createLockedPluginResolver } from './plugins/load'
 export { emptyPluginLockFile, loadPluginLockFile, writePluginLockFile } from './plugins/lock'
-export { fetchNpmPackageVersion } from './plugins/npm'
-export type { FetchNpmPackageVersionOptions, NpmPackageVersionMetadata } from './plugins/npm'
 export {
   getProjectPluginDir,
   getProjectPluginLockPath,
@@ -25,19 +23,14 @@ export {
   getStoredPluginPackageDir,
 } from './plugins/paths'
 export { formatPluginSpecifier, parsePluginSpecifier } from './plugins/spec'
-export { extractNpmTarball, verifyIntegrity } from './plugins/tarball'
 export type {
+  ParsedPluginPackageName,
   ParsedPluginSpecifier,
   PluginLockEntry,
   PluginLockFile,
   StaticPluginReference,
   StaticPluginResolver,
 } from './plugins/types'
-export { verifyExtractedPluginPackage } from './plugins/verify'
-export type {
-  VerifiedPluginPackage,
-  VerifyExtractedPluginPackageOptions,
-} from './plugins/verify'
 export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
 export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
 export { writeSetupConfig } from './setup/write'

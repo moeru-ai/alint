@@ -4,8 +4,11 @@ import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/pro
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { Readable } from 'node:stream'
 import { promisify } from 'node:util'
 import { gzip } from 'node:zlib'
+
+import tar from 'tar-stream'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
 import { describe, expect, it } from 'vitest'
@@ -43,44 +46,21 @@ function createStaticPluginIntegrity(tarball: Buffer): string {
 }
 
 async function createStaticPluginTarball(files: Record<string, string>): Promise<Buffer> {
+  const pack = tar.pack()
   const chunks: Buffer[] = []
+  const done = new Promise<Buffer>((resolve, reject) => {
+    Readable.from(pack)
+      .on('data', chunk => chunks.push(Buffer.from(chunk)))
+      .on('error', reject)
+      .on('end', () => resolve(Buffer.concat(chunks)))
+  })
 
   for (const [name, content] of Object.entries(files)) {
-    const body = Buffer.from(content)
-    chunks.push(createTarHeader(name, body.byteLength))
-    chunks.push(body)
-    chunks.push(Buffer.alloc((512 - (body.byteLength % 512)) % 512))
+    pack.entry({ name }, content)
   }
 
-  chunks.push(Buffer.alloc(1024))
-  return gzipAsync(Buffer.concat(chunks))
-}
-
-function createTarHeader(name: string, size: number): Buffer {
-  const header = Buffer.alloc(512)
-
-  header.write(name, 0, 100, 'utf8')
-  writeTarOctal(header, 0o644, 100, 8)
-  writeTarOctal(header, 0, 108, 8)
-  writeTarOctal(header, 0, 116, 8)
-  writeTarOctal(header, size, 124, 12)
-  writeTarOctal(header, 0, 136, 12)
-  header.fill(0x20, 148, 156)
-  header.write('0', 156, 1, 'ascii')
-  header.set([0x75, 0x73, 0x74, 0x61, 0x72], 257)
-  header.write('00', 263, 2, 'ascii')
-
-  let checksum = 0
-
-  for (const byte of header) {
-    checksum += byte
-  }
-
-  header.write(checksum.toString(8).padStart(6, '0'), 148, 6, 'ascii')
-  header[154] = 0
-  header[155] = 0x20
-
-  return header
+  pack.finalize()
+  return gzipAsync(await done)
 }
 
 async function createTestIo(): Promise<TestIo> {
@@ -336,11 +316,6 @@ export default [
   },
 ]
 `)
-}
-
-function writeTarOctal(buffer: Buffer, value: number, offset: number, length: number): void {
-  buffer.write(value.toString(8).padStart(length - 1, '0'), offset, length - 1, 'ascii')
-  buffer[offset + length - 1] = 0
 }
 
 describe('createProviderId', () => {
@@ -1312,7 +1287,6 @@ export default {
 }
 `,
       'package/package.json': JSON.stringify({
-        alint: { apiVersion: '1' },
         exports: './dist/index.mjs',
         name: '@alint-js/plugin-python',
         version: '0.3.1',
@@ -1373,11 +1347,11 @@ python = "@alint-js/plugin-python@0.3.1"
 
     await expect(executeCli(['node', 'alint', 'plugin', 'install', 'extra'], io))
       .rejects
-      .toThrow('Unexpected argument extra.')
+      .toThrow('Unused args: `extra`')
 
     await expect(executeCli(['node', 'alint', 'plugin', 'install', '--', 'extra'], io))
       .rejects
-      .toThrow('Unexpected argument extra.')
+      .toThrow('Unused args: `extra`')
   })
 
   it('rejects unknown plugin install options', async () => {

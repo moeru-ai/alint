@@ -5,11 +5,21 @@ import type { StaticPluginReference, StaticPluginResolver } from './types'
 import { lstat, realpath, stat } from 'node:fs/promises'
 import { pathToFileURL } from 'node:url'
 
+import { isPlainObject } from 'es-toolkit/compat'
 import { dirname, isAbsolute, relative, resolve } from 'pathe'
+import { custom, object, optional, safeParse } from 'valibot'
 
+import { isNodeError } from '../nodeError'
 import { loadPluginLockFile } from './lock'
 import { getProjectPluginStoreDir } from './paths'
 import { formatPluginSpecifier } from './spec'
+
+const PluginDefinitionSchema = object({
+  configs: optional(custom<Record<string, unknown>>(isPlainObject)),
+  languages: optional(custom<Record<string, unknown>>(isPlainObject)),
+  processors: optional(custom<Record<string, unknown>>(isPlainObject)),
+  rules: optional(custom<Record<string, unknown>>(isPlainObject)),
+})
 
 export async function createLockedPluginResolver(cwd: string): Promise<StaticPluginResolver> {
   let lockPromise: ReturnType<typeof loadPluginLockFile> | undefined
@@ -65,21 +75,9 @@ async function assertStoreBoundaryIsNotSymlink(cwd: string, alias: string): Prom
   }
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
-function isOptionalRecord(value: unknown): value is Record<string, unknown> | undefined {
-  return value === undefined || isPlainObject(value)
-}
-
-function isPathInside(parent: string, child: string): boolean {
+function isInsideDirectory(parent: string, child: string): boolean {
   const path = relative(parent, child)
   return path !== '' && !path.startsWith('..') && !isAbsolute(path)
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function isPluginDefinition(value: unknown): value is PluginDefinition {
@@ -87,17 +85,14 @@ function isPluginDefinition(value: unknown): value is PluginDefinition {
     return false
   }
 
-  return isOptionalRecord(value.configs)
-    && isOptionalRecord(value.languages)
-    && isOptionalRecord(value.processors)
-    && isOptionalRecord(value.rules)
+  return safeParse(PluginDefinitionSchema, value).success
 }
 
 async function resolveLockedEntryPath(cwd: string, alias: string, entry: string): Promise<string> {
   const storeDir = resolve(getProjectPluginStoreDir(cwd))
   const entryPath = resolve(cwd, entry)
 
-  if (isAbsolute(entry) || !isPathInside(storeDir, entryPath)) {
+  if (isAbsolute(entry) || !isInsideDirectory(storeDir, entryPath)) {
     throw new Error(`Plugin "${alias}" lock entry must point inside .alint/plugins/store.`)
   }
 
@@ -120,7 +115,7 @@ async function resolveLockedEntryPath(cwd: string, alias: string, entry: string)
     throw error
   }
 
-  if (!isPathInside(canonicalStoreDir, canonicalEntryPath)) {
+  if (!isInsideDirectory(canonicalStoreDir, canonicalEntryPath)) {
     throw new Error(`Plugin "${alias}" lock entry must point inside .alint/plugins/store.`)
   }
 

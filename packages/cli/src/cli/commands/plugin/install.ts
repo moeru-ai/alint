@@ -1,35 +1,62 @@
-import type { ParsedPluginSpecifier } from '@alint-js/config'
+import type { StaticPluginReference } from '@alint-js/config'
 
 import { stat } from 'node:fs/promises'
 
 import { installStaticPlugin, loadAlintConfig } from '@alint-js/config'
 import { resolve } from 'pathe'
+import { array, check, nonEmpty, optional, parse, pipe, strictObject, string, unknown, url } from 'valibot'
 
+import { isNodeError } from '../../nodeError'
 import { defineCommand } from '../command'
 
 const defaultRegistry = 'https://registry.npmjs.org/'
-const globalOptionNames = new Set([
-  'cache',
-  'cacheLocation',
-  'config',
-  'fileConcurrency',
-  'format',
-  'lang',
-  'model',
-  'progress',
-  'ruleConcurrency',
-  'stats',
-  'timeoutMs',
-])
-const supportedApiVersion = '1'
+const PluginInstallOptionsSchema = strictObject({
+  '--': optional(array(unknown())),
+  'cache': optional(unknown()),
+  'cacheLocation': optional(unknown()),
+  'config': optional(pipe(
+    string('Config file path must be a non-empty string.'),
+    nonEmpty('Config file path must be a non-empty string.'),
+  )),
+  'fileConcurrency': optional(unknown()),
+  'format': optional(unknown()),
+  'lang': optional(unknown()),
+  'model': optional(unknown()),
+  'progress': optional(unknown()),
+  'registry': optional(pipe(
+    string('Registry URL must be a non-empty absolute URL.'),
+    nonEmpty('Registry URL must be a non-empty absolute URL.'),
+    url('Registry URL must be a non-empty absolute URL.'),
+    check((value) => {
+      if (!URL.canParse(value)) {
+        return true
+      }
 
-interface StaticPluginReference {
-  alias: string
-  specifier: ParsedPluginSpecifier
+      const protocol = new URL(value).protocol
+      return protocol === 'http:' || protocol === 'https:'
+    }, 'Registry URL must use http: or https:.'),
+  )),
+  'ruleConcurrency': optional(unknown()),
+  'stats': optional(unknown()),
+  'timeoutMs': optional(unknown()),
+})
+
+interface PluginInstallOptions {
+  config?: string
+  registry: string
+}
+
+interface PluginInstallOptionsIssue {
+  message: string
+  path?: Array<{
+    key?: unknown
+    origin?: unknown
+  }>
+  type?: string
 }
 
 export const install = defineCommand({
-  action: (context, options: { config?: unknown, registry?: unknown }) =>
+  action: (context, options: Record<string, unknown>) =>
     runPluginInstallCommand(options, context.io),
   description: 'Install plugins referenced by static config',
   name: 'install',
@@ -59,73 +86,60 @@ async function assertConfigExists(cwd: string, configPath: string): Promise<void
   }
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
+function parsePluginInstallOptions(options: Record<string, unknown>): PluginInstallOptions {
+  try {
+    const parsed = parse(PluginInstallOptionsSchema, options)
 
-function rejectUnsupportedInstallOptions(options: Record<string, unknown>): void {
-  rejectUnsupportedOptions(options, new Set([...globalOptionNames, 'registry']))
-}
+    return {
+      config: parsed.config,
+      registry: parsed.registry ?? defaultRegistry,
+    }
+  }
+  catch (error) {
+    const issues = pluginInstallOptionsIssues(error)
 
-function rejectUnsupportedOptions(options: Record<string, unknown>, allowed: Set<string>): void {
-  for (const key of Object.keys(options)) {
-    if (key === '--') {
-      continue
+    if (issues === undefined) {
+      throw error
     }
 
-    if (!allowed.has(key)) {
-      throw new Error(`Unsupported option --${key}.`)
+    const unsupportedOption = issues
+      .find(issue => issue.type === 'strict_object')
+      ?.path
+      ?.find(item => item.origin === 'key')
+      ?.key
+
+    if (typeof unsupportedOption === 'string') {
+      throw new TypeError(`Unsupported option --${unsupportedOption}.`, { cause: error })
     }
+
+    throw new Error(issues[0]?.message ?? 'Invalid plugin install options.', { cause: error })
   }
 }
 
-function resolveConfigOption(value: unknown): string | undefined {
-  if (value === undefined) {
+function pluginInstallOptionsIssues(error: unknown): PluginInstallOptionsIssue[] | undefined {
+  if (!(error instanceof Error) || !('issues' in error)) {
     return undefined
   }
 
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error('Config file path must be a non-empty string.')
+  const issues = error.issues
+
+  if (!Array.isArray(issues)) {
+    return undefined
   }
 
-  return value
-}
-
-function resolveRegistryOption(value: unknown): string {
-  if (value === undefined) {
-    return defaultRegistry
-  }
-
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error('Registry URL must be a non-empty absolute URL.')
-  }
-
-  let url: URL
-
-  try {
-    url = new URL(value)
-  }
-  catch (error) {
-    throw new Error('Registry URL must be a non-empty absolute URL.', {
-      cause: error,
-    })
-  }
-
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    throw new Error('Registry URL must use http: or https:.')
-  }
-
-  return value
+  return issues.filter(issue =>
+    typeof issue === 'object'
+    && issue !== null
+    && 'message' in issue
+    && typeof issue.message === 'string',
+  ) as PluginInstallOptionsIssue[]
 }
 
 async function runPluginInstallCommand(
-  options: { config?: unknown, registry?: unknown },
+  options: Record<string, unknown>,
   io: { cwd: string, stdout: { write: (chunk: string) => void } },
 ): Promise<number> {
-  rejectUnsupportedInstallOptions(options)
-
-  const config = resolveConfigOption(options.config)
-  const registry = resolveRegistryOption(options.registry)
+  const { config, registry } = parsePluginInstallOptions(options)
 
   if (config !== undefined) {
     await assertConfigExists(io.cwd, config)
@@ -145,7 +159,6 @@ async function runPluginInstallCommand(
       alias: reference.alias,
       registry,
       specifier: reference.specifier,
-      supportedApiVersion,
     })
     io.stdout.write(`Installed ${installed.lockEntry.specifier} as ${reference.alias}\n`)
   }

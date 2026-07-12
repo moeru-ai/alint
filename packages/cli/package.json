@@ -33,13 +33,16 @@
     "minimatch": "catalog:",
     "pathe": "catalog:",
     "table": "catalog:",
-    "tinyrainbow": "catalog:"
+    "tinyrainbow": "catalog:",
+    "valibot": "catalog:"
   },
   "devDependencies": {
     "@pnpm/find-workspace-dir": "catalog:",
     "@types/node": "catalog:",
+    "@types/tar-stream": "catalog:",
     "local-pkg": "catalog:",
     "mlly": "catalog:",
+    "tar-stream": "catalog:",
     "tinyexec": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",

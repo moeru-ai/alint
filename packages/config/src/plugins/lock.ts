@@ -7,11 +7,11 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises'
 import { dirname } from 'pathe'
 import { literal, object, parse, record, string } from 'valibot'
 
+import { isNodeError } from '../nodeError'
 import { getProjectPluginLockPath } from './paths'
 
 const PluginLockEntrySchema = object({
   alias: string(),
-  apiVersion: string(),
   entry: string(),
   integrity: string(),
   name: string(),
@@ -64,8 +64,4 @@ export async function writePluginLockFile(
     await rm(tempPath, { force: true })
     throw error
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }

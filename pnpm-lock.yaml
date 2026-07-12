@@ -376,6 +376,9 @@ importers:
       tinyrainbow:
         specifier: 'catalog:'
         version: 3.1.0
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.1(typescript@6.0.3)
     devDependencies:
       '@pnpm/find-workspace-dir':
         specifier: 'catalog:'
@@ -383,12 +386,18 @@ importers:
       '@types/node':
         specifier: 'catalog:'
         version: 26.0.1
+      '@types/tar-stream':
+        specifier: 'catalog:'
+        version: 3.1.4
       local-pkg:
         specifier: 'catalog:'
         version: 1.2.1
       mlly:
         specifier: 'catalog:'
         version: 1.8.2
+      tar-stream:
+        specifier: 'catalog:'
+        version: 3.2.0
       tinyexec:
         specifier: 'catalog:'
         version: 1.2.4
@@ -410,6 +419,9 @@ importers:
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)
+      es-toolkit:
+        specifier: 'catalog:'
+        version: 1.49.0
       jiti:
         specifier: 'catalog:'
         version: 2.7.0

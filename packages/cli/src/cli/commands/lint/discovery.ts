@@ -10,6 +10,8 @@ import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolv
 import { minimatch, Minimatch } from 'minimatch'
 import { isAbsolute, relative, resolve } from 'pathe'
 
+import { isNodeError } from '../../nodeError'
+
 export interface FindFilesOptions {
   config: AlintConfig
   cwd: string
@@ -122,10 +124,6 @@ function isGlobalIgnoreItem(item: AlintConfigItem): item is AlintConfigItem & { 
 
 function isGlobPattern(input: string): boolean {
   return new Minimatch(input, minimatchOptions).hasMagic()
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 function matchesGlob(filePath: string, pattern: string): boolean {

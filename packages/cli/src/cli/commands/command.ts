@@ -1,5 +1,7 @@
 import type { Cli, CliIo, CliWritable } from '../types'
 
+import { cac } from 'cac'
+
 export type CommandAction = (
   context: CommandContext,
   ...args: any[]
@@ -275,37 +277,21 @@ function insertHelpSection(
 }
 
 function parseCommandArguments(node: CommandNode, args: readonly string[]): unknown[] {
-  if (!node.arguments) {
-    if (node.strictArguments && args.length > 0) {
-      throw new Error(`Unexpected argument ${args[0]}.`)
-    }
-
+  if (!node.arguments && !node.strictArguments) {
     return []
   }
 
-  const parts = node.arguments.split(/\s+/u).filter(Boolean)
-  const values: unknown[] = []
-  let argIndex = 0
+  const parser = cac('alint-command')
+  const pattern = ['command', node.arguments].filter(Boolean).join(' ')
+  let values: unknown[] = []
 
-  for (const part of parts) {
-    if (part.startsWith('[...') || part.startsWith('<...')) {
-      values.push(args.slice(argIndex))
-      argIndex = args.length
-      continue
-    }
+  parser
+    .command(pattern, node.description)
+    .action((...actionArgs: unknown[]) => {
+      values = actionArgs.slice(0, -1)
+    })
 
-    if (part.startsWith('<') && argIndex >= args.length) {
-      throw new Error(`Missing required argument ${part}.`)
-    }
-
-    values.push(args[argIndex])
-    argIndex += 1
-  }
-
-  if (node.strictArguments && argIndex < args.length) {
-    throw new Error(`Unexpected argument ${args[argIndex]}.`)
-  }
-
+  parser.parse(['node', 'alint-command', 'command', ...args])
   return values
 }
 

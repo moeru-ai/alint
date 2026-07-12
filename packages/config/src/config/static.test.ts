@@ -2,7 +2,8 @@ import type { AlintConfigItem } from '@alint-js/core'
 
 import { describe, expect, it } from 'vitest'
 
-import { normalizeLoadedAlintConfig } from './static'
+import { parsePluginSpecifier } from '../plugins/spec'
+import { toAlintConfig } from './static'
 
 function expectConfigItem(value: unknown): asserts value is AlintConfigItem {
   expect(typeof value).toBe('object')
@@ -10,9 +11,9 @@ function expectConfigItem(value: unknown): asserts value is AlintConfigItem {
   expect(Array.isArray(value)).toBe(false)
 }
 
-describe('normalizeLoadedAlintConfig', () => {
+describe('toAlintConfig', () => {
   it('maps TOML config.group wrapper to flat config items', async () => {
-    const config = await normalizeLoadedAlintConfig(
+    const config = await toAlintConfig(
       {
         config: {
           group: [
@@ -39,7 +40,7 @@ describe('normalizeLoadedAlintConfig', () => {
   })
 
   it('keeps top-level array config as flat config', async () => {
-    const config = await normalizeLoadedAlintConfig(
+    const config = await toAlintConfig(
       [
         {
           files: ['**/*.go'],
@@ -61,7 +62,7 @@ describe('normalizeLoadedAlintConfig', () => {
 
   it('rejects TOML config without config.group', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           files: ['**/*.py'],
           rules: { 'python/semantic-boundary': 'warn' },
@@ -75,7 +76,7 @@ describe('normalizeLoadedAlintConfig', () => {
 
   it('rejects TOML config wrapper without config.group', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           config: {},
         },
@@ -87,17 +88,17 @@ describe('normalizeLoadedAlintConfig', () => {
   })
 
   it('returns empty config for nullish values before TOML shape checks', async () => {
-    await expect(normalizeLoadedAlintConfig(null, {
+    await expect(toAlintConfig(null, {
       configFile: '/repo/alint.config.toml',
     })).resolves.toEqual([])
-    await expect(normalizeLoadedAlintConfig(undefined, {
+    await expect(toAlintConfig(undefined, {
       configFile: '/repo/alint.config.toml',
     })).resolves.toEqual([])
   })
 
   it('rejects non-array config.group', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           config: { group: { files: ['**/*.py'] } },
         },
@@ -113,7 +114,7 @@ describe('normalizeLoadedAlintConfig', () => {
     const goPlugin = { rules: {} }
     const references: unknown[] = []
 
-    const config = await normalizeLoadedAlintConfig(
+    const config = await toAlintConfig(
       {
         config: {
           group: [
@@ -145,19 +146,11 @@ describe('normalizeLoadedAlintConfig', () => {
     expect(references).toEqual([
       {
         alias: 'python',
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       },
       {
         alias: 'go',
-        specifier: {
-          name: 'alint-plugin-go',
-          raw: 'alint-plugin-go@1.2.3',
-          version: '1.2.3',
-        },
+        specifier: parsePluginSpecifier('alint-plugin-go@1.2.3'),
       },
     ])
     expect(config).toEqual([
@@ -174,7 +167,7 @@ describe('normalizeLoadedAlintConfig', () => {
 
   it('rejects static plugin specifiers without a resolver', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           config: {
             group: [
@@ -195,7 +188,7 @@ describe('normalizeLoadedAlintConfig', () => {
 
   it('propagates static plugin specifier parser errors', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           config: {
             group: [
@@ -228,7 +221,7 @@ describe('normalizeLoadedAlintConfig', () => {
       },
     }
 
-    const config = await normalizeLoadedAlintConfig(
+    const config = await toAlintConfig(
       {
         config: {
           group: [configItem],
@@ -246,7 +239,7 @@ describe('normalizeLoadedAlintConfig', () => {
     const plugin = { rules: {} }
     const references: unknown[] = []
 
-    const config = await normalizeLoadedAlintConfig(
+    const config = await toAlintConfig(
       {
         config: {
           group: [
@@ -278,11 +271,7 @@ describe('normalizeLoadedAlintConfig', () => {
     expect(references).toEqual([
       {
         alias: 'python',
-        specifier: {
-          name: '@alint-js/plugin-python',
-          raw: '@alint-js/plugin-python@0.3.1',
-          version: '0.3.1',
-        },
+        specifier: parsePluginSpecifier('@alint-js/plugin-python@0.3.1'),
       },
     ])
     expectConfigItem(config[0])
@@ -293,7 +282,7 @@ describe('normalizeLoadedAlintConfig', () => {
 
   it('rejects repeated static plugin aliases with different specifiers', async () => {
     await expect(
-      normalizeLoadedAlintConfig(
+      toAlintConfig(
         {
           config: {
             group: [
