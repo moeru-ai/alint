@@ -159,15 +159,11 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
   )
 }
 
-async function fetchPackageMetadata(npmRegistry: string, specifier: ParsedPluginSpecifier): Promise<NpmMetadata> {
-  const url = `${npmRegistry.replace(/\/$/u, '')}/${specifier.registryPath}`
-  return ofetch<NpmMetadata>(url)
-}
-
 async function installPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
   const { name, segments, version } = options.specifier
   const npmRegistry = options.npmRegistry.endsWith('/') ? options.npmRegistry : `${options.npmRegistry}/`
-  const metadata = await fetchPackageMetadata(npmRegistry, options.specifier)
+  const metadataUrl = `${npmRegistry.replace(/\/$/u, '')}/${options.specifier.registryPath}`
+  const metadata = await ofetch<NpmMetadata>(metadataUrl)
   const dist = metadata.versions?.[version]?.dist
 
   if (dist?.tarball === undefined) {
