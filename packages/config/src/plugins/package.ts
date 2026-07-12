@@ -5,7 +5,6 @@ import type { ParsedPluginLockEntry, ResolvedPluginPackage } from './types'
 import { constants } from 'node:fs'
 import { access, readFile, realpath } from 'node:fs/promises'
 import {
-  basename,
   dirname,
   isAbsolute,
   join,
@@ -72,7 +71,12 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
     throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the plugin store.`)
   }
 
-  const packageDir = findPackageRoot(resolvedEntry)
+  const packageDir = getLockedPackageDir(projectRoot, pluginRoot, entry)
+
+  if (!isPathInside(resolvedEntry, packageDir)) {
+    throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the locked package directory.`)
+  }
+
   const packageJson = await readPackageJson(packageDir)
 
   return {
@@ -80,20 +84,6 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
     packageDir,
     packageJson,
   }
-}
-
-function findPackageRoot(entry: string): string {
-  let current = dirname(entry)
-
-  while (current !== dirname(current)) {
-    if (basename(current) === 'package') {
-      return current
-    }
-
-    current = dirname(current)
-  }
-
-  throw new Error(`Plugin entry "${entry}" is not inside an installed package directory.`)
 }
 
 function getDefaultExport(value: unknown): unknown {
@@ -104,8 +94,56 @@ function getDefaultExport(value: unknown): unknown {
   return Object.hasOwn(value, 'default') ? value.default : value
 }
 
+function getLockedPackageDir(projectRoot: string, pluginRoot: string, entry: ParsedPluginLockEntry): string {
+  const name = entry.lockEntry.name
+  const version = entry.lockEntry.version
+
+  if (entry.specifier.name !== name) {
+    throw new Error(`Plugin lock entry "${entry.alias}" package name does not match its specifier.`)
+  }
+
+  if (entry.specifier.version !== undefined && entry.specifier.version !== version) {
+    throw new Error(`Plugin lock entry "${entry.alias}" package version does not match its specifier.`)
+  }
+
+  const packageDir = join(pluginRoot, ...getPackagePathSegments(name), version, 'package')
+
+  if (!isPathInside(packageDir, projectRoot) || !isPathInside(packageDir, pluginRoot)) {
+    throw new Error(`Plugin lock entry "${entry.alias}" package metadata resolves outside the plugin store.`)
+  }
+
+  return packageDir
+}
+
 function getPackageName(packageJson: Record<string, unknown>): string {
   return typeof packageJson.name === 'string' ? packageJson.name : '<unknown>'
+}
+
+function getPackagePathSegments(name: string): string[] {
+  const segments = name.split('/')
+  const segmentPattern = /^[\w.-]+$/u
+
+  if (segments.length === 2) {
+    const [scope, packageName] = segments
+
+    if (
+      scope === undefined
+      || packageName === undefined
+      || !scope.startsWith('@')
+      || !segmentPattern.test(scope.slice(1))
+      || !segmentPattern.test(packageName)
+    ) {
+      throw new Error(`Invalid static plugin package name "${name}".`)
+    }
+
+    return segments
+  }
+
+  if (segments.length !== 1 || !segmentPattern.test(segments[0]!)) {
+    throw new Error(`Invalid static plugin package name "${name}".`)
+  }
+
+  return segments
 }
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {

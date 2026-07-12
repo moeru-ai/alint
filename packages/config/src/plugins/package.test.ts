@@ -80,6 +80,34 @@ describe('plugin package resolution', () => {
     expect(plugin).toEqual({ rules: {} })
   })
 
+  it('resolves a locked package entry when its export path contains a package directory', async () => {
+    const projectRoot = await createTempProject()
+    const packageDir = join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package')
+    const distPackageDir = join(packageDir, 'dist', 'package')
+    await mkdir(distPackageDir, { recursive: true })
+    await writeFile(join(packageDir, 'package.json'), JSON.stringify({
+      exports: { '.': './dist/package/index.mjs' },
+      name: '@alint-js/plugin-python',
+      type: 'module',
+      version: '0.3.1',
+    }), 'utf8')
+    await writeFile(join(distPackageDir, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+
+    const resolved = await resolveLockedPluginPackage(createLockEntry(
+      projectRoot,
+      '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/package/index.mjs',
+    ))
+    const plugin = await importResolvedPluginPackage(resolved)
+
+    expect(resolved.entry).toBe(join(distPackageDir, 'index.mjs'))
+    expect(resolved.packageDir).toBe(packageDir)
+    expect(resolved.packageJson).toMatchObject({
+      name: '@alint-js/plugin-python',
+      version: '0.3.1',
+    })
+    expect(plugin).toEqual({ rules: {} })
+  })
+
   it('rejects a lock entry that escapes the project root', async () => {
     const projectRoot = await createTempProject()
 
