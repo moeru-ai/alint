@@ -1,22 +1,4 @@
-export { loadAlintConfig, loadStaticConfig } from './config/load'
-export {
-  formatPluginSpecifier,
-  listStaticPluginReferences,
-  parsePluginSpecifier,
-  parseStaticConfig,
-  toAlintConfig,
-} from './config/static'
-export type {
-  ParsedPluginSpecifier,
-  ParsedStaticConfig,
-  ParsedStaticConfigGroup,
-  ParseStaticConfigOptions,
-  StaticConfigInput,
-  StaticConfigItem,
-  StaticPluginReference,
-  StaticPluginResolver,
-  ToAlintConfigOptions,
-} from './config/static'
+export * from './config'
 export {
   ignorePatternsAIAgents,
   ignorePatternsBuildOutputs,
@@ -34,9 +16,7 @@ export {
 } from './paths'
 export type { GlobalSetupConfigPathOptions } from './paths'
 export * from './plugins'
-export { emptySetupConfig, loadSetupConfig, mergeSetupConfigs } from './setup/load'
-export { parseSetupConfigToml, stringifySetupConfigToml } from './setup/toml'
-export { writeSetupConfig } from './setup/write'
+export * from './setup'
 export type {
   AlintConfig,
   ModelSize,
