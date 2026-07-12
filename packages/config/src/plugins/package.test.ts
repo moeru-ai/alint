@@ -196,32 +196,4 @@ describe('plugin package resolution', () => {
       .rejects
       .toThrow('Package "missing-export" does not define a resolvable "." export.')
   })
-
-  it('rejects a plugin module with a non-object default export', async () => {
-    const projectRoot = await createTempProject()
-    const packageDir = join(projectRoot, '.alint', 'plugins', 'store', 'invalid', '1.0.0', 'package')
-    const distDir = join(packageDir, 'dist')
-    await mkdir(distDir, { recursive: true })
-    await writeFile(join(distDir, 'index.mjs'), 'export default 1\n', 'utf8')
-
-    await expect(importResolvedPluginPackage({
-      entry: join(distDir, 'index.mjs'),
-      packageDir,
-      packageJson: { name: 'invalid' },
-    })).rejects.toThrow('Plugin package "invalid" must export a plugin object.')
-  })
-
-  it('rejects a plugin module with a null default export', async () => {
-    const projectRoot = await createTempProject()
-    const packageDir = join(projectRoot, '.alint', 'plugins', 'store', 'invalid-null', '1.0.0', 'package')
-    const distDir = join(packageDir, 'dist')
-    await mkdir(distDir, { recursive: true })
-    await writeFile(join(distDir, 'index.mjs'), 'export default null\n', 'utf8')
-
-    await expect(importResolvedPluginPackage({
-      entry: join(distDir, 'index.mjs'),
-      packageDir,
-      packageJson: { name: 'invalid-null' },
-    })).rejects.toThrow('Plugin package "invalid-null" must export a plugin object.')
-  })
 })

@@ -20,6 +20,7 @@
   "dependencies": {
     "@alint-js/core": "workspace:*",
     "@moeru/std": "catalog:",
+    "@package-json/types": "catalog:",
     "c12": "catalog:",
     "es-toolkit": "catalog:",
     "jiti": "catalog:",

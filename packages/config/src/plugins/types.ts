@@ -1,3 +1,5 @@
+import type { PackageJson } from '@package-json/types'
+
 import type { StaticPluginReference } from '../config/static'
 import type { ParsedPluginSpecifier } from './spec'
 
@@ -35,7 +37,7 @@ export interface PluginLockFile {
 export interface ResolvedPluginPackage {
   entry: string
   packageDir: string
-  packageJson: Record<string, unknown>
+  packageJson: PackageJson
 }
 
 export interface StaticPluginInstallOptions {

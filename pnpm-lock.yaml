@@ -27,6 +27,9 @@ catalogs:
     '@moeru/std':
       specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.18
+    '@package-json/types':
+      specifier: ^0.0.13
+      version: 0.0.13
     '@pnpm/find-workspace-dir':
       specifier: ^1000.1.5
       version: 1000.1.5
@@ -419,6 +422,9 @@ importers:
       '@moeru/std':
         specifier: 'catalog:'
         version: 0.1.0-beta.18
+      '@package-json/types':
+        specifier: 'catalog:'
+        version: 0.0.13
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)
@@ -1991,6 +1997,9 @@ packages:
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [win32]
+
+  '@package-json/types@0.0.13':
+    resolution: {integrity: sha512-QL0MO8uptW+EdqK2Un6imfaN9gQ1G5pUEUlvPfHmNrgRTJTGVraKnRbDN5d4N/Z3cWTPDHjiEDJPDEpppldr4g==}
 
   '@pkgr/core@0.3.6':
     resolution: {integrity: sha512-SEeaJLb3qBNF/OaXnaR1NmmBbFYk1zC0ZH/52fATcRPLFg/p791YrcyFFy44Bo9sLaGuSuLp5Q6axbb/O+v/RA==}
@@ -6194,6 +6203,8 @@ snapshots:
 
   '@oxlint/binding-win32-x64-msvc@1.71.0':
     optional: true
+
+  '@package-json/types@0.0.13': {}
 
   '@pkgr/core@0.3.6': {}
 

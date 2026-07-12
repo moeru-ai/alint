@@ -1,4 +1,5 @@
 import type { PluginDefinition } from '@alint-js/core'
+import type { PackageJson } from '@package-json/types'
 
 import type { ParsedPluginLockEntry, ResolvedPluginPackage } from './types'
 
@@ -19,12 +20,7 @@ import { exists, isENOENTError, isPathInside } from '../utils/fs'
 
 export async function importResolvedPluginPackage(resolved: ResolvedPluginPackage): Promise<PluginDefinition> {
   const importedModule: unknown = await import(pathToFileURL(resolved.entry).href)
-  const plugin = getDefaultExport(importedModule)
-  const packageName = getPackageName(resolved.packageJson)
-
-  assertPluginDefinition(plugin, packageName)
-
-  return plugin
+  return getDefaultExport<PluginDefinition>(importedModule)
 }
 
 export async function resolveInstalledPackageEntry(packageDir: string): Promise<string> {
@@ -87,24 +83,13 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
   }
 }
 
-function assertPluginDefinition(value: unknown, packageName: string): asserts value is PluginDefinition {
-  if (!isRecord(value)) {
-    throw new Error(`Plugin package "${packageName}" must export a plugin object.`)
-  }
-
-  for (const property of ['configs', 'languages', 'processors', 'rules'] as const) {
-    if (value[property] !== undefined && !isRecord(value[property])) {
-      throw new Error(`Plugin package "${packageName}" must export "${property}" as an object when provided.`)
-    }
-  }
-}
-
 function getDefaultExport<T = unknown>(value: unknown): T {
-  if (!isRecord(value)) {
+  if (!isPlainObject(value)) {
     return value as T
   }
 
-  return Object.hasOwn(value, 'default') ? value.default as T : value as T
+  const objectValue = value as object
+  return Object.hasOwn(objectValue, 'default') ? Reflect.get(objectValue, 'default') as T : value as T
 }
 
 function getLockedPackageDir(projectRoot: string, pluginRoot: string, entry: ParsedPluginLockEntry): string {
@@ -128,7 +113,7 @@ function getLockedPackageDir(projectRoot: string, pluginRoot: string, entry: Par
   return packageDir
 }
 
-function getPackageName(packageJson: Record<string, unknown>): string {
+function getPackageName(packageJson: PackageJson): string {
   return typeof packageJson.name === 'string' ? packageJson.name : '<unknown>'
 }
 
@@ -159,10 +144,6 @@ function getPackagePathSegments(name: string): string[] {
   return segments
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return isPlainObject(value)
-}
-
 async function nearestExistingParent(path: string): Promise<string> {
   let current = path
 
@@ -181,14 +162,8 @@ function normalizePackageRelativeEntry(entry: string): string {
   return entry.startsWith('./') ? entry.slice(2) : entry
 }
 
-async function readPackageJson(packageDir: string): Promise<Record<string, unknown>> {
-  const packageJson = JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')) as unknown
-
-  if (!isRecord(packageJson)) {
-    throw new Error(`Package at "${packageDir}" must have an object package.json.`)
-  }
-
-  return packageJson
+async function readPackageJson(packageDir: string): Promise<PackageJson> {
+  return JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8')) as PackageJson
 }
 
 async function resolvePhysicalPath(path: string): Promise<string> {
