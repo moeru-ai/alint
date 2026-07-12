@@ -19,18 +19,11 @@ import { exists, isENOENTError } from '../utils/fs'
 export async function importResolvedPluginPackage(resolved: ResolvedPluginPackage): Promise<PluginDefinition> {
   const importedModule: unknown = await import(pathToFileURL(resolved.entry).href)
   const plugin = getDefaultExport(importedModule)
+  const packageName = getPackageName(resolved.packageJson)
 
-  if (!isPlainObject(plugin)) {
-    throw new Error(`Plugin package "${getPackageName(resolved.packageJson)}" must export a plugin object.`)
-  }
+  assertPluginDefinition(plugin, packageName)
 
-  for (const property of ['configs', 'languages', 'processors', 'rules'] as const) {
-    if (plugin[property] !== undefined && !isPlainObject(plugin[property])) {
-      throw new Error(`Plugin package "${getPackageName(resolved.packageJson)}" must export "${property}" as an object when provided.`)
-    }
-  }
-
-  return plugin as PluginDefinition
+  return plugin
 }
 
 export async function resolveInstalledPackageEntry(packageDir: string): Promise<string> {
@@ -93,12 +86,24 @@ export async function resolveLockedPluginPackage(entry: ParsedPluginLockEntry): 
   }
 }
 
-function getDefaultExport(value: unknown): unknown {
+function assertPluginDefinition(value: unknown, packageName: string): asserts value is PluginDefinition {
   if (!isPlainObject(value)) {
-    return value
+    throw new Error(`Plugin package "${packageName}" must export a plugin object.`)
   }
 
-  return Object.hasOwn(value, 'default') ? value.default : value
+  for (const property of ['configs', 'languages', 'processors', 'rules'] as const) {
+    if (value[property] !== undefined && !isPlainObject(value[property])) {
+      throw new Error(`Plugin package "${packageName}" must export "${property}" as an object when provided.`)
+    }
+  }
+}
+
+function getDefaultExport<T = unknown>(value: unknown): T {
+  if (!isPlainObject(value)) {
+    return value as T
+  }
+
+  return Object.hasOwn(value, 'default') ? value.default as T : value as T
 }
 
 function getLockedPackageDir(projectRoot: string, pluginRoot: string, entry: ParsedPluginLockEntry): string {
