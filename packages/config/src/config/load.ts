@@ -5,6 +5,7 @@ import type { ParsedStaticConfig, StaticPluginReference } from './static'
 
 import { resolve } from 'node:path'
 
+import { errorMessageFrom } from '@moeru/std/error'
 import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
@@ -44,7 +45,14 @@ export async function loadAlintConfig(
   const unresolved = await listUnresolved(staticConfig, lock)
 
   if (unresolved.length > 0) {
-    throw new Error(`Static plugin packages could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`)
+    const cause = unresolved[0]?.resolutionError
+    const message = `Static plugin packages could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`
+
+    if (cause === undefined) {
+      throw new Error(message)
+    }
+
+    throw new Error(`${message}\nCause: ${errorMessageFrom(cause) ?? 'unknown error'}`, { cause })
   }
 
   return toAlintConfig(staticConfig, {

@@ -1,6 +1,11 @@
 import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/core'
 
-import type { ParsedPluginSpecifier } from '../plugins/spec'
+import type {
+  DirectoryPluginSpecifier,
+  ParsedPluginSpecifier,
+  ParsePluginSpecifierOptions,
+  RegistryPluginSpecifier,
+} from '../plugins/spec'
 
 import { extname } from 'pathe'
 import {
@@ -17,10 +22,15 @@ import {
   unknown,
 } from 'valibot'
 
-import { parsePluginSpecifier } from '../plugins/spec'
+import { getPluginSpecifierKey, parsePluginSpecifier } from '../plugins/spec'
 
-export { parsePluginSpecifier }
-export type { ParsedPluginSpecifier }
+export { getPluginSpecifierKey, parsePluginSpecifier }
+export type {
+  DirectoryPluginSpecifier,
+  ParsedPluginSpecifier,
+  ParsePluginSpecifierOptions,
+  RegistryPluginSpecifier,
+}
 
 export interface NormalizeLoadedAlintConfigOptions {
   configFile?: string
@@ -107,7 +117,7 @@ export function parseStaticConfig(
   const items = toAlintConfigItems(value, options)
   const pluginsByAlias = new Map<string, ParsedPluginSpecifier>()
   const groups = items.map((item): ParsedStaticConfigGroup => {
-    const plugins = readStaticPluginReferences(item, pluginsByAlias)
+    const plugins = readStaticPluginReferences(item, pluginsByAlias, options)
 
     return {
       item,
@@ -197,6 +207,7 @@ function readConfigGroup(value: unknown): undefined | unknown[] {
 function readStaticPluginReferences(
   item: StaticConfigItem,
   pluginsByAlias: Map<string, ParsedPluginSpecifier>,
+  options: ParseStaticConfigOptions,
 ): StaticPluginReference[] {
   if (!isPlainObject(item.plugins)) {
     return []
@@ -209,10 +220,13 @@ function readStaticPluginReferences(
       continue
     }
 
-    const specifier = parsePluginSpecifier(plugin)
+    const specifier = parsePluginSpecifier(plugin, options)
     const existing = pluginsByAlias.get(alias)
 
-    if (existing !== undefined && existing.raw !== specifier.raw) {
+    if (
+      existing !== undefined
+      && getPluginSpecifierKey(existing) !== getPluginSpecifierKey(specifier)
+    ) {
       throw new Error(
         `Static plugin "${alias}" is configured with multiple specifiers: "${existing.raw}" and "${specifier.raw}".`,
       )
@@ -250,7 +264,7 @@ async function resolveStaticPlugins(
       throw new Error(`Static plugin "${alias}" is missing a parsed plugin reference.`)
     }
 
-    const pluginCacheKey = reference.specifier.raw
+    const pluginCacheKey = getPluginSpecifierKey(reference.specifier)
     let resolvedPlugin = pluginCache.get(pluginCacheKey)
 
     if (resolvedPlugin === undefined) {

@@ -240,6 +240,33 @@ export default defineConfig([
 ])
 ```
 
+Static TOML config can reference an exact registry package version or a local plugin directory:
+
+```toml
+[[config.group]]
+
+[config.group.plugins]
+registry = "@scope/alint-plugin@1.2.3"
+relative = "./plugins/relative-plugin"
+absolute = "/opt/alint/plugins/absolute-plugin"
+file_url = "file:///opt/alint/plugins/file-url-plugin"
+```
+
+Relative plugin paths are resolved from the directory containing the config file, including when `--config` points to a nested config. On Windows, use TOML literal strings to preserve native backslashes:
+
+```toml
+[[config.group]]
+
+[config.group.plugins]
+native = 'C:\alint\plugins\native-plugin'
+```
+
+Run `alint plugin install` after adding or changing configured source specifiers, or after moving a local directory or changing its symlink target. An ordinary rebuild or content change within the same local root does not require reinstalling. Registry packages are downloaded into `.alint/plugins/store`; local directories are registered in place. Registration does not build the plugin or install its dependencies. Directory sources bypass the registry, package store, and integrity checks.
+
+For a local directory, `alint` re-resolves the root package manifest, export, and entry content. The root entry content hash cache-busts imports, so rebuilt root output is visible without reinstalling the plugin. Unbundled transitive imports retain normal Node.js ESM caching within a process, so transitive-only changes require a new CLI process. A root rebuild or change refreshes those dependencies only when their content is bundled or copied into the changed root entry.
+
+`.alint/plugins/lock.json` uses lock version 2 for both source types. Registry entries record an installed package snapshot and integrity metadata; directory entries record source identity and resolve the current directory contents at runtime.
+
 Rule severities follow the familiar lint convention:
 
 - `"off"` or `0` disables a rule.

@@ -61,6 +61,13 @@ describe('static config parsing', () => {
     )
   })
 
+  it('accepts equivalent directory spellings for a repeated alias', () => {
+    expect(() => parseStaticConfig([
+      { plugins: { local: './plugins/local' } },
+      { plugins: { local: './plugins/../plugins/local' } },
+    ], { configFile: '/repo/alint.config.ts' })).not.toThrow()
+  })
+
   it('rejects static plugin specifiers without an exact package version while parsing', () => {
     expect(() => parseStaticConfig([
       { plugins: { python: '@alint-js/plugin-python' } },
@@ -69,8 +76,8 @@ describe('static config parsing', () => {
 
   it('rejects invalid static plugin package names while parsing', () => {
     expect(() => parseStaticConfig([
-      { plugins: { python: '../../outside@1.0.0' } },
-    ])).toThrow('Invalid static plugin package name "../../outside".')
+      { plugins: { python: 'plugin/outside@1.0.0' } },
+    ])).toThrow('Invalid static plugin package name "plugin/outside".')
   })
 
   it('rejects invalid static config item shapes while parsing', () => {
@@ -143,6 +150,24 @@ describe('static config parsing', () => {
         },
       },
     ])
+  })
+
+  it('reuses resolved directory plugins with equivalent normalized paths', async () => {
+    const plugin = { rules: {} }
+    const references: string[] = []
+    const config = parseStaticConfig([
+      { plugins: { local: './plugins/local' } },
+      { plugins: { other: './plugins/../plugins/local' } },
+    ], { configFile: '/repo/alint.config.ts' })
+
+    await toAlintConfig(config, {
+      pluginResolver: async (reference) => {
+        references.push(reference.specifier.raw)
+        return plugin
+      },
+    })
+
+    expect(references).toEqual(['./plugins/local'])
   })
 
   it('rejects unresolved static plugin strings during sync normalization', () => {

@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
+import { formatInstallSummary } from './commands/plugin/install'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId } from './provider-registry'
 
@@ -30,6 +31,18 @@ function clearCiEnv(env: NodeJS.ProcessEnv | undefined): void {
   for (const key of ['BUILDKITE', 'CI', 'CIRCLECI', 'GITHUB_ACTIONS', 'GITLAB_CI', 'TF_BUILD']) {
     delete env[key]
   }
+}
+
+async function createDirectoryPlugin(cwd: string, name: string): Promise<void> {
+  const pluginRoot = join(cwd, 'plugins', name)
+  await mkdir(pluginRoot, { recursive: true })
+  await writeFile(join(pluginRoot, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+  await writeFile(join(pluginRoot, 'package.json'), JSON.stringify({
+    exports: './index.mjs',
+    name,
+    type: 'module',
+    version: '1.0.0',
+  }), 'utf8')
 }
 
 async function createTestIo(): Promise<TestIo> {
@@ -530,6 +543,84 @@ describe('executeCli', () => {
 
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toBe('No static plugins configured. Wrote empty plugin lock.\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('reports one registered local plugin directory', async () => {
+    const io = await createTestIo()
+    await createDirectoryPlugin(io.cwd, 'local-plugin')
+    await writeFile(join(io.cwd, 'alint.config.toml'), `
+[[config.group]]
+[config.group.plugins]
+local = "./plugins/local-plugin"
+`, 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe('Registered 1 local plugin directory.\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('reports multiple registered local plugin directories', async () => {
+    const io = await createTestIo()
+    await createDirectoryPlugin(io.cwd, 'first-plugin')
+    await createDirectoryPlugin(io.cwd, 'second-plugin')
+    await writeFile(join(io.cwd, 'alint.config.toml'), `
+[[config.group]]
+[config.group.plugins]
+first = "./plugins/first-plugin"
+second = "./plugins/second-plugin"
+`, 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe('Registered 2 local plugin directories.\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('formats a registry-only plugin installation summary', () => {
+    expect(formatInstallSummary({ installedRegistryCount: 1, registeredDirectoryCount: 0 }))
+      .toBe('Installed 1 registry plugin package.\n')
+    expect(formatInstallSummary({ installedRegistryCount: 2, registeredDirectoryCount: 0 }))
+      .toBe('Installed 2 registry plugin packages.\n')
+  })
+
+  it('formats an empty plugin installation summary without stray punctuation', () => {
+    expect(formatInstallSummary({ installedRegistryCount: 0, registeredDirectoryCount: 0 }))
+      .toBe('')
+  })
+
+  it('formats a mixed plugin installation summary', () => {
+    expect(formatInstallSummary({ installedRegistryCount: 1, registeredDirectoryCount: 1 }))
+      .toBe('Installed 1 registry plugin package and registered 1 local plugin directory.\n')
+    expect(formatInstallSummary({ installedRegistryCount: 2, registeredDirectoryCount: 3 }))
+      .toBe('Installed 2 registry plugin packages and registered 3 local plugin directories.\n')
+  })
+
+  it('documents local directory registration in plugin help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'plugin', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Register a local plugin directory path')
+    expect(io.stdoutText).toContain('[[config.group]]')
+    expect(io.stdoutText).toContain('[config.group.plugins]')
+    expect(io.stdoutText).toContain('./plugins/local-plugin')
+    expect(io.stdoutText).toContain('alint plugin install')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('documents local directory registration in plugin install help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Local directory paths are registered in place')
+    expect(io.stdoutText).toContain('./plugins/local-plugin')
     expect(io.stderrText).toBe('')
   })
 

@@ -1,8 +1,8 @@
 import { Buffer } from 'node:buffer'
 import { createHash } from 'node:crypto'
-import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join, relative } from 'node:path'
 import { gzip } from 'node:zlib'
 
 import tar from 'tar-stream'
@@ -10,6 +10,7 @@ import tar from 'tar-stream'
 import { createApp, defineEventHandler, serve, setResponseHeader, setResponseStatus } from 'h3/node'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { loadAlintConfig } from '../config/load'
 import { installStaticPlugins } from './install'
 
 interface RegistryServer {
@@ -28,10 +29,12 @@ describe('static plugin installation', () => {
     await Promise.all(tempRoots.splice(0).map(root => rm(root, { force: true, recursive: true })))
   })
 
-  async function createProject(config: string): Promise<string> {
+  async function createProject(config: string, configFile = 'alint.config.ts'): Promise<string> {
     const root = await mkdtemp(join(tmpdir(), 'alint-plugin-install-'))
     tempRoots.push(root)
-    await writeFile(join(root, 'alint.config.ts'), config, 'utf8')
+    const configPath = join(root, configFile)
+    await mkdir(dirname(configPath), { recursive: true })
+    await writeFile(configPath, config, 'utf8')
     return root
   }
 
@@ -135,6 +138,90 @@ describe('static plugin installation', () => {
     })
   }
 
+  async function createDirectoryPlugin(projectRoot: string, name = 'local-plugin'): Promise<string> {
+    const pluginRoot = join(projectRoot, 'plugins', name)
+    await mkdir(join(pluginRoot, 'dist'), { recursive: true })
+    await writeFile(join(pluginRoot, 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name,
+      type: 'module',
+      version: '1.0.0',
+    }), 'utf8')
+    await writeFile(join(pluginRoot, 'dist', 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+    return pluginRoot
+  }
+
+  it('registers a local TOML plugin without accessing the registry or plugin store', async () => {
+    const projectRoot = await createProject(`
+[[config.group]]
+[config.group.plugins]
+local = "./plugins/local-plugin"
+`, 'alint.config.toml')
+    const pluginRoot = await createDirectoryPlugin(projectRoot)
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: 'http://127.0.0.1:1/' })
+
+    expect(result.configuredPluginCount).toBe(1)
+    expect(result.installedRegistryCount).toBe(0)
+    expect(result.registeredDirectoryCount).toBe(1)
+    expect(result.lock.plugins.local).toEqual({
+      alias: 'local',
+      path: relative(projectRoot, pluginRoot),
+      specifier: './plugins/local-plugin',
+      type: 'directory',
+    })
+    await expect(access(join(projectRoot, '.alint', 'plugins', 'store')))
+      .rejects
+      .toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('resolves a nested config directory source while keeping project-root lock identity', async () => {
+    const projectRoot = await createProject(`
+[[config.group]]
+[config.group.plugins]
+local = "../plugins/local-plugin"
+`, join('configs', 'alint.config.toml'))
+    const pluginRoot = await createDirectoryPlugin(projectRoot)
+
+    const result = await installStaticPlugins({
+      configFile: join('configs', 'alint.config.toml'),
+      cwd: projectRoot,
+      registry: 'http://127.0.0.1:1/',
+    })
+
+    expect(result.lock.plugins.local).toEqual({
+      alias: 'local',
+      path: relative(projectRoot, pluginRoot),
+      specifier: '../plugins/local-plugin',
+      type: 'directory',
+    })
+    await expect(readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')).resolves.toContain('"local"')
+    await expect(loadAlintConfig(projectRoot, join('configs', 'alint.config.toml'))).resolves.toEqual([
+      { plugins: { local: { rules: {} } } },
+    ])
+  })
+
+  it('deduplicates aliases that reach one physical directory through a symlink', async () => {
+    const projectRoot = await createProject(`
+export default [{ plugins: {
+  direct: './plugins/local-plugin',
+  linked: './plugins/local-link',
+} }]
+`)
+    const pluginRoot = await createDirectoryPlugin(projectRoot)
+    await symlink(pluginRoot, join(projectRoot, 'plugins', 'local-link'), 'dir')
+
+    const result = await installStaticPlugins({ cwd: projectRoot })
+
+    expect(result.registeredDirectoryCount).toBe(1)
+    expect(result.lock.plugins.direct).toMatchObject({ path: relative(projectRoot, pluginRoot), type: 'directory' })
+    expect(result.lock.plugins.linked).toMatchObject({ path: relative(projectRoot, pluginRoot), type: 'directory' })
+    expect(Object.keys(result.lock.plugins)).toEqual(['direct', 'linked'])
+    await expect(loadAlintConfig(projectRoot)).resolves.toEqual([
+      { plugins: { direct: { rules: {} }, linked: { rules: {} } } },
+    ])
+  })
+
   it('downloads, extracts, resolves, and locks configured static plugin packages', async () => {
     const projectRoot = await createProject(`
 export default [
@@ -151,7 +238,7 @@ export default [
     const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
     const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
 
-    expect(result.installedCount).toBe(1)
+    expect(result.installedRegistryCount).toBe(1)
     expect(lock).toEqual({
       plugins: {
         python: {
@@ -162,17 +249,18 @@ export default [
           registry: registry.registry,
           specifier: '@alint-js/plugin-python@0.3.1',
           tarball: `${registry.registry}plugin-python-0.3.1.tgz`,
+          type: 'registry',
           version: '0.3.1',
         },
       },
-      version: 1,
+      version: 2,
     })
     await expect(readFile(join(projectRoot, '.alint', 'plugins', 'store', '@alint-js', 'plugin-python', '0.3.1', 'package', 'dist', 'index.mjs'), 'utf8'))
       .resolves
       .toBe('export default { rules: {} }\n')
   })
 
-  it('rejects package names that would escape the project plugin store', async () => {
+  it('treats path traversal syntax as a directory source without escaping the plugin store', async () => {
     const projectRoot = await createProject(`
 export default [
   { plugins: { python: '../../outside@1.0.0' } },
@@ -182,7 +270,7 @@ export default [
 
     await expect(installStaticPlugins({ cwd: projectRoot }))
       .rejects
-      .toThrow('Invalid static plugin package name "../../outside".')
+      .toThrow('Directory plugin "python" does not exist')
     await expect(access(escapedPath))
       .rejects
       .toMatchObject({ code: 'ENOENT' })
@@ -250,11 +338,50 @@ export default [
 
     const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
 
-    expect(result.installedCount).toBe(1)
+    expect(result.installedRegistryCount).toBe(1)
     expect(registry.metadataRequests()).toBe(1)
     expect(registry.tarballRequests()).toBe(1)
     expect(Object.keys(result.lock.plugins)).toEqual(['python', 'py'])
-    expect(result.lock.plugins.python?.entry).toBe(result.lock.plugins.py?.entry)
+    expect(result.lock.plugins.python).toMatchObject({
+      entry: result.lock.plugins.py?.type === 'registry' ? result.lock.plugins.py.entry : undefined,
+      type: 'registry',
+    })
+  })
+
+  it('counts mixed registry and canonical directory sources once while locking every alias', async () => {
+    const projectRoot = await createProject(`
+export default [{ plugins: {
+  python: '@alint-js/plugin-python@0.3.1',
+  local: './plugins/local-plugin',
+  localAgain: './plugins/../plugins/local-plugin',
+} }]
+`)
+    await createDirectoryPlugin(projectRoot)
+    const registry = await startRegistry(await createPluginTarball())
+
+    const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
+
+    expect(result.configuredPluginCount).toBe(3)
+    expect(result.installedRegistryCount).toBe(1)
+    expect(result.registeredDirectoryCount).toBe(1)
+    expect(registry.metadataRequests()).toBe(1)
+    expect(Object.keys(result.lock.plugins)).toEqual(['python', 'local', 'localAgain'])
+  })
+
+  it('does not replace an existing lock when any configured source fails', async () => {
+    const projectRoot = await createProject(`
+export default [{ plugins: {
+  local: './plugins/local-plugin',
+  missing: './plugins/missing',
+} }]
+`)
+    await createDirectoryPlugin(projectRoot)
+    const lockPath = join(projectRoot, '.alint', 'plugins', 'lock.json')
+    await mkdir(join(lockPath, '..'), { recursive: true })
+    await writeFile(lockPath, '{"existing":true}\n', 'utf8')
+
+    await expect(installStaticPlugins({ cwd: projectRoot })).rejects.toThrow('does not exist')
+    await expect(readFile(lockPath, 'utf8')).resolves.toBe('{"existing":true}\n')
   })
 
   it('writes an empty lock file when there are no static plugin references', async () => {
@@ -263,9 +390,10 @@ export default [
     const result = await installStaticPlugins({ cwd: projectRoot })
     const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
 
-    expect(result.installedCount).toBe(0)
+    expect(result.installedRegistryCount).toBe(0)
+    expect(result.registeredDirectoryCount).toBe(0)
     expect(result.configuredPluginCount).toBe(0)
-    expect(lock).toEqual({ plugins: {}, version: 1 })
+    expect(lock).toEqual({ plugins: {}, version: 2 })
   })
 
   it('rejects tarball entries that escape the package directory', async () => {

@@ -1,8 +1,9 @@
 import type { Readable } from 'node:stream'
 
-import type { ParsedPluginSpecifier } from './spec'
+import type { RegistryPluginSpecifier } from './spec'
 import type {
-  PluginLockEntry,
+  DirectoryPluginLockEntry,
+  RegistryPluginLockEntry,
   StaticPluginInstallOptions,
   StaticPluginInstallResult,
 } from './types'
@@ -10,8 +11,8 @@ import type {
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, rename, rm } from 'node:fs/promises'
-import { dirname, join, posix, resolve } from 'node:path'
+import { mkdir, realpath, rename, rm } from 'node:fs/promises'
+import { dirname, isAbsolute, join, posix, relative, resolve, win32 } from 'node:path'
 import { Readable as NodeReadable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { createGunzip } from 'node:zlib'
@@ -25,16 +26,17 @@ import { getProjectPluginStorePath } from '../paths'
 import { isENOENTError, isPathInside } from '../utils/fs'
 import { checkIntegrity } from './integrity'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
-import { resolveInstalledPackageRelativeEntry } from './package'
+import { registerDirectoryPackage, resolveInstalledPackageRelativeEntry } from './package'
+import { getPluginSpecifierKey } from './spec'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
 
-interface InstalledPackage extends Omit<PluginLockEntry, 'alias' | 'specifier'> {}
+interface InstalledPackage extends Omit<RegistryPluginLockEntry, 'alias' | 'specifier'> {}
 
-interface InstallPackageOptions {
+interface InstallRegistryPackageOptions {
   cwd: string
   npmRegistry: string
-  specifier: ParsedPluginSpecifier
+  specifier: RegistryPluginSpecifier
 }
 
 interface NpmMetadata {
@@ -53,19 +55,46 @@ export async function installStaticPlugins(
   const configuredPlugins = config.groups.flatMap(group => group.plugins)
   const npmRegistry = options.registry ?? DEFAULT_REGISTRY
   const lockFile = createEmptyPluginLockFile()
-  const packageInstallationsBySpecifier = new Map<string, Promise<InstalledPackage>>()
+  const registryInstallations = new Map<string, Promise<InstalledPackage>>()
+  const directoryRegistrations = new Map<string, Promise<DirectoryPluginLockEntry>>()
+  const directoryEntries = new Map<string, DirectoryPluginLockEntry>()
 
   for (const configuredPlugin of configuredPlugins) {
-    const specifier = configuredPlugin.specifier.raw
-    let packageInstallation = packageInstallationsBySpecifier.get(specifier)
+    const specifier = configuredPlugin.specifier
+
+    if (specifier.type === 'directory') {
+      const key = getPluginSpecifierKey(specifier)
+      let registration = directoryRegistrations.get(key)
+
+      if (registration === undefined) {
+        registration = registerDirectoryPackage(configuredPlugin.alias, specifier)
+        directoryRegistrations.set(key, registration)
+      }
+
+      const registered = await registration
+      const canonical = registered.path
+      const existing = directoryEntries.get(canonical)
+      const entry = existing ?? registered
+      directoryEntries.set(canonical, entry)
+      lockFile.plugins[configuredPlugin.alias] = {
+        ...entry,
+        alias: configuredPlugin.alias,
+        path: await toDirectoryLockPath(entry.path, options.cwd),
+        specifier: specifier.raw,
+      }
+      continue
+    }
+
+    const key = getPluginSpecifierKey(specifier)
+    let packageInstallation = registryInstallations.get(key)
 
     if (packageInstallation === undefined) {
-      packageInstallation = installPackage({
+      packageInstallation = installRegistryPackage({
         cwd: options.cwd,
         npmRegistry,
-        specifier: configuredPlugin.specifier,
+        specifier,
       })
-      packageInstallationsBySpecifier.set(specifier, packageInstallation)
+      registryInstallations.set(key, packageInstallation)
     }
 
     const installedPackage = await packageInstallation
@@ -76,8 +105,9 @@ export async function installStaticPlugins(
       integrity: installedPackage.integrity,
       name: installedPackage.name,
       registry: installedPackage.registry,
-      specifier,
+      specifier: specifier.raw,
       tarball: installedPackage.tarball,
+      type: 'registry',
       version: installedPackage.version,
     }
   }
@@ -86,8 +116,9 @@ export async function installStaticPlugins(
 
   return {
     configuredPluginCount: configuredPlugins.length,
-    installedCount: packageInstallationsBySpecifier.size,
+    installedRegistryCount: registryInstallations.size,
     lock: lockFile,
+    registeredDirectoryCount: directoryEntries.size,
   }
 }
 
@@ -158,7 +189,7 @@ async function extractPackageTarball(tarball: Buffer, packageDir: string): Promi
   )
 }
 
-async function installPackage(options: InstallPackageOptions): Promise<InstalledPackage> {
+async function installRegistryPackage(options: InstallRegistryPackageOptions): Promise<InstalledPackage> {
   const { name, segments, version } = options.specifier
   const npmRegistry = options.npmRegistry.endsWith('/') ? options.npmRegistry : `${options.npmRegistry}/`
   const metadataUrl = `${npmRegistry.replace(/\/$/u, '')}/${options.specifier.registryPath}`
@@ -205,6 +236,7 @@ async function installPackage(options: InstallPackageOptions): Promise<Installed
     name,
     registry: npmRegistry,
     tarball: dist.tarball,
+    type: 'registry',
     version,
   }
 }
@@ -243,4 +275,14 @@ async function replacePackageDirectory(packageDir: string, stagingPackageDir: st
       await rm(backupPackageDir, { force: true, recursive: true })
     }
   }
+}
+
+async function toDirectoryLockPath(directory: string, cwd: string): Promise<string> {
+  const relativePath = relative(await realpath(cwd), directory)
+
+  if (isAbsolute(relativePath) || win32.isAbsolute(relativePath)) {
+    return directory
+  }
+
+  return relativePath === '' ? '.' : relativePath
 }

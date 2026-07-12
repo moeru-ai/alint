@@ -20,11 +20,167 @@ function createLockEntry(alias: string, specifier: string, entry: string) {
     registry: 'https://registry.npmjs.org/',
     specifier,
     tarball: 'https://registry.npmjs.org/plugin.tgz',
+    type: 'registry' as const,
     version,
   }
 }
 
 describe('plugin lock parsing', () => {
+  it('rejects version 1 with install guidance', () => {
+    expect(() => parsePluginLockFile({ plugins: {}, version: 1 }, { cwd: '/repo' }))
+      .toThrow('Unsupported plugin lock version 1. Run: alint plugin install')
+  })
+
+  it('parses strict directory entries without registry integrity fields', () => {
+    const lock = parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          path: './plugins/example',
+          specifier: './plugins/example',
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })
+
+    expect(lock.entries[0]?.specifier).toEqual({
+      directory: '/repo/plugins/example',
+      raw: './plugins/example',
+      type: 'directory',
+    })
+  })
+
+  it('rejects registry fields on directory entries', () => {
+    expect(() => parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          integrity: 'sha512-test',
+          path: '/repo/plugins/example',
+          specifier: '/repo/plugins/example',
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })).toThrow()
+  })
+
+  it('rejects registry-looking specifiers on directory entries', () => {
+    expect(() => parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          path: './plugins/example',
+          specifier: '@alint-js/plugin-example@1.0.0',
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })).toThrow('Directory plugin lock entry "example" must use a directory specifier.')
+  })
+
+  it('rejects directory-looking specifiers on registry entries', () => {
+    expect(() => parsePluginLockFile({
+      plugins: {
+        example: {
+          ...createLockEntry('example', './plugins/example', '.alint/plugins/example/index.mjs'),
+          name: '@alint-js/plugin-example',
+          version: '1.0.0',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })).toThrow('Registry plugin lock entry "example" must use a registry specifier.')
+  })
+
+  it('matches directory references by normalized host path identity', () => {
+    const lock = parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          path: './plugins/../plugins/example',
+          specifier: './different-raw-value',
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })
+    const reference = {
+      alias: 'example',
+      specifier: parsePluginSpecifier('file:///repo/plugins/example'),
+    }
+
+    expect(lock.find(reference)).toMatchObject({
+      lockEntry: lock.entries[0]?.lockEntry,
+      specifier: reference.specifier,
+      type: 'directory',
+    })
+    expect(lock.get(reference)).toMatchObject({
+      lockEntry: lock.entries[0]?.lockEntry,
+      specifier: reference.specifier,
+      type: 'directory',
+    })
+  })
+
+  it.each([
+    String.raw`C:\plugins\example`,
+    String.raw`\\server\plugins\example`,
+  ])('preserves Windows absolute directory lock identity on non-Windows hosts: %s', (windowsPath) => {
+    const lock = parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          path: windowsPath,
+          specifier: windowsPath,
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })
+    const entry = lock.entries[0]
+
+    expect(entry?.type).toBe('directory')
+    if (entry?.type !== 'directory') {
+      throw new Error('Expected directory lock entry.')
+    }
+    expect(entry.specifier.directory).toBe(windowsPath)
+    expect(lock.find({
+      alias: 'example',
+      specifier: parsePluginSpecifier(windowsPath),
+    })).toStrictEqual(entry)
+  })
+
+  it('does not match registry locks to directory references', () => {
+    const lock = parsePluginLockFile({
+      plugins: {
+        example: createLockEntry('example', '@alint-js/plugin-example@1.0.0', '.alint/plugins/example/index.mjs'),
+      },
+      version: 2,
+    }, { cwd: '/repo' })
+    const reference = { alias: 'example', specifier: parsePluginSpecifier('/repo/plugins/example') }
+
+    expect(lock.find(reference)).toBeUndefined()
+    expect(() => lock.get(reference)).toThrow('Plugin "example" is locked to @alint-js/plugin-example@1.0.0, but config requires /repo/plugins/example.')
+  })
+
+  it('does not match directory locks to registry references', () => {
+    const lock = parsePluginLockFile({
+      plugins: {
+        example: {
+          alias: 'example',
+          path: '/repo/plugins/example',
+          specifier: '/repo/plugins/example',
+          type: 'directory',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })
+    const reference = { alias: 'example', specifier: parsePluginSpecifier('@alint-js/plugin-example@1.0.0') }
+
+    expect(lock.find(reference)).toBeUndefined()
+    expect(() => lock.get(reference)).toThrow('Plugin "example" is locked to /repo/plugins/example, but config requires @alint-js/plugin-example@1.0.0.')
+  })
+
   it('parses lock entries and finds matching static plugin references', () => {
     const lock = parsePluginLockFile({
       plugins: {
@@ -36,10 +192,11 @@ describe('plugin lock parsing', () => {
           registry: 'https://registry.npmjs.org/',
           specifier: '@alint-js/plugin-python@0.3.1',
           tarball: 'https://registry.npmjs.org/plugin.tgz',
+          type: 'registry',
           version: '0.3.1',
         },
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })
 
     const entry = lock.get({
@@ -49,11 +206,30 @@ describe('plugin lock parsing', () => {
 
     expect(entry.alias).toBe('python')
     expect(entry.specifier).toEqual(parsePluginSpecifier('@alint-js/plugin-python@0.3.1'))
-    expect(entry.lockEntry.entry).toBe('.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs')
+    expect(entry.lockEntry).toMatchObject({
+      entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+      type: 'registry',
+    })
+  })
+
+  it('rejects registry entries whose identity differs from their specifier', () => {
+    expect(() => parsePluginLockFile({
+      plugins: {
+        python: {
+          ...createLockEntry(
+            'python',
+            '@alint-js/plugin-python@0.3.1',
+            '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+          ),
+          version: '0.3.0',
+        },
+      },
+      version: 2,
+    }, { cwd: '/repo' })).toThrow('Registry plugin lock entry "python" identity does not match specifier "@alint-js/plugin-python@0.3.1".')
   })
 
   it('reports missing lock entries with install guidance', () => {
-    const lock = parsePluginLockFile({ plugins: {}, version: 1 }, { cwd: '/repo' })
+    const lock = parsePluginLockFile({ plugins: {}, version: 2 }, { cwd: '/repo' })
 
     expect(() => lock.get({
       alias: 'python',
@@ -72,10 +248,11 @@ describe('plugin lock parsing', () => {
           registry: 'https://registry.npmjs.org/',
           specifier: '@alint-js/plugin-python@0.3.0',
           tarball: 'https://registry.npmjs.org/plugin.tgz',
+          type: 'registry',
           version: '0.3.0',
         },
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })
 
     expect(() => lock.get({
@@ -95,10 +272,11 @@ describe('plugin lock parsing', () => {
           registry: 'https://registry.npmjs.org/',
           specifier: '@alint-js/plugin-python@0.3.1',
           tarball: 'https://registry.npmjs.org/plugin.tgz',
+          type: 'registry',
           version: '0.3.1',
         },
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })).toThrow('Plugin lock entry key "python" must match alias "js".')
   })
 
@@ -113,10 +291,11 @@ describe('plugin lock parsing', () => {
           registry: 'https://registry.npmjs.org/',
           specifier: '@alint-js/plugin-python@0.3.1',
           tarball: 'https://registry.npmjs.org/plugin.tgz',
+          type: 'registry',
           version: '0.3.1',
         },
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })).toThrow('Unsupported npm integrity format for "@alint-js/plugin-python@0.3.1": "sha1-deadbeef".')
   })
 })
@@ -163,7 +342,7 @@ describe('plugin lock static config state', () => {
           '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
         ),
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })
 
     expect(listMissing(config, lock)).toEqual([
@@ -186,7 +365,7 @@ describe('plugin lock static config state', () => {
           '.alint/plugins/store/@alint-js/plugin-python/0.3.0/package/dist/index.mjs',
         ),
       },
-      version: 1,
+      version: 2,
     }, { cwd: '/repo' })
 
     expect(listMissing(config, lock)).toEqual([
@@ -212,21 +391,24 @@ describe('plugin lock static config state', () => {
           '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
         ),
       },
-      version: 1,
+      version: 2,
     }, { cwd: projectRoot })
 
     const unresolved = await listUnresolved(config, lock)
 
     expect(unresolved).toHaveLength(1)
     expect(unresolved[0]?.alias).toBe('python')
-    expect(unresolved[0]?.lockEntry.entry).toBe('.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs')
+    expect(unresolved[0]?.lockEntry).toMatchObject({
+      entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
+      type: 'registry',
+    })
   })
 
   it('ignores static plugin references missing from the lock file when listing unresolved entries', async () => {
     const config = parseStaticConfig([
       { plugins: { python: '@alint-js/plugin-python@0.3.1' } },
     ])
-    const lock = parsePluginLockFile({ plugins: {}, version: 1 }, { cwd: await createTempProject() })
+    const lock = parsePluginLockFile({ plugins: {}, version: 2 }, { cwd: await createTempProject() })
 
     await expect(listUnresolved(config, lock)).resolves.toEqual([])
   })
@@ -245,7 +427,7 @@ describe('plugin lock static config state', () => {
           join(packageDir, 'dist', 'index.mjs'),
         ),
       },
-      version: 1,
+      version: 2,
     }, { cwd: projectRoot })
 
     await expect(listUnresolved(config, lock)).resolves.toEqual([])
@@ -284,6 +466,7 @@ describe('plugin lock disk loading', () => {
       registry: 'https://registry.npmjs.org/',
       specifier: '@alint-js/plugin-python@0.3.1',
       tarball: 'https://registry.npmjs.org/plugin.tgz',
+      type: 'registry',
       version: '0.3.1',
     }
 
@@ -297,12 +480,13 @@ describe('plugin lock disk loading', () => {
           registry: 'https://registry.npmjs.org/',
           specifier: '@alint-js/plugin-python@0.3.1',
           tarball: 'https://registry.npmjs.org/plugin.tgz',
+          type: 'registry',
           version: '0.3.1',
         },
       },
-      version: 1,
+      version: 2,
     })
-    expect(second).toEqual({ plugins: {}, version: 1 })
+    expect(second).toEqual({ plugins: {}, version: 2 })
   })
 
   it('rejects malformed lock files', async () => {
@@ -325,7 +509,7 @@ describe('plugin lock disk loading', () => {
           '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
         ),
       },
-      version: 1,
+      version: 2,
     })
     const originalLock = await readFile(lockPath, 'utf8')
 
@@ -339,7 +523,7 @@ describe('plugin lock disk loading', () => {
           ),
         },
       },
-      version: 1,
+      version: 2,
     })).rejects.toThrow('Plugin lock entry key "python" must match alias "javascript".')
     await expect(readFile(lockPath, 'utf8')).resolves.toBe(originalLock)
   })

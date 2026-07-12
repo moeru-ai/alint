@@ -1,14 +1,25 @@
 import type { PackageJson } from '@package-json/types'
 
 import type { StaticPluginReference } from '../config/static'
-import type { ParsedPluginSpecifier } from './spec'
+import type { DirectoryPluginSpecifier, RegistryPluginSpecifier } from './spec'
 
-export interface ParsedPluginLockEntry {
+export interface DirectoryPluginLockEntry {
+  alias: string
+  path: string
+  specifier: string
+  type: 'directory'
+}
+
+export interface ParsedDirectoryPluginLockEntry {
   alias: string
   cwd: string
-  lockEntry: PluginLockEntry
-  specifier: ParsedPluginSpecifier
+  lockEntry: DirectoryPluginLockEntry
+  resolutionError?: unknown
+  specifier: DirectoryPluginSpecifier
+  type: 'directory'
 }
+
+export type ParsedPluginLockEntry = ParsedDirectoryPluginLockEntry | ParsedRegistryPluginLockEntry
 
 export interface ParsedPluginLockFile {
   cwd: string
@@ -18,7 +29,23 @@ export interface ParsedPluginLockFile {
   get: (reference: StaticPluginReference) => ParsedPluginLockEntry
 }
 
-export interface PluginLockEntry {
+export interface ParsedRegistryPluginLockEntry {
+  alias: string
+  cwd: string
+  lockEntry: RegistryPluginLockEntry
+  resolutionError?: unknown
+  specifier: RegistryPluginSpecifier
+  type: 'registry'
+}
+
+export type PluginLockEntry = DirectoryPluginLockEntry | RegistryPluginLockEntry
+
+export interface PluginLockFile {
+  plugins: Record<string, PluginLockEntry>
+  version: 2
+}
+
+export interface RegistryPluginLockEntry {
   alias: string
   entry: string
   integrity: string
@@ -26,16 +53,13 @@ export interface PluginLockEntry {
   registry: string
   specifier: string
   tarball: string
+  type: 'registry'
   version: string
-}
-
-export interface PluginLockFile {
-  plugins: Record<string, PluginLockEntry>
-  version: 1
 }
 
 export interface ResolvedPluginPackage {
   entry: string
+  live?: boolean
   packageDir: string
   packageJson: PackageJson
 }
@@ -48,6 +72,7 @@ export interface StaticPluginInstallOptions {
 
 export interface StaticPluginInstallResult {
   configuredPluginCount: number
-  installedCount: number
+  installedRegistryCount: number
   lock: PluginLockFile
+  registeredDirectoryCount: number
 }
