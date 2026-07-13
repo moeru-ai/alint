@@ -1,5 +1,11 @@
 # `alint`
 
+[![npm version][npm-version-src]][npm-version-href]
+[![npm downloads][npm-downloads-src]][npm-downloads-href]
+[![bundle][bundle-src]][bundle-href]
+[![JSDocs][jsdocs-src]][jsdocs-href]
+[![License][license-src]][license-href]
+
 ![Demo](https://raw.githubusercontent.com/moeru-ai/alint/main/docs/assets/demo.gif)
 
 `alint` is an [`eslint`](https://eslint.org/) inspired agentic code analysis tool for vibe-coded code that needs another look. It runs model-backed rules against source files, reports diagnostics in a familiar lint format, and lets rule authors use plain model calls or swappable tool-using agents when a rule needs deeper context.
@@ -486,3 +492,15 @@ pnpm lint
 ## License
 
 MIT
+
+[npm-version-src]: https://img.shields.io/npm/v/@alint-js/cli?style=flat&colorA=080f12&colorB=1fa669
+[npm-version-href]: https://npmjs.com/package/@alint-js/cli
+[npm-downloads-src]: https://img.shields.io/npm/dm/@alint-js/core?style=flat&colorA=080f12&colorB=1fa669
+[npm-downloads-href]: https://npmjs.com/package/@alint-js/core
+[bundle-src]: https://img.shields.io/bundlephobia/minzip/@alint-js/cli?style=flat&colorA=080f12&colorB=1fa669&label=minzip
+[bundle-href]: https://bundlephobia.com/result?p=@alint-js/cli
+[license-src]: https://img.shields.io/github/license/moeru-ai/alint.svg?style=flat&colorA=080f12&colorB=1fa669
+[license-href]: https://github.com/moeru-ai/alint/blob/main/LICENSE
+[jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
+[jsdocs-href]: https://www.jsdocs.io/package/@alint-js/cli
+
