@@ -1,12 +1,6 @@
 import type { PackageJson } from '@package-json/types'
 
-import { readFile } from 'node:fs/promises'
-
 import { exports as resolvePackageExports } from 'resolve.exports'
-
-export async function readManifest(path: string): Promise<PackageJson> {
-  return JSON.parse(await readFile(path, 'utf8')) as PackageJson
-}
 
 export function resolveRelativeRootEntry(packageJson: PackageJson): string {
   // Select the Node ESM import condition; browser and CommonJS entries are not executable in this runtime.

@@ -1,5 +1,7 @@
 import type { Readable } from 'node:stream'
 
+import type { PackageJson } from '@package-json/types'
+
 import type { RegistryPluginSpecifier } from '../../spec'
 import type { ParsedRegistryPluginLockEntry, RegistryPluginLockEntry } from '../../types'
 import type { PluginImportTarget } from '../types'
@@ -7,7 +9,7 @@ import type { PluginImportTarget } from '../types'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { createWriteStream } from 'node:fs'
-import { mkdir, realpath, rename, rm } from 'node:fs/promises'
+import { mkdir, readFile, realpath, rename, rm } from 'node:fs/promises'
 import { dirname, isAbsolute, join, posix, relative, resolve as resolvePath } from 'node:path'
 import { Readable as NodeReadable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
@@ -20,7 +22,7 @@ import { ofetch } from 'ofetch'
 import { getProjectPluginStorePath } from '../../../paths'
 import { exists, isENOENTError, isPathInside } from '../../../utils/fs'
 import { checkIntegrity } from '../../integrity'
-import { readManifest, resolveRelativeRootEntry } from '../manifest'
+import { resolveRelativeRootEntry } from '../manifest'
 
 export type InstalledPackageSource = Omit<RegistryPluginLockEntry, 'alias' | 'specifier'>
 
@@ -92,7 +94,8 @@ export async function install(options: InstallOptions): Promise<InstalledPackage
     checkIntegrity(tarball, dist.integrity, `${name}@${version}`)
     await mkdir(stagingPackageDir, { recursive: true })
     await extractTarball(tarball, stagingPackageDir)
-    relativeEntry = resolveRelativeRootEntry(await readManifest(join(stagingPackageDir, 'package.json')))
+    const packageJson = JSON.parse(await readFile(join(stagingPackageDir, 'package.json'), 'utf8')) as PackageJson
+    relativeEntry = resolveRelativeRootEntry(packageJson)
     await replaceDirectory(packageDir, stagingPackageDir)
   }
   catch (error) {
@@ -142,7 +145,7 @@ export async function resolve(entry: ParsedRegistryPluginLockEntry): Promise<Plu
     throw new Error(`Plugin lock entry "${entry.alias}" resolves outside the locked package directory.`)
   }
 
-  await readManifest(join(packageDir, 'package.json'))
+  JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
   return { cache: 'default', entry: resolvedEntry }
 }
 

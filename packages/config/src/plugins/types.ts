@@ -63,7 +63,7 @@ export interface StaticPluginInstallOptions {
 
 export interface StaticPluginInstallResult {
   configuredPluginCount: number
-  installedRegistryCount: number
+  installedLocalDirectoryCount: number
+  installedPackageCount: number
   lock: PluginLockFile
-  registeredDirectoryCount: number
 }

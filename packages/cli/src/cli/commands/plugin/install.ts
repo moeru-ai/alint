@@ -2,35 +2,9 @@ import { installStaticPlugins } from '@alint-js/config'
 
 import { defineCommand } from '../command'
 
-interface InstallSummaryCounts {
-  installedRegistryCount: number
-  registeredDirectoryCount: number
-}
-
 interface PluginInstallOptions {
   config?: string
   registry?: string
-}
-
-function formatInstallSummary(counts: InstallSummaryCounts): string {
-  const clauses: string[] = []
-
-  if (counts.installedRegistryCount > 0) {
-    const packageLabel = counts.installedRegistryCount === 1 ? 'package' : 'packages'
-    clauses.push(`Installed ${counts.installedRegistryCount} registry plugin ${packageLabel}`)
-  }
-
-  if (counts.registeredDirectoryCount > 0) {
-    const directoryLabel = counts.registeredDirectoryCount === 1 ? 'directory' : 'directories'
-    clauses.push(`registered ${counts.registeredDirectoryCount} local plugin ${directoryLabel}`)
-  }
-
-  const summary = clauses.join(' and ')
-  if (summary === '') {
-    return ''
-  }
-
-  return `${summary.charAt(0).toUpperCase()}${summary.slice(1)}.\n`
 }
 
 export const install = defineCommand({
@@ -46,13 +20,13 @@ export const install = defineCommand({
       return 0
     }
 
-    context.io.stdout.write(formatInstallSummary(result))
+    context.io.stdout.write(`Installed packages: ${result.installedPackageCount}, local directories: ${result.installedLocalDirectoryCount}.\n`)
     return 0
   },
-  description: 'Install or register static plugins',
+  description: 'Install plugins from static configs',
   examples: [
     [
-      '# Install or register plugins referenced by static config',
+      '# Install plugins referenced by static configs',
       'alint plugin install',
     ].join('\n'),
     [
@@ -60,13 +34,13 @@ export const install = defineCommand({
       'alint plugin install --registry https://registry.npmjs.org/',
     ].join('\n'),
     [
-      '# Register a local directory configured as ./plugins/local-plugin',
+      '# Install a local directory configured as ./plugins/local-plugin',
       'alint plugin install',
     ].join('\n'),
   ],
   help: [
-    'Install registry packages and register local directories referenced by static config plugin strings.',
-    'Registry packages are extracted into the project plugin store. Local directory paths are registered in place. Both are recorded in `.alint/plugins/lock.json`.',
+    'Install remote packages or local directories from static configs.',
+    'Remote packages are extracted into the project plugin store. Local directories are installed in place. Both are recorded in `.alint/plugins/lock.json`.',
   ].join('\n\n'),
   name: 'install',
   options: [

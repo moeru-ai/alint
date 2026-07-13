@@ -26,27 +26,27 @@ export async function installStaticPlugins(
   const configuredPlugins = config.groups.flatMap(group => group.plugins)
   const npmRegistry = options.registry ?? DEFAULT_REGISTRY
   const lockFile = createEmptyPluginLockFile()
-  const registryInstallations = new Map<string, Promise<InstalledPackageSource>>()
-  const directoryRegistrations = new Map<string, Promise<InstalledLocalSource>>()
-  const directoryEntries = new Map<string, InstalledLocalSource>()
+  const packageInstallations = new Map<string, Promise<InstalledPackageSource>>()
+  const localDirectoryInstallations = new Map<string, Promise<InstalledLocalSource>>()
+  const installedLocalDirectories = new Map<string, InstalledLocalSource>()
 
   for (const configuredPlugin of configuredPlugins) {
     const specifier = configuredPlugin.specifier
 
     if (specifier.type === 'directory') {
       const key = getPluginSpecifierKey(specifier)
-      let registration = directoryRegistrations.get(key)
+      let installation = localDirectoryInstallations.get(key)
 
-      if (registration === undefined) {
-        registration = installLocalSource({ alias: configuredPlugin.alias, specifier })
-        directoryRegistrations.set(key, registration)
+      if (installation === undefined) {
+        installation = installLocalSource({ alias: configuredPlugin.alias, specifier })
+        localDirectoryInstallations.set(key, installation)
       }
 
-      const registered = await registration
-      const canonical = registered.path
-      const existing = directoryEntries.get(canonical)
-      const entry = existing ?? registered
-      directoryEntries.set(canonical, entry)
+      const installed = await installation
+      const canonical = installed.path
+      const existing = installedLocalDirectories.get(canonical)
+      const entry = existing ?? installed
+      installedLocalDirectories.set(canonical, entry)
       lockFile.plugins[configuredPlugin.alias] = await createLocalLockEntry(entry, {
         alias: configuredPlugin.alias,
         cwd: options.cwd,
@@ -56,7 +56,7 @@ export async function installStaticPlugins(
     }
 
     const key = getPluginSpecifierKey(specifier)
-    let packageInstallation = registryInstallations.get(key)
+    let packageInstallation = packageInstallations.get(key)
 
     if (packageInstallation === undefined) {
       packageInstallation = installPackageSource({
@@ -64,7 +64,7 @@ export async function installStaticPlugins(
         npmRegistry,
         specifier,
       })
-      registryInstallations.set(key, packageInstallation)
+      packageInstallations.set(key, packageInstallation)
     }
 
     const installedPackage = await packageInstallation
@@ -79,8 +79,8 @@ export async function installStaticPlugins(
 
   return {
     configuredPluginCount: configuredPlugins.length,
-    installedRegistryCount: registryInstallations.size,
+    installedLocalDirectoryCount: installedLocalDirectories.size,
+    installedPackageCount: packageInstallations.size,
     lock: lockFile,
-    registeredDirectoryCount: directoryEntries.size,
   }
 }

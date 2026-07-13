@@ -240,7 +240,14 @@ export default defineConfig([
 ])
 ```
 
-Static TOML config can reference an exact registry package version or a local plugin directory:
+#### Executable and static configs
+
+`alint` supports executable configs (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`) and data-only static configs (`.toml`, `.yaml`, `.yml`, `.json`, `.jsonc`, and `.json5`).
+
+- Executable configs export a flat config array and can import plugin definitions directly.
+- Static configs use a `config.group` array and identify plugin sources with strings. They are useful for Python, Rust, Go, and other repositories that do not want to author a JavaScript config file. The `alint` CLI itself still requires Node.js.
+
+For example, a TOML static config can install an exact remote package or a local plugin directory:
 
 ```toml
 [[config.group]]
@@ -261,13 +268,18 @@ Relative plugin paths are resolved from the directory containing the config file
 native = 'C:\alint\plugins\native-plugin'
 ```
 
-Run `alint plugin install` after adding or changing configured source specifiers, or after moving a local directory or changing its symlink target. An ordinary rebuild or content change within the same local root does not require reinstalling. Registry packages are downloaded into `.alint/plugins/store`; local directories are registered in place. Registration does not build the plugin or install its dependencies. Directory sources bypass the registry, package store, and integrity checks.
+Use `alint plugin install` after adding or changing plugin sources.
 
-Local plugin root and entry containment checks validate the registered source identity; they are not a sandbox. The plugin and all transitive dependencies execute as fully trusted Node.js code and may access resources outside the registered directory.
+- **Package:** `@scope/alint-plugin@1.2.3` downloads that exact version into `.alint/plugins/store`, verifies its integrity, and loads its root export.
+- **Local:** `./plugins/my-plugin`, an absolute directory, or a `file:` URL loads the current package root export in place. `alint` checks that the package and entry exist and that the entry stays inside the package directory. It does not build the plugin or install the plugin's dependencies.
 
-For a local directory, `alint` re-resolves the root package manifest, export, and entry content. The root entry content hash cache-busts imports, so rebuilt root output is visible without reinstalling the plugin. Unbundled transitive imports retain normal Node.js ESM caching within a process, so transitive-only changes require a new CLI process. A root rebuild or change refreshes those dependencies only when their content is bundled or copied into the changed root entry.
+Run the install command again after changing a source string, moving a local directory, or changing its symlink target. Changes inside the same local directory are loaded by the next CLI process without reinstalling.
 
-`.alint/plugins/lock.json` uses lock version 2 for both source types. Registry entries record an installed package snapshot and integrity metadata; directory entries record source identity and resolve the current directory contents at runtime.
+Local plugins execute as trusted Node.js code. Directory containment checks validate the installed source; they are not a sandbox.
+
+#### Plugin lockfile
+
+`alint plugin install` writes `.alint/plugins/lock.json`. Package entries lock the downloaded package and integrity metadata. Local entries lock the physical directory identity while loading its current contents at runtime.
 
 Rule severities follow the familiar lint convention:
 

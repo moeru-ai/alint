@@ -151,7 +151,7 @@ describe('static plugin installation', () => {
     return pluginRoot
   }
 
-  it('registers a local TOML plugin without accessing the registry or plugin store', async () => {
+  it('installs a local TOML plugin without accessing the registry or plugin store', async () => {
     const projectRoot = await createProject(`
 [[config.group]]
 [config.group.plugins]
@@ -162,8 +162,8 @@ local = "./plugins/local-plugin"
     const result = await installStaticPlugins({ cwd: projectRoot, registry: 'http://127.0.0.1:1/' })
 
     expect(result.configuredPluginCount).toBe(1)
-    expect(result.installedRegistryCount).toBe(0)
-    expect(result.registeredDirectoryCount).toBe(1)
+    expect(result.installedPackageCount).toBe(0)
+    expect(result.installedLocalDirectoryCount).toBe(1)
     expect(result.lock.plugins.local).toEqual({
       alias: 'local',
       path: relative(projectRoot, pluginRoot),
@@ -213,7 +213,7 @@ export default [{ plugins: {
 
     const result = await installStaticPlugins({ cwd: projectRoot })
 
-    expect(result.registeredDirectoryCount).toBe(1)
+    expect(result.installedLocalDirectoryCount).toBe(1)
     expect(result.lock.plugins.direct).toMatchObject({ path: relative(projectRoot, pluginRoot), type: 'directory' })
     expect(result.lock.plugins.linked).toEqual({
       alias: 'linked',
@@ -254,7 +254,7 @@ export default [
 
     const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
 
-    expect(result.installedRegistryCount).toBe(1)
+    expect(result.installedPackageCount).toBe(1)
     expect(registry.metadataRequests()).toBe(1)
     expect(registry.tarballRequests()).toBe(1)
     expect(Object.keys(result.lock.plugins)).toEqual(['python', 'py'])
@@ -303,8 +303,8 @@ export default [{ plugins: {
     const result = await installStaticPlugins({ cwd: projectRoot, registry: registry.registry })
 
     expect(result.configuredPluginCount).toBe(3)
-    expect(result.installedRegistryCount).toBe(1)
-    expect(result.registeredDirectoryCount).toBe(1)
+    expect(result.installedPackageCount).toBe(1)
+    expect(result.installedLocalDirectoryCount).toBe(1)
     expect(registry.metadataRequests()).toBe(1)
     expect(Object.keys(result.lock.plugins)).toEqual(['python', 'local', 'localAgain'])
   })
@@ -331,8 +331,8 @@ export default [{ plugins: {
     const result = await installStaticPlugins({ cwd: projectRoot })
     const lock = JSON.parse(await readFile(join(projectRoot, '.alint', 'plugins', 'lock.json'), 'utf8')) as unknown
 
-    expect(result.installedRegistryCount).toBe(0)
-    expect(result.registeredDirectoryCount).toBe(0)
+    expect(result.installedPackageCount).toBe(0)
+    expect(result.installedLocalDirectoryCount).toBe(0)
     expect(result.configuredPluginCount).toBe(0)
     expect(lock).toEqual({ plugins: {}, version: 2 })
   })

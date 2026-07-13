@@ -5,22 +5,22 @@ export const plugin = defineCommand({
   children: [
     install,
   ],
-  description: 'Manage static plugins',
+  description: 'Install remote packages or local directories from static configs',
   examples: [
     [
-      '# Install packages or register local directories from static config',
+      '# Install remote packages or local directories from static configs',
       'alint plugin install',
     ].join('\n'),
     [
-      '# Register a local plugin directory path in alint.config.toml',
+      '# Install a local plugin directory from alint.config.toml',
       '[[config.group]]',
       '[config.group.plugins]',
       'local = "./plugins/local-plugin"',
     ].join('\n'),
   ],
   help: [
-    'Install registry packages and register live local plugin directories.',
-    'Use `plugin install` after adding plugin source specifiers to static config.',
+    'Install remote packages or local directories from static configs.',
+    'Use `plugin install` after adding or changing plugin sources.',
   ].join('\n\n'),
   name: 'plugin',
 })

@@ -168,7 +168,7 @@ python = "@alint-js/plugin-python@0.3.1"
 
     await expect(loadAlintConfig(cwd))
       .rejects
-      .toThrow('Static plugin packages could not be resolved from the lock file: python (@alint-js/plugin-python@0.3.1).\nRun: alint plugin install')
+      .toThrow('Static plugins could not be resolved from the lock file: python (@alint-js/plugin-python@0.3.1).\nRun: alint plugin install')
   })
 
   it('surfaces the specific missing build output for a locked directory plugin', async () => {
@@ -202,7 +202,6 @@ local = "./plugins/local"
       }
 
       expect(error.message).toContain('Run: alint plugin install')
-      expect(error.message).toContain('Cause: Directory plugin "local" entry "dist/index.mjs" does not exist. Build the package and try again.')
       expect(error.cause).toBeInstanceOf(Error)
 
       if (!(error.cause instanceof Error)) {

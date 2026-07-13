@@ -57,7 +57,7 @@ describe('local plugin source', () => {
     await writeFile(join(packageDir, 'dist', 'index.mjs'), 'export default { rules: { local: {} } }\n', 'utf8')
   }
 
-  it('registers, resolves, and imports a directory package', async () => {
+  it('installs, resolves, and imports a directory package', async () => {
     const projectRoot = await createTempProject()
     const packageDir = join(projectRoot, 'plugins', 'local')
     await writeDirectoryPackage(packageDir)
@@ -72,7 +72,7 @@ describe('local plugin source', () => {
     expect(resolved.cache).toBe('content')
   })
 
-  it('registers a directory package without importing its root entry', async () => {
+  it('installs a directory package without importing its root entry', async () => {
     const projectRoot = await createTempProject()
     const packageDir = join(projectRoot, 'plugin')
     const markerPath = join(projectRoot, 'entry-imported')
@@ -80,7 +80,7 @@ describe('local plugin source', () => {
     await writeFile(join(packageDir, 'dist', 'index.mjs'), `
 import { writeFileSync } from 'node:fs'
 writeFileSync(${JSON.stringify(markerPath)}, '')
-throw new Error('entry must not be imported during registration')
+throw new Error('entry must not be imported during installation')
 `, 'utf8')
 
     await expect(install({ alias: 'local', specifier: createDirectorySpecifier(packageDir) }))
@@ -254,7 +254,7 @@ throw new Error('entry must not be imported during registration')
       .rejects
       .toMatchObject({
         cause: { code: 'ELOOP' },
-        message: expect.stringContaining(`Could not resolve configured directory plugin "local" at "${loopPath}":`),
+        message: `Could not resolve configured directory plugin "local" at "${loopPath}".`,
       })
   })
 

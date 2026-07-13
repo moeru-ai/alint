@@ -1,14 +1,14 @@
+import type { PackageJson } from '@package-json/types'
+
 import type { DirectoryPluginSpecifier } from '../../spec'
 import type { DirectoryPluginLockEntry, ParsedDirectoryPluginLockEntry } from '../../types'
 import type { PluginImportTarget } from '../types'
 
-import { realpath, stat } from 'node:fs/promises'
+import { readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath, win32 } from 'node:path'
 
-import { errorMessageFrom } from '@moeru/std/error'
-
 import { isENOENTError, isPathInside } from '../../../utils/fs'
-import { readManifest, resolveRelativeRootEntry } from '../manifest'
+import { resolveRelativeRootEntry } from '../manifest'
 
 export interface InstalledLocalSource {
   path: string
@@ -78,7 +78,7 @@ async function canonicalRoot(alias: string, directory: string): Promise<string> 
       throw new Error(`Directory plugin "${alias}" does not exist at "${directory}".`, { cause: error })
     }
 
-    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+    throw new Error(`Could not resolve directory plugin "${alias}" at "${directory}".`, { cause: error })
   }
 
   let directoryStat
@@ -87,7 +87,7 @@ async function canonicalRoot(alias: string, directory: string): Promise<string> 
     directoryStat = await stat(packageDir)
   }
   catch (error) {
-    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}".`, { cause: error })
   }
 
   if (!directoryStat.isDirectory()) {
@@ -110,15 +110,20 @@ async function lockedRoot(
       throw new Error(`Directory plugin "${alias}" has moved or its symlink target changed. Run: alint plugin install`, { cause: error })
     }
 
-    throw new Error(`Could not resolve ${source} directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+    throw new Error(`Could not resolve ${source} directory plugin "${alias}" at "${directory}".`, { cause: error })
   }
 }
 
 async function validateRoot(alias: string, packageDir: string): Promise<string> {
   const manifestPath = join(packageDir, 'package.json')
-  const packageJson = await readManifest(manifestPath).catch((error: unknown) => {
-    throw new Error(`Directory plugin "${alias}" has an unreadable or invalid package.json at "${manifestPath}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
-  })
+  let packageJson: PackageJson
+
+  try {
+    packageJson = JSON.parse(await readFile(manifestPath, 'utf8')) as PackageJson
+  }
+  catch (error) {
+    throw new Error(`Directory plugin "${alias}" has an unreadable or invalid package.json at "${manifestPath}".`, { cause: error })
+  }
 
   const relativeEntry = resolveRelativeRootEntry(packageJson)
   const entry = resolvePath(packageDir, relativeEntry)
@@ -137,7 +142,7 @@ async function validateRoot(alias: string, packageDir: string): Promise<string> 
       throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" does not exist. Build the package and try again.`, { cause: error })
     }
 
-    throw new Error(`Could not resolve directory plugin "${alias}" entry "${relativeEntry}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+    throw new Error(`Could not resolve directory plugin "${alias}" entry "${relativeEntry}".`, { cause: error })
   }
 
   if (!isPathInside(physicalEntry, packageDir)) {
@@ -154,7 +159,7 @@ async function validateRoot(alias: string, packageDir: string): Promise<string> 
       throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" does not exist. Build the package and try again.`, { cause: error })
     }
 
-    throw new Error(`Could not inspect directory plugin "${alias}" entry "${relativeEntry}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+    throw new Error(`Could not inspect directory plugin "${alias}" entry "${relativeEntry}".`, { cause: error })
   }
 
   if (!entryStat.isFile()) {

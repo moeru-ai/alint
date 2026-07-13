@@ -545,7 +545,7 @@ describe('executeCli', () => {
     expect(io.stderrText).toBe('')
   })
 
-  it('reports one registered local plugin directory', async () => {
+  it('reports one installed local plugin directory', async () => {
     const io = await createTestIo()
     await createDirectoryPlugin(io.cwd, 'local-plugin')
     await writeFile(join(io.cwd, 'alint.config.toml'), `
@@ -557,11 +557,11 @@ local = "./plugins/local-plugin"
     const exitCode = await executeCli(['node', 'alint', 'plugin', 'install'], io)
 
     expect(exitCode).toBe(0)
-    expect(io.stdoutText).toBe('Registered 1 local plugin directory.\n')
+    expect(io.stdoutText).toBe('Installed packages: 0, local directories: 1.\n')
     expect(io.stderrText).toBe('')
   })
 
-  it('documents local directory registration in plugin help', async () => {
+  it('documents local directory installation in plugin help', async () => {
     const io = await createTestIo()
 
     await executeCli(['node', 'alint', 'plugin', '--help'], io)

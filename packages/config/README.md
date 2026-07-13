@@ -11,7 +11,7 @@ This package owns the file-system side of configuration:
 - parses and stringifies setup TOML
 - merges setup layers
 - writes provider setup files
-- installs registry plugin packages and registers local plugin directories in `.alint/plugins/lock.json`
+- installs remote plugin packages or local plugin directories and writes `.alint/plugins/lock.json`
 - exports built-in ignore pattern groups for lower-level tooling
 
 It is used by `@alint-js/cli` and is useful for tools that need to inspect or prepare an `alint` project without running the linter.
@@ -40,7 +40,9 @@ const config = await loadAlintConfig(cwd)
 await writeSetupConfig(setupPath, setup)
 ```
 
-Static TOML plugins support registry packages, config-relative directories, native absolute paths, and file URLs:
+Static configs can use TOML, YAML, JSON, JSONC, or JSON5. They are data-only alternatives to executable JavaScript and TypeScript flat configs, and identify plugin sources with strings.
+
+For example, TOML supports exact remote packages, config-relative directories, native absolute paths, and file URLs:
 
 ```toml
 [[config.group]]
@@ -61,18 +63,23 @@ Relative paths use the config file's directory as their base. Windows native pat
 native = 'C:\alint\plugins\native-plugin'
 ```
 
-Run installation after adding or changing configured source specifiers, or after moving a local directory or changing its symlink target. An ordinary rebuild or content change within the same local root does not require reinstalling. Local directory registration does not build the plugin or install its dependencies. Directory sources bypass the registry, package store, and integrity checks.
+Use `installStaticPlugins` after adding or changing plugin sources.
 
-Local plugin root and entry containment checks validate the registered source identity; they are not a sandbox. The plugin and all transitive dependencies execute as fully trusted Node.js code and may access resources outside the registered directory.
+- **Package:** downloads the exact package version into `.alint/plugins/store`, verifies its integrity, and locks the installed snapshot.
+- **Local:** installs the directory in place, validates its package root export, and locks its physical directory identity. It does not build the plugin or install its dependencies.
 
-On load, the root package manifest, export, and entry content are re-resolved; the root entry content hash cache-busts imports, so rebuilt root output is visible without reinstalling. Unbundled transitive imports retain normal Node.js ESM caching within a process, so transitive-only changes require a new CLI process. A root rebuild or change refreshes those dependencies only when their content is bundled or copied into the changed root entry. Lock version 2 distinguishes directory identities from registry package snapshots, which include registry and integrity metadata.
+Run installation again after changing a source string, moving a local directory, or changing its symlink target. Changes inside the same local directory are loaded by the next process without reinstalling.
+
+## Plugin lockfile
+
+`.alint/plugins/lock.json` stores package snapshots with integrity metadata and local directory source identities. Local plugin code executes as trusted Node.js; containment checks are not a sandbox.
 
 ## When to use
 
 - You are building CLI commands, editors, or automation around `alint` config.
 - You need to read or write provider setup TOML.
 - You need to load `alint.config.*` outside the official CLI.
-- You need to install registry plugins or register local plugin directories before loading static config.
+- You need to install remote packages or local plugin directories before loading static config.
 - You need the same ignore defaults as the official CLI in lower-level tooling.
 
 ## When not to use
