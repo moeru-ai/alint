@@ -1,6 +1,6 @@
-import type { ResolvedModel, RuleContext, RuleDefinition } from '@alint-js/core'
+import type { ResolvedModel, RuleDefinition } from '@alint-js/core'
 import type { AgentTool, AgentUsage } from '@alint-js/core/agent'
-import type { AgentChannel, ChatRunnerOptions, Runner, RunnerContext, Tool, Usage } from 'apeira'
+import type { Runner, Tool } from 'apeira'
 
 import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from '../../plugins/declarative/types'
 
@@ -14,9 +14,9 @@ import { declarativeFindingResponseSchema } from '../../plugins/declarative/type
 import { reportDeclarativeFindings } from './basic-structured'
 
 const maxAgentSteps = 8
-export const reportFindingsToolName = 'report_findings'
+const reportFindingsToolName = 'report_findings'
 
-export interface BuildCodingAgentRequestOptions {
+interface CodingAgentRunOptions {
   cwd: string
   instruction: string
   outputLanguage?: string
@@ -25,30 +25,7 @@ export interface BuildCodingAgentRequestOptions {
   tools: AgentTool[]
 }
 
-export interface CodingAgentRequest {
-  instructions: string
-  prompt: string
-  tools: AgentTool[]
-}
-
-export function buildCodingAgentRequest(options: BuildCodingAgentRequestOptions): CodingAgentRequest {
-  return {
-    instructions: [
-      options.instruction,
-      'Use the filesystem tools to inspect the project as needed before reaching a conclusion.',
-      `When the review is complete, call ${reportFindingsToolName} exactly once with all findings. Submit an empty findings array when there are no issues.`,
-    ].join('\n\n'),
-    prompt: [
-      formatOutputLanguageInstruction(options.outputLanguage),
-      `Project root: ${options.cwd}`,
-      `Reviewed target file path: ${options.targetFilePath}`,
-      `Reviewed target source with line numbers:\n\n${formatSourceWithLineNumbers(options.sourceText)}`,
-    ].filter(Boolean).join('\n\n'),
-    tools: options.tools,
-  }
-}
-
-export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): RuleDefinition {
+export function createBasicCodingAgentRule(rule: DeclarativeRuleDefinition): RuleDefinition {
   return {
     cache: false,
     create: ctx => ({
@@ -58,32 +35,35 @@ export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): Ru
         }
 
         const model = await ctx.model()
-        const request = buildCodingAgentRequest({
+        const result = await createCodingAgent(model).run({
           cwd: ctx.cwd,
-          instruction: _rule.instruction,
+          instruction: rule.instruction,
           outputLanguage: ctx.outputLanguage,
           sourceText: target.file.text,
           targetFilePath: target.file.path,
           tools: createTools(ctx.cwd),
         })
-        const result = await runCodingAgent({
-          ...request,
-          model,
-        })
 
-        recordCodingAgentUsage({
-          ctx,
-          filePath: target.file.path,
-          model,
-          rule: _rule,
-          usage: result.usage,
-        })
+        if (result.usage) {
+          ctx.metering.recordUsage({
+            filePath: target.file.path,
+            inputTokens: result.usage.inputTokens,
+            metadata: {
+              operation: `declarative-${rule.name}-coding-agent`,
+            },
+            modelId: model.id,
+            outputTokens: result.usage.outputTokens,
+            providerId: model.provider.id,
+            ruleId: ctx.id,
+            totalTokens: result.usage.totalTokens,
+          })
+        }
 
         reportDeclarativeFindings({
           ctx,
-          excludeFiles: _rule.excludeFiles,
+          excludeFiles: rule.excludeFiles,
           findings: result.findings,
-          includeFiles: _rule.includeFiles,
+          includeFiles: rule.includeFiles,
           targetFilePath: target.file.path,
         })
       },
@@ -91,120 +71,78 @@ export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): Ru
   }
 }
 
-export function createCodingAgentRunnerOptions(model: ResolvedModel): ChatRunnerOptions {
-  return {
+export function createCodingAgent(
+  model: ResolvedModel,
+  runner: Runner = chat({
     baseURL: model.provider.endpoint,
     headers: model.provider.headers,
     model: model.id,
     parallelToolCalls: false,
     stopWhen: or(hasToolCall(reportFindingsToolName), stepCountAtLeast(maxAgentSteps)),
     toolChoice: 'required',
-  }
-}
+  }),
+) {
+  return {
+    async run(options: CodingAgentRunOptions): Promise<{
+      findings: DeclarativeFindingResponse['findings']
+      usage?: AgentUsage
+    }> {
+      let report: DeclarativeFindingResponse | undefined
+      const tools: Tool[] = options.tools.map(agentTool => rawTool({
+        description: agentTool.description,
+        execute: async (input) => {
+          const result = await agentTool.execute(input)
+          return (result ?? '') as object | string | unknown[]
+        },
+        name: agentTool.name,
+        parameters: agentTool.parameters,
+      }))
 
-export function createReportFindingsTool(onReport: (report: DeclarativeFindingResponse) => void): Tool {
-  return rawTool({
-    description: 'Submit all findings and finish the review. Submit an empty findings array when there are no issues.',
-    execute: async (input) => {
-      const report = parse(declarativeFindingResponseSchema, input)
-      onReport(report)
-      return report
+      tools.push(rawTool({
+        description: 'Submit all findings and finish the review. Submit an empty findings array when there are no issues.',
+        execute: async (input) => {
+          report = parse(declarativeFindingResponseSchema, input)
+          return report
+        },
+        name: reportFindingsToolName,
+        parameters: toolParametersFromSchema(declarativeFindingResponseSchema),
+        strict: true,
+      }))
+
+      const result = await runner({
+        channel: {
+          emit: () => {},
+          subscribe: () => () => {},
+        },
+        input: [user([
+          formatOutputLanguageInstruction(options.outputLanguage),
+          `Project root: ${options.cwd}`,
+          `Reviewed target file path: ${options.targetFilePath}`,
+          `Reviewed target source with line numbers:\n\n${formatSourceWithLineNumbers(options.sourceText)}`,
+        ].filter(Boolean).join('\n\n'))],
+        instructions: [
+          options.instruction,
+          'Use the filesystem tools to inspect the project as needed before reaching a conclusion.',
+          `When the review is complete, call ${reportFindingsToolName} exactly once with all findings. Submit an empty findings array when there are no issues.`,
+        ].join('\n\n'),
+        tools,
+        turnId: 'alint',
+      })
+
+      if (!report) {
+        throw new Error(`basic-coding-agent stopped without calling ${reportFindingsToolName}`)
+      }
+
+      return {
+        findings: report.findings,
+        usage: result.usage
+          ? {
+              inputTokens: result.usage.inputTokens,
+              outputTokens: result.usage.outputTokens,
+              totalTokens: result.usage.totalTokens,
+            }
+          : undefined,
+      }
     },
-    name: reportFindingsToolName,
-    parameters: toolParametersFromSchema(declarativeFindingResponseSchema),
-    strict: true,
-  })
-}
-
-export function recordCodingAgentUsage(options: {
-  ctx: Pick<RuleContext, 'id' | 'metering'>
-  filePath: string
-  model: ResolvedModel
-  rule: DeclarativeRuleDefinition
-  usage?: AgentUsage
-}): void {
-  if (!options.usage) {
-    return
-  }
-
-  options.ctx.metering.recordUsage({
-    filePath: options.filePath,
-    inputTokens: options.usage.inputTokens,
-    metadata: {
-      operation: `declarative-${options.rule.name}-coding-agent`,
-    },
-    modelId: options.model.id,
-    outputTokens: options.usage.outputTokens,
-    providerId: options.model.provider.id,
-    ruleId: options.ctx.id,
-    totalTokens: options.usage.totalTokens,
-  })
-}
-
-export async function runCodingAgent(
-  request: CodingAgentRequest & { model: ResolvedModel },
-  runner: Runner = createCodingAgentRunner(request.model),
-): Promise<{
-  findings: DeclarativeFindingResponse['findings']
-  usage?: AgentUsage
-}> {
-  let report: DeclarativeFindingResponse | undefined
-  const result = await runner(buildRunnerContext(request, value => report = value))
-
-  if (!report) {
-    throw new Error(`basic-coding-agent stopped without calling ${reportFindingsToolName}`)
-  }
-
-  return {
-    findings: report.findings,
-    usage: mapUsage(result.usage),
-  }
-}
-
-export function toRunnerTools(tools: AgentTool[]): Tool[] {
-  return tools.map(agentTool => rawTool({
-    description: agentTool.description,
-    execute: async (input) => {
-      const result = await agentTool.execute(input)
-      return (result ?? '') as object | string | unknown[]
-    },
-    name: agentTool.name,
-    parameters: agentTool.parameters,
-  }))
-}
-
-function buildRunnerContext(
-  request: CodingAgentRequest,
-  onReport: (report: DeclarativeFindingResponse) => void,
-): RunnerContext {
-  return {
-    channel: noopChannel(),
-    input: [user(request.prompt)],
-    instructions: request.instructions,
-    tools: [...toRunnerTools(request.tools), createReportFindingsTool(onReport)],
-    turnId: 'alint',
-  }
-}
-
-function createCodingAgentRunner(model: ResolvedModel): Runner {
-  return chat(createCodingAgentRunnerOptions(model))
-}
-
-function mapUsage(usage?: Usage): AgentUsage | undefined {
-  if (!usage) {
-    return undefined
-  }
-
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-  }
-}
-
-function noopChannel(): AgentChannel {
-  return {
-    emit: () => {},
-    subscribe: () => () => {},
   }
 }
