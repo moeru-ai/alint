@@ -146,7 +146,7 @@ export async function resolve(entry: ParsedRegistryPluginLockEntry): Promise<Plu
   }
 
   JSON.parse(await readFile(join(packageDir, 'package.json'), 'utf8'))
-  return { cache: 'default', entry: resolvedEntry }
+  return { alias: entry.alias, cache: 'default', entry: resolvedEntry, kind: 'module' }
 }
 
 async function extractEntry(packageDir: string, header: tar.Headers, stream: Readable): Promise<void> {

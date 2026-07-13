@@ -1,4 +1,4 @@
-import type { PluginImportTarget } from './types'
+import type { ModulePluginImportTarget } from './types'
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -16,15 +16,17 @@ afterEach(async () => {
   tempRoots.length = 0
 })
 
-async function createSource(cache: PluginImportTarget['cache']): Promise<PluginImportTarget> {
+async function createSource(cache: ModulePluginImportTarget['cache']): Promise<ModulePluginImportTarget> {
   const packageDir = await mkdtemp(join(tmpdir(), 'alint-plugin-import-'))
   const entry = join(packageDir, 'index.mjs')
   tempRoots.push(packageDir)
   await writeFile(entry, 'export default { version: 1 }\n', 'utf8')
 
   return {
+    alias: 'local',
     cache,
     entry,
+    kind: 'module',
   }
 }
 

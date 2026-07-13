@@ -8,7 +8,14 @@ import { pathToFileURL } from 'node:url'
 
 import { isPlainObject } from 'es-toolkit/compat'
 
+import { createDeclarativePlugin, loadDeclarativeRules } from '../declarative'
+
 export async function importPlugin(target: PluginImportTarget): Promise<PluginDefinition> {
+  if (target.kind === 'declarative') {
+    const rules = await loadDeclarativeRules({ alias: target.alias, root: target.entry })
+    return createDeclarativePlugin({ rules })
+  }
+
   const url = pathToFileURL(target.entry)
 
   if (target.cache === 'content') {

@@ -32,12 +32,13 @@ describe('local plugin source', () => {
     cwd: string,
     specifier: DirectoryPluginSpecifier,
     path: string,
+    alias = 'local',
   ): ParsedDirectoryPluginLockEntry {
     return {
-      alias: 'local',
+      alias,
       cwd,
       lockEntry: {
-        alias: 'local',
+        alias,
         path,
         specifier: specifier.raw,
         type: 'directory',
@@ -70,6 +71,94 @@ describe('local plugin source', () => {
     expect(lockEntry).toEqual({ path: physicalPackageDir, type: 'directory' })
     expect(resolved.entry).toBe(join(physicalPackageDir, 'dist', 'index.mjs'))
     expect(resolved.cache).toBe('content')
+    expect(resolved.kind).toBe('module')
+    expect(resolved.alias).toBe('local')
+  })
+
+  it('installs and resolves a declarative rule directory without package.json', async () => {
+    const projectRoot = await createTempProject()
+    const pluginRoot = join(projectRoot, 'rules', 'architecture')
+    await mkdir(join(pluginRoot, 'semantic'), { recursive: true })
+    await writeFile(join(pluginRoot, 'semantic', 'rule.alint.toml'), [
+      'name = "semantic-boundary"',
+      'builtInAgent = "basic-structured"',
+      'instruction = "Find semantic boundary issues."',
+    ].join('\n'), 'utf8')
+    const specifier = createDirectorySpecifier(pluginRoot, './rules/architecture')
+
+    const lockEntry = await install({ alias: 'arch', specifier })
+    const resolved = await resolve(createDirectoryLockEntry(projectRoot, specifier, lockEntry.path, 'arch'))
+
+    expect(lockEntry).toEqual({ path: await realpath(pluginRoot), type: 'directory' })
+    expect(resolved.cache).toBe('content')
+    expect(resolved.entry).toBe(await realpath(pluginRoot))
+    expect(resolved.kind).toBe('declarative')
+    expect(resolved.alias).toBe('arch')
+  })
+
+  it('rejects a directory without package.json or declarative rule files', async () => {
+    const projectRoot = await createTempProject()
+    const pluginRoot = join(projectRoot, 'rules', 'empty')
+    await mkdir(pluginRoot, { recursive: true })
+
+    await expect(install({ alias: 'empty', specifier: createDirectorySpecifier(pluginRoot) }))
+      .rejects
+      .toThrow('Directory plugin "empty" must contain package.json or rule.alint.* files.')
+  })
+
+  it('rejects invalid declarative rule directories during install', async () => {
+    const projectRoot = await createTempProject()
+    const pluginRoot = join(projectRoot, 'rules', 'invalid')
+    await mkdir(pluginRoot, { recursive: true })
+    await writeFile(join(pluginRoot, 'rule.alint.toml'), [
+      'name = "invalid"',
+      'builtInAgent = "unknown-agent"',
+      'instruction = "Find issues."',
+    ].join('\n'), 'utf8')
+
+    await expect(install({ alias: 'invalid', specifier: createDirectorySpecifier(pluginRoot) }))
+      .rejects
+      .toThrow('Unknown builtInAgent "unknown-agent"')
+  })
+
+  it('resolves declarative rule directories without parsing rule content', async () => {
+    const projectRoot = await createTempProject()
+    const pluginRoot = join(projectRoot, 'rules', 'invalid')
+    await mkdir(pluginRoot, { recursive: true })
+    await writeFile(join(pluginRoot, 'rule.alint.toml'), [
+      'name = "invalid"',
+      'builtInAgent = "unknown-agent"',
+      'instruction = "Find issues."',
+    ].join('\n'), 'utf8')
+    const specifier = createDirectorySpecifier(pluginRoot, './rules/invalid')
+
+    const resolved = await resolve(createDirectoryLockEntry(projectRoot, specifier, await realpath(pluginRoot), 'invalid'))
+
+    expect(resolved).toEqual({
+      alias: 'invalid',
+      cache: 'content',
+      entry: await realpath(pluginRoot),
+      kind: 'declarative',
+    })
+  })
+
+  it('keeps package.json priority over declarative rule files', async () => {
+    const projectRoot = await createTempProject()
+    const pluginRoot = join(projectRoot, 'plugin')
+    await writeDirectoryPackage(pluginRoot)
+    await mkdir(join(pluginRoot, 'ignored-rule'), { recursive: true })
+    await writeFile(join(pluginRoot, 'ignored-rule', 'rule.alint.toml'), [
+      'name = "ignored"',
+      'builtInAgent = "basic-structured"',
+      'instruction = "This file is ignored because package.json wins."',
+    ].join('\n'), 'utf8')
+    const specifier = createDirectorySpecifier(pluginRoot)
+
+    const lockEntry = await install({ alias: 'local', specifier })
+    const resolved = await resolve(createDirectoryLockEntry(projectRoot, specifier, lockEntry.path))
+
+    expect(resolved.kind).toBe('module')
+    expect(resolved.entry).toBe(join(await realpath(pluginRoot), 'dist', 'index.mjs'))
   })
 
   it('installs a directory package without importing its root entry', async () => {
