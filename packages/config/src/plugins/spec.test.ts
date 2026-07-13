@@ -1,5 +1,4 @@
 import { dirname, normalize, resolve } from 'node:path'
-import { fileURLToPath, pathToFileURL } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
@@ -50,45 +49,12 @@ describe('plugin specifiers', () => {
     expect(windowsSpecifier.directory).toBe(posixSpecifier.directory)
   })
 
-  it('decodes percent-encoded absolute file URLs', () => {
-    const url = pathToFileURL('/repo/plugins/plugin python').href
-
-    expect(parsePluginSpecifier(url)).toEqual({
-      directory: fileURLToPath(url),
-      raw: url,
-      type: 'directory',
-    })
-  })
-
-  it('accepts an absolute file URL without an authority delimiter', () => {
-    const raw = 'file:/repo/plugins/python'
-
-    expect(parsePluginSpecifier(raw)).toEqual({
-      directory: normalize(fileURLToPath(raw)),
-      raw,
-      type: 'directory',
-    })
-  })
-
-  it('recognizes file URL schemes case-insensitively', () => {
-    const canonicalUrl = pathToFileURL(resolve('/repo/plugins/python')).href
-    const raw = canonicalUrl.replace(/^file:/u, 'FiLe:')
-
-    expect(parsePluginSpecifier(raw)).toEqual({
-      directory: normalize(fileURLToPath(canonicalUrl)),
-      raw,
-      type: 'directory',
-    })
-  })
-
   it.each([
-    'file:../plugin',
-    'file:///repo/plugin?variant=one',
-    'file:///repo/plugin#entry',
-    'file://user:password@localhost/repo/plugin',
-    'file://localhost:80/repo/plugin',
-  ])('rejects invalid file URL %s', (value) => {
-    expect(() => parsePluginSpecifier(value)).toThrow('Invalid static plugin file URL')
+    'file:/repo/plugin',
+    'file:///repo/plugin',
+    'FiLe:///repo/plugin',
+  ])('rejects file URL plugin specifier %s', (value) => {
+    expect(() => parsePluginSpecifier(value)).toThrow('Static plugin file URLs are not supported.')
   })
 
   it.each(['.', '..', './plugin', '../plugin', '.\\plugin', '..\\plugin']) (

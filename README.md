@@ -255,10 +255,9 @@ For example, a TOML static config can install an exact remote package or a local
 [[config.group]]
 
 [config.group.plugins]
-registry = "@scope/alint-plugin@1.2.3"
-relative = "./plugins/relative-plugin"
-absolute = "/opt/alint/plugins/absolute-plugin"
-file_url = "file:///opt/alint/plugins/file-url-plugin"
+plugin_1 = "@scope/alint-plugin-example1@1.2.3" # package
+plugin_2 = "./plugins/relative-plugin-examplex" # relative directory
+plugin_3 = "/opt/alint/plugins/absolute-plugin" # absolute directory
 ```
 
 Relative plugin paths are resolved from the directory containing the config file, including when `--config` points to a nested config. On Windows, use TOML literal strings to preserve native backslashes:
@@ -272,8 +271,8 @@ native = 'C:\alint\plugins\native-plugin'
 
 Use `alint plugin install` after adding or changing plugin sources.
 
-- **Package:** `@scope/alint-plugin@1.2.3` downloads that exact version into `.alint/plugins/store`, verifies its integrity, and loads its root export.
-- **Local:** `./plugins/my-plugin`, an absolute directory, or a `file:` URL loads the current package root export in place. `alint` checks that the package and entry exist and that the entry stays inside the package directory. It does not build the plugin or install the plugin's dependencies.
+- **Package:** `@scope/alint-plugin-example1@1.2.3` downloads that exact version into `.alint/plugins/store`, verifies its integrity, and loads its root export.
+- **Local:** `./plugins/my-plugin` or an absolute directory loads the current package root export in place. `alint` checks that the package and entry exist and that the entry stays inside the package directory. It does not build the plugin or install the plugin's dependencies.
 
 Run the install command again after changing a source string, moving a local directory, or changing its symlink target. Changes inside the same local directory are loaded by the next CLI process without reinstalling.
 
