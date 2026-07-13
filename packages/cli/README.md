@@ -24,7 +24,7 @@ While `alint` is inspired by `eslint`, we expect the concept that `alint` brings
 
 ### Prerequisites
 
-`alint` is published as ESM packages and is intended for modern Node.js projects. Install Node.js and a package manager such as npm or pnpm before using the CLI.
+`alint` is published as ESM packages and runs on modern Node.js. It can analyze projects in any language, but the CLI requires Node.js and a package manager such as npm or pnpm.
 
 You also need at least one OpenAI-compatible model provider. Local providers such as Ollama and LM Studio work well for repeated lint runs because they keep token cost predictable.
 
@@ -171,12 +171,12 @@ In order to provision models and LLMs for `alint` while keeping it clean for con
 The priorities follow:
 
 ```text
-~/.config/alint/config.toml < .alint/config.toml < alint.config.ts < environment and CLI overrides
+~/.config/alint/config.toml < .alint/config.toml < alint.config.* < environment and CLI overrides
 ```
 
 - `~/.config/alint/config.toml` stores user-level provider setup.
 - `.alint/config.toml` stores optional project-local provider setup.
-- `alint.config.ts` stores project lint config, plugins, files, ignores, and rule settings.
+- `alint.config.*` stores project lint config, plugins, files, ignores, and rule settings.
 - Environment variables and CLI flags are the highest-priority overrides.
 
 Use setup TOML for machine or project provider definitions:
