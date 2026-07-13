@@ -1,3 +1,4 @@
+export * from './declarative'
 export { installStaticPlugins } from './install'
 export {
   createEmptyPluginLockFile,
