@@ -7,6 +7,40 @@ export interface FlattenedModel {
   provider: ProviderDefinition
 }
 
+export interface ProviderSetupSource {
+  defaultEndpoint?: string
+  defaultProviderId?: string
+  label: string
+  probeModels: boolean
+  value: 'cliProxyApi' | 'custom' | 'manual' | 'ollama'
+}
+
+export const providerSetupSources: ProviderSetupSource[] = [
+  {
+    defaultEndpoint: 'http://127.0.0.1:8317/v1',
+    defaultProviderId: 'CLIProxyAPI',
+    label: 'CLIProxyAPI',
+    probeModels: true,
+    value: 'cliProxyApi',
+  },
+  {
+    label: 'Custom OpenAI-compatible provider',
+    probeModels: true,
+    value: 'custom',
+  },
+  {
+    defaultEndpoint: 'http://localhost:11434/v1',
+    label: 'Ollama',
+    probeModels: true,
+    value: 'ollama',
+  },
+  {
+    label: 'Manual model entry',
+    probeModels: false,
+    value: 'manual',
+  },
+]
+
 export function buildModelsUrl(endpoint: string): string {
   return new URL('models', endpoint.endsWith('/') ? endpoint : `${endpoint}/`).toString()
 }
@@ -15,7 +49,10 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
   let base = 'provider'
 
   try {
-    base = new URL(endpoint).hostname.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'provider'
+    const url = new URL(endpoint)
+    const source = findProviderSetupSourceByEndpoint(url)
+    base = source?.defaultProviderId
+      ?? (url.hostname.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'provider')
   }
   catch {
     base = 'provider'
@@ -37,6 +74,18 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
 export function findModel(config: SetupConfig, request: string): FlattenedModel | undefined {
   return flattenModels(config).find(({ model }) =>
     model.id === request || model.name === request || (model.aliases ?? []).includes(request),
+  )
+}
+
+export function findProviderSetupSource(value: ProviderSetupSource['value']): ProviderSetupSource | undefined {
+  return providerSetupSources.find(source => source.value === value)
+}
+
+export function findProviderSetupSourceByEndpoint(endpoint: string | URL): ProviderSetupSource | undefined {
+  const normalizedEndpoint = endpoint instanceof URL ? endpoint.toString() : new URL(endpoint).toString()
+
+  return providerSetupSources.find(source =>
+    source.defaultEndpoint !== undefined && new URL(source.defaultEndpoint).toString() === normalizedEndpoint,
   )
 }
 

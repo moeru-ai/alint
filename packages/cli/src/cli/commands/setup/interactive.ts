@@ -1,12 +1,14 @@
 import type { ProviderDefinition, SetupModelDefinition } from '@alint-js/config'
 import type * as ClackPrompts from '@clack/prompts'
 
+import type { ProviderSetupSource } from '../../provider-registry'
+
 import process from 'node:process'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, mergeSetupConfigs, writeSetupConfig } from '@alint-js/config'
 import { errorMessageFrom } from '@moeru/std/error'
 
-import { createProviderId, parseHeaderList, probeModels } from '../../provider-registry'
+import { createProviderId, findProviderSetupSource, parseHeaderList, probeModels, providerSetupSources } from '../../provider-registry'
 
 export interface InteractiveSetupIo {
   cwd: string
@@ -15,8 +17,6 @@ export interface InteractiveSetupIo {
   stdin?: { isTTY?: boolean }
   stdout: { isTTY?: boolean, write: (chunk: string) => unknown }
 }
-
-type ProviderSource = 'custom' | 'manual' | 'ollama'
 
 interface SelectOption<T extends string> {
   label: string
@@ -32,7 +32,7 @@ interface SetupDraft {
   providerId?: string
   scope?: SetupScope
   selectedModels?: string[]
-  source?: ProviderSource
+  source?: ProviderSetupSource['value']
 }
 
 type SetupScope = 'global' | 'local'
@@ -90,13 +90,9 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
     }
 
     if (step === 'source') {
-      const source = await prompts.select<ProviderSource | typeof backValue>({
+      const source = await prompts.select<ProviderSetupSource['value'] | typeof backValue>({
         message: 'Choose provider setup mode.',
-        options: withBackOption([
-          { label: 'Custom OpenAI-compatible provider', value: 'custom' },
-          { label: 'Ollama', value: 'ollama' },
-          { label: 'Manual model entry', value: 'manual' },
-        ]),
+        options: withBackOption(providerSetupSources.map(({ label, value }) => ({ label, value }))),
       })
 
       if (prompts.isCancel(source)) {
@@ -114,7 +110,13 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
     }
 
     if (step === 'endpoint') {
-      const endpoint = await promptEndpoint(prompts, draft.source ?? 'custom')
+      const setupSource = findProviderSetupSource(draft.source ?? 'custom')
+
+      if (setupSource === undefined) {
+        return cancelPrompt()
+      }
+
+      const endpoint = await promptEndpoint(prompts, setupSource)
 
       if (prompts.isCancel(endpoint)) {
         return cancelPrompt()
@@ -197,7 +199,7 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
       draft.headerInput = headerInput
       draft.headers = parseHeaderList(splitHeaderInput(headerInput))
-      draft.discoveredModels = draft.source === 'manual'
+      draft.discoveredModels = findProviderSetupSource(draft.source ?? 'custom')?.probeModels === false
         ? []
         : await probeModelsWithSpinner(prompts, draft.endpoint ?? '', draft.headers)
       step = 'models'
@@ -346,12 +348,12 @@ async function probeModelsWithSpinner(
 
 async function promptEndpoint(
   prompts: typeof ClackPrompts,
-  source: ProviderSource,
+  source: ProviderSetupSource,
 ): Promise<string | symbol> {
   return prompts.text({
-    defaultValue: source === 'ollama' ? 'http://localhost:11434/v1' : undefined,
+    defaultValue: source.defaultEndpoint,
     message: 'Provider endpoint',
-    placeholder: source === 'ollama' ? 'http://localhost:11434/v1; type .. to go back' : 'https://example.test/v1; type .. to go back',
+    placeholder: `${source.defaultEndpoint ?? 'https://example.test/v1'}; type .. to go back`,
     validate: value => isBackInput(value ?? '') || (value ?? '').trim().length > 0 ? undefined : 'Provider endpoint is required.',
   })
 }

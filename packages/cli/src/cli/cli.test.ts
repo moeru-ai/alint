@@ -10,7 +10,7 @@ import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
-import { createProviderId } from './provider-registry'
+import { createProviderId, providerSetupSources } from './provider-registry'
 
 interface TestIo {
   cwd: string
@@ -259,9 +259,30 @@ describe('createProviderId', () => {
     expect(createProviderId('https://openrouter.ai/api/v1', new Set(['openrouter-ai']))).toBe('openrouter-ai-2')
     expect(createProviderId('not a url', new Set())).toBe('provider')
   })
+
+  it('uses the built-in CLIProxyAPI provider id for its default endpoint', () => {
+    expect(createProviderId('http://127.0.0.1:8317/v1', new Set())).toBe('CLIProxyAPI')
+    expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['CLIProxyAPI']))).toBe('CLIProxyAPI-2')
+  })
 })
 
 describe('interactive setup navigation', () => {
+  it('keeps built-in provider setup defaults in the provider registry', () => {
+    expect(providerSetupSources).toContainEqual({
+      defaultEndpoint: 'http://127.0.0.1:8317/v1',
+      defaultProviderId: 'CLIProxyAPI',
+      label: 'CLIProxyAPI',
+      probeModels: true,
+      value: 'cliProxyApi',
+    })
+    expect(providerSetupSources).toContainEqual({
+      defaultEndpoint: 'http://localhost:11434/v1',
+      label: 'Ollama',
+      probeModels: true,
+      value: 'ollama',
+    })
+  })
+
   it('adds an explicit back option and recognizes text back input', () => {
     expect(withBackOption([{ label: 'Ollama', value: 'ollama' }])).toEqual([
       { label: 'Ollama', value: 'ollama' },
