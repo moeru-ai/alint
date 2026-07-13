@@ -6,6 +6,7 @@ import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from './ty
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers } from '@alint-js/core/structured-output'
 import { createTools } from '@alint-js/tools-fs'
+import { errorMessageFrom } from '@moeru/std/error'
 import { rawTool } from '@xsai/tool'
 import { chat, stepCountAtLeast, user } from 'apeira'
 import { parse } from 'valibot'
@@ -14,6 +15,7 @@ import { reportDeclarativeFindings } from './structured'
 import { declarativeFindingResponseSchema } from './types'
 
 const maxAgentSteps = 8
+const maxAnswerPreviewLength = 200
 
 export interface BuildCodingAgentRequestOptions {
   cwd: string
@@ -28,6 +30,13 @@ export interface CodingAgentRequest {
   instructions: string
   prompt: string
   tools: AgentTool[]
+}
+
+export class InvalidCodingAgentOutputError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'InvalidCodingAgentOutputError'
+  }
 }
 
 export function buildCodingAgentRequest(options: BuildCodingAgentRequestOptions): CodingAgentRequest {
@@ -92,30 +101,7 @@ export function createCodingAgentRule(_rule: DeclarativeRuleDefinition): RuleDef
   }
 }
 
-export function parseCodingAgentAnswer(answer: string): DeclarativeFindingResponse {
-  return parse(declarativeFindingResponseSchema, JSON.parse(answer))
-}
-
-function buildRunnerContext(request: CodingAgentRequest): RunnerContext {
-  return {
-    channel: noopChannel(),
-    input: [user(request.prompt)],
-    instructions: request.instructions,
-    tools: toRunnerTools(request.tools),
-    turnId: 'alint',
-  }
-}
-
-function createCodingAgentRunner(model: ResolvedModel): Runner {
-  return chat({
-    baseURL: model.provider.endpoint,
-    headers: model.provider.headers,
-    model: model.id,
-    stopWhen: stepCountAtLeast(maxAgentSteps),
-  })
-}
-
-function extractAnswer(output: readonly AgentInput[]): string {
+export function extractAnswer(output: readonly AgentInput[]): string {
   for (let index = output.length - 1; index >= 0; index -= 1) {
     const item = output[index] as { content?: unknown, role?: unknown }
 
@@ -127,26 +113,18 @@ function extractAnswer(output: readonly AgentInput[]): string {
   return ''
 }
 
-function mapUsage(usage?: Usage): AgentUsage | undefined {
-  if (!usage) {
-    return undefined
+export function parseCodingAgentAnswer(answer: string): DeclarativeFindingResponse {
+  try {
+    return parse(declarativeFindingResponseSchema, JSON.parse(answer))
   }
-
-  return {
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    totalTokens: usage.totalTokens,
-  }
-}
-
-function noopChannel(): AgentChannel {
-  return {
-    emit: () => {},
-    subscribe: () => () => {},
+  catch (error) {
+    throw new InvalidCodingAgentOutputError(
+      `Invalid basic-coding-agent JSON response: ${errorMessageFrom(error) ?? String(error)}. Answer preview: ${previewAnswer(answer)}`,
+    )
   }
 }
 
-function recordCodingAgentUsage(options: {
+export function recordCodingAgentUsage(options: {
   ctx: Pick<RuleContext, 'id' | 'metering'>
   filePath: string
   model: ResolvedModel
@@ -171,6 +149,62 @@ function recordCodingAgentUsage(options: {
   })
 }
 
+export function toRunnerTools(tools: AgentTool[]): Tool[] {
+  return tools.map(agentTool => rawTool({
+    description: agentTool.description,
+    execute: async (input) => {
+      const result = await agentTool.execute(input)
+      return (result ?? '') as object | string | unknown[]
+    },
+    name: agentTool.name,
+    parameters: agentTool.parameters,
+  }))
+}
+
+function buildRunnerContext(request: CodingAgentRequest): RunnerContext {
+  return {
+    channel: noopChannel(),
+    input: [user(request.prompt)],
+    instructions: request.instructions,
+    tools: toRunnerTools(request.tools),
+    turnId: 'alint',
+  }
+}
+
+function createCodingAgentRunner(model: ResolvedModel): Runner {
+  return chat({
+    baseURL: model.provider.endpoint,
+    headers: model.provider.headers,
+    model: model.id,
+    stopWhen: stepCountAtLeast(maxAgentSteps),
+  })
+}
+
+function mapUsage(usage?: Usage): AgentUsage | undefined {
+  if (!usage) {
+    return undefined
+  }
+
+  return {
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    totalTokens: usage.totalTokens,
+  }
+}
+
+function noopChannel(): AgentChannel {
+  return {
+    emit: () => {},
+    subscribe: () => () => {},
+  }
+}
+
+function previewAnswer(answer: string): string {
+  return answer.length > maxAnswerPreviewLength
+    ? answer.slice(0, maxAnswerPreviewLength)
+    : answer
+}
+
 async function runCodingAgent(request: CodingAgentRequest & { model: ResolvedModel }): Promise<{
   answer: string
   usage?: AgentUsage
@@ -182,16 +216,4 @@ async function runCodingAgent(request: CodingAgentRequest & { model: ResolvedMod
     answer: extractAnswer(result.output),
     usage: mapUsage(result.usage),
   }
-}
-
-function toRunnerTools(tools: AgentTool[]): Tool[] {
-  return tools.map(agentTool => rawTool({
-    description: agentTool.description,
-    execute: async (input) => {
-      const result = await agentTool.execute(input)
-      return (result ?? '') as object | string | unknown[]
-    },
-    name: agentTool.name,
-    parameters: agentTool.parameters,
-  }))
 }
