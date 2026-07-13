@@ -1,4 +1,4 @@
-import type { ProviderDefinition, SetupModelDefinition } from '@alint-js/config'
+import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@alint-js/config'
 import type * as ClackPrompts from '@clack/prompts'
 
 import type { ProviderSetupSource } from '../../provider-registry'
@@ -10,6 +10,18 @@ import { errorMessageFrom } from '@moeru/std/error'
 
 import { createProviderId, findProviderSetupSource, parseHeaderList, probeModels, providerSetupSources } from '../../provider-registry'
 
+export interface DefaultAliasTarget {
+  modelId: string
+  providerId: string
+}
+
+export interface DefaultModelCandidate extends DefaultAliasTarget {
+  isCurrentDefault: boolean
+  isNew: boolean
+  label: string
+  value: string
+}
+
 export interface InteractiveSetupIo {
   cwd: string
   env?: NodeJS.ProcessEnv
@@ -19,12 +31,13 @@ export interface InteractiveSetupIo {
 }
 
 interface SelectOption<T extends string> {
+  hint?: string
   label: string
   value: T
 }
 
 interface SetupDraft {
-  addDefaultAlias?: boolean
+  defaultAliasTarget?: DefaultAliasTarget
   discoveredModels?: string[]
   endpoint?: string
   headerInput?: string
@@ -36,10 +49,82 @@ interface SetupDraft {
 }
 
 type SetupScope = 'global' | 'local'
-type SetupStep = 'confirm' | 'defaultAlias' | 'endpoint' | 'headers' | 'models' | 'providerId' | 'scope' | 'source'
+type SetupStep = 'confirm' | 'defaultAlias' | 'endpoint' | 'headers' | 'models' | 'providerId' | 'scope' | 'selectDefaultModel' | 'source'
 
 const nonTtyMessage = 'interactive setup requires a TTY. Use -N/--no-interactive with --provider-id and --provider-endpoint.\n'
 const backValue = '__alint_back__'
+
+export function applyDefaultAlias(config: SetupConfig, target: DefaultAliasTarget): SetupConfig {
+  return {
+    ...config,
+    providers: config.providers.map(provider => ({
+      ...provider,
+      headers: provider.headers === undefined ? undefined : { ...provider.headers },
+      models: provider.models.map((model) => {
+        const aliasesWithoutDefault = (model.aliases ?? []).filter(alias => alias !== 'default')
+        const aliases = provider.id === target.providerId && model.id === target.modelId
+          ? [...aliasesWithoutDefault, 'default']
+          : aliasesWithoutDefault
+
+        return {
+          ...model,
+          aliases: aliases.length > 0 ? aliases : undefined,
+          capabilities: model.capabilities === undefined ? undefined : [...model.capabilities],
+          defaultParams: model.defaultParams === undefined ? undefined : { ...model.defaultParams },
+        }
+      }),
+    })),
+  }
+}
+
+export function createDefaultModelCandidates(
+  config: SetupConfig,
+  newProviderId: string,
+  newModelIds: string[],
+): DefaultModelCandidate[] {
+  const candidates: DefaultModelCandidate[] = []
+  const seen = new Set<string>()
+  const newModelIdSet = new Set(newModelIds)
+  const allModels = config.providers.flatMap(provider =>
+    provider.models.map(model => ({
+      isCurrentDefault: (model.aliases ?? []).includes('default'),
+      isNew: provider.id === newProviderId && newModelIdSet.has(model.id),
+      model,
+      provider,
+      value: createDefaultModelCandidateValue(provider.id, model.id),
+    })),
+  )
+
+  const addCandidate = (candidate: typeof allModels[number] | undefined): void => {
+    if (candidate === undefined || seen.has(candidate.value)) {
+      return
+    }
+
+    seen.add(candidate.value)
+    candidates.push({
+      isCurrentDefault: candidate.isCurrentDefault,
+      isNew: candidate.isNew,
+      label: `${candidate.provider.id} / ${candidate.model.id}`,
+      modelId: candidate.model.id,
+      providerId: candidate.provider.id,
+      value: candidate.value,
+    })
+  }
+
+  addCandidate(allModels.find(candidate => candidate.isCurrentDefault))
+
+  for (const modelId of newModelIds) {
+    addCandidate(allModels.find(candidate =>
+      candidate.provider.id === newProviderId && candidate.model.id === modelId,
+    ))
+  }
+
+  for (const candidate of allModels) {
+    addCandidate(candidate)
+  }
+
+  return candidates
+}
 
 export function formatProbeModelsFailure(endpoint: string, error: unknown): string {
   const hint = endpoint.startsWith('https://localhost:11434')
@@ -140,9 +225,8 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
       const configPath = getConfigPath(io, draft.scope ?? 'global')
       const existingConfig = await loadSetupConfig(configPath)
       const providerId = await prompts.text({
-        defaultValue: draft.providerId ?? createProviderId(draft.endpoint ?? '', new Set(existingConfig.providers.map(provider => provider.id))),
-        message: 'Provider id',
-        placeholder: 'Type .. to go back',
+        initialValue: draft.providerId ?? createProviderId(draft.endpoint ?? '', new Set(existingConfig.providers.map(provider => provider.id))),
+        message: 'Provider id (type .. to go back)',
         validate: value => isBackInput(value ?? '') || (value ?? '').trim().length > 0 ? undefined : 'Provider id is required.',
       })
 
@@ -166,9 +250,9 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
     if (step === 'headers') {
       const headerInput = await prompts.text({
-        defaultValue: draft.headerInput ?? '',
-        message: 'Headers',
-        placeholder: 'Authorization=Bearer token, X-Test=true; type .. to go back',
+        initialValue: draft.headerInput,
+        message: 'Headers (leave empty to skip; type .. to go back)',
+        placeholder: 'Authorization=Bearer token, X-Test=true',
         validate: (value) => {
           if (isBackInput(value ?? '')) {
             return undefined
@@ -228,24 +312,85 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
     }
 
     if (step === 'defaultAlias') {
-      const addDefaultAlias = await prompts.select<'no' | 'yes' | typeof backValue>({
+      const defaultAliasAction = await prompts.select<'no' | 'selectAnother' | 'yes' | typeof backValue>({
         message: `Add alias "default" to ${draft.selectedModels?.[0]}?`,
         options: withBackOption([
           { label: 'Yes', value: 'yes' },
           { label: 'No', value: 'no' },
+          { label: 'Select another', value: 'selectAnother' },
         ]),
       })
 
-      if (prompts.isCancel(addDefaultAlias)) {
+      if (prompts.isCancel(defaultAliasAction)) {
         return cancelPrompt()
       }
 
-      if (addDefaultAlias === backValue) {
+      if (defaultAliasAction === backValue) {
         step = 'models'
         continue
       }
 
-      draft.addDefaultAlias = addDefaultAlias === 'yes'
+      if (defaultAliasAction === 'selectAnother') {
+        step = 'selectDefaultModel'
+        continue
+      }
+
+      draft.defaultAliasTarget = defaultAliasAction === 'yes'
+        ? {
+            modelId: draft.selectedModels?.[0] ?? '',
+            providerId: (draft.providerId ?? '').trim(),
+          }
+        : undefined
+      step = 'confirm'
+      continue
+    }
+
+    if (step === 'selectDefaultModel') {
+      const configPath = getConfigPath(io, draft.scope ?? 'global')
+      const existingConfig = await loadSetupConfig(configPath)
+      const draftProvider = createProviderConfig(
+        (draft.providerId ?? '').trim(),
+        (draft.endpoint ?? '').trim(),
+        draft.headers,
+        draft.selectedModels ?? [],
+      )
+      const candidateConfig = mergeSetupConfigs(existingConfig, {
+        providers: [draftProvider],
+        version: 1,
+      })
+      const candidates = createDefaultModelCandidates(
+        candidateConfig,
+        draftProvider.id,
+        draft.selectedModels ?? [],
+      )
+      const defaultModel = await prompts.select<string | typeof backValue>({
+        message: 'Select default model',
+        options: withBackOption(candidates.map(candidate => ({
+          hint: candidate.isCurrentDefault ? 'current default' : candidate.isNew ? 'new' : undefined,
+          label: candidate.label,
+          value: candidate.value,
+        }))),
+      })
+
+      if (prompts.isCancel(defaultModel)) {
+        return cancelPrompt()
+      }
+
+      if (defaultModel === backValue) {
+        step = 'defaultAlias'
+        continue
+      }
+
+      const candidate = candidates.find(item => item.value === defaultModel)
+
+      if (candidate === undefined) {
+        return cancelPrompt()
+      }
+
+      draft.defaultAliasTarget = {
+        modelId: candidate.modelId,
+        providerId: candidate.providerId,
+      }
       step = 'confirm'
       continue
     }
@@ -255,7 +400,6 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
       (draft.endpoint ?? '').trim(),
       draft.headers,
       draft.selectedModels ?? [],
-      draft.addDefaultAlias ?? true,
     )
     const confirmed = await prompts.select<'no' | 'yes' | typeof backValue>({
       message: [
@@ -285,10 +429,13 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
     const configPath = getConfigPath(io, draft.scope ?? 'global')
     const existingConfig = await loadSetupConfig(configPath)
-    const nextConfig = mergeSetupConfigs(existingConfig, {
+    const mergedConfig = mergeSetupConfigs(existingConfig, {
       providers: [nextProvider],
       version: 1,
     })
+    const nextConfig = draft.defaultAliasTarget === undefined
+      ? mergedConfig
+      : applyDefaultAlias(mergedConfig, draft.defaultAliasTarget)
 
     await writeSetupConfig(configPath, nextConfig)
     prompts.outro(`Wrote ${configPath}`)
@@ -300,19 +447,21 @@ export function withBackOption<T extends string>(options: SelectOption<T>[]): Ar
   return [...options, { label: 'Back', value: backValue }]
 }
 
+function createDefaultModelCandidateValue(providerId: string, modelId: string): string {
+  return `${providerId}\u0000${modelId}`
+}
+
 function createProviderConfig(
   providerId: string,
   endpoint: string,
   headers: Record<string, string> | undefined,
   modelIds: string[],
-  addDefaultAlias: boolean,
 ): ProviderDefinition {
   return {
     endpoint,
     headers,
     id: providerId,
-    models: modelIds.map((modelId, index): SetupModelDefinition => ({
-      aliases: index === 0 && addDefaultAlias ? ['default'] : undefined,
+    models: modelIds.map((modelId): SetupModelDefinition => ({
       id: modelId,
       name: modelId,
     })),
@@ -351,9 +500,9 @@ async function promptEndpoint(
   source: ProviderSetupSource,
 ): Promise<string | symbol> {
   return prompts.text({
-    defaultValue: source.defaultEndpoint,
-    message: 'Provider endpoint',
-    placeholder: `${source.defaultEndpoint ?? 'https://example.test/v1'}; type .. to go back`,
+    initialValue: source.defaultEndpoint,
+    message: 'Provider endpoint (type .. to go back)',
+    placeholder: source.defaultEndpoint ?? 'https://example.test/v1',
     validate: value => isBackInput(value ?? '') || (value ?? '').trim().length > 0 ? undefined : 'Provider endpoint is required.',
   })
 }

@@ -51,8 +51,11 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
   try {
     const url = new URL(endpoint)
     const source = findProviderSetupSourceByEndpoint(url)
-    base = source?.defaultProviderId
-      ?? (url.hostname.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'provider')
+    base = normalizeProviderIdBase(
+      source?.defaultProviderId
+      ?? source?.label
+      ?? url.hostname,
+    )
   }
   catch {
     base = 'provider'
@@ -218,4 +221,8 @@ function formatTable(rows: string[][]): string {
     },
     drawHorizontalLine: () => false,
   })
+}
+
+function normalizeProviderIdBase(value: string): string {
+  return value.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'provider'
 }
