@@ -299,6 +299,42 @@ arch = "./rules/architecture"
     ])
   })
 
+  it('reports malformed declarative local plugin content without reinstall guidance', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-declarative-local-invalid-'))
+    const pluginRoot = join(cwd, 'rules', 'architecture')
+    await mkdir(pluginRoot, { recursive: true })
+    await writeFile(join(pluginRoot, 'rule.alint.toml'), [
+      'name = "semantic-boundary"',
+      'builtInAgent = "unknown-agent"',
+      'instruction = "Find semantic boundary issues."',
+    ].join('\n'), 'utf8')
+    await writeFile(join(cwd, 'alint.config.toml'), `
+[[config.group]]
+
+[config.group.plugins]
+arch = "./rules/architecture"
+`)
+    await writePluginLock(cwd, {
+      arch: { alias: 'arch', path: pluginRoot, specifier: './rules/architecture', type: 'directory' },
+    })
+
+    try {
+      await loadAlintConfig(cwd)
+      expect.fail('Expected declarative plugin loading to fail.')
+    }
+    catch (error) {
+      expect(error).toBeInstanceOf(Error)
+
+      if (!(error instanceof Error)) {
+        throw error
+      }
+
+      expect(error.message).toContain('Unknown builtInAgent "unknown-agent"')
+      expect(error.message).not.toContain('Run: alint plugin install')
+      expect(error.message).not.toContain('Static plugins could not be resolved')
+    }
+  })
+
   it('loads JS config with plugin objects when the lock file is malformed', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-plugin-object-malformed-lock-'))
     await writeFile(join(cwd, 'alint.config.mjs'), `
