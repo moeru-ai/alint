@@ -36,11 +36,5 @@
     "oxc-parser": "catalog:",
     "pathe": "catalog:",
     "valibot": "catalog:"
-  },
-  "devDependencies": {
-    "@types/node": "catalog:",
-    "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:vitest"
   }
 }

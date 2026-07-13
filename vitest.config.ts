@@ -15,6 +15,7 @@ export default defineConfig({
       'packages/plugin-example-python',
       'packages/agent-apeira',
       'packages/agent-pi',
+      'packages/agent-codex-cli',
     ],
   },
 })

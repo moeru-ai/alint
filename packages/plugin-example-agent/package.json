@@ -22,8 +22,6 @@
   },
   "devDependencies": {
     "@alint-js/agent-apeira": "workspace:*",
-    "@alint-js/agent-pi": "workspace:*",
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
+    "@alint-js/agent-pi": "workspace:*"
   }
 }

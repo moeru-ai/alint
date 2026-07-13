@@ -26,10 +26,6 @@
     "@smithy/node-http-handler": "catalog:"
   },
   "devDependencies": {
-    "@alint-js/core": "workspace:*",
-    "@types/node": "catalog:",
-    "tsdown": "catalog:",
-    "typescript": "catalog:",
-    "vitest": "catalog:vitest"
+    "@alint-js/core": "workspace:*"
   }
 }

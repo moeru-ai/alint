@@ -21,9 +21,5 @@
     "@valibot/to-json-schema": "catalog:",
     "apeira": "catalog:",
     "valibot": "catalog:"
-  },
-  "devDependencies": {
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
   }
 }
