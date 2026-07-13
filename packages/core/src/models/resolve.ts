@@ -49,13 +49,6 @@ function flattenModels(registry: SetupConfig): ModelCandidate[] {
   )
 }
 
-function matchesRequest(model: SetupModelDefinition, provider: ProviderDefinition, request: string): boolean {
-  return model.id === request
-    || model.name === request
-    || (model.aliases ?? []).includes(request)
-    || matchesProviderQualifiedRequest(model, provider, request)
-}
-
 function matchesProviderQualifiedRequest(model: SetupModelDefinition, provider: ProviderDefinition, request: string): boolean {
   const prefix = `${provider.id}/`
 
@@ -68,6 +61,13 @@ function matchesProviderQualifiedRequest(model: SetupModelDefinition, provider: 
   return model.id === modelRequest
     || model.name === modelRequest
     || (model.aliases ?? []).includes(modelRequest)
+}
+
+function matchesRequest(model: SetupModelDefinition, provider: ProviderDefinition, request: string): boolean {
+  return model.id === request
+    || model.name === request
+    || (model.aliases ?? []).includes(request)
+    || matchesProviderQualifiedRequest(model, provider, request)
 }
 
 function preferSize(

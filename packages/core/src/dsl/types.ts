@@ -89,6 +89,11 @@ export interface ProcessorDefinition {
   ) => Awaitable<ProcessedSource[]>
 }
 
+export interface RepositoryTarget {
+  files: SourceFile[]
+  targets: SourceTarget[]
+}
+
 export type RuleCacheConfig = boolean | { level?: 'target' }
 
 export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
@@ -109,11 +114,6 @@ export interface RuleContext {
   report: (diagnostic: DiagnosticDescriptor) => void
   settings: Record<string, unknown>
   src: SourceRuntime
-}
-
-export interface RepositoryTarget {
-  files: SourceFile[]
-  targets: SourceTarget[]
 }
 
 export interface RuleDefinition {
