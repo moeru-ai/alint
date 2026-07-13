@@ -21,9 +21,5 @@
     "@alint-js/tools-fs": "workspace:*",
     "@valibot/to-json-schema": "catalog:",
     "valibot": "catalog:"
-  },
-  "devDependencies": {
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
   }
 }

@@ -23,9 +23,5 @@
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
     "valibot": "catalog:"
-  },
-  "devDependencies": {
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
   }
 }

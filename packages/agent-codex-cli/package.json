@@ -1,5 +1,5 @@
 {
-  "name": "@alint-js/agent-apeira",
+  "name": "@alint-js/agent-codex-cli",
   "type": "module",
   "version": "0.0.21",
   "exports": {
@@ -21,8 +21,7 @@
     "@alint-js/core": "workspace:*"
   },
   "dependencies": {
-    "@xsai/tool": "catalog:",
-    "apeira": "catalog:"
+    "@openai/codex-sdk": "catalog:"
   },
   "devDependencies": {
     "@alint-js/core": "workspace:*"

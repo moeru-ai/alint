@@ -27,6 +27,9 @@ catalogs:
     '@moeru/std':
       specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.18
+    '@openai/codex-sdk':
+      specifier: ^0.144.3
+      version: 0.144.3
     '@package-json/types':
       specifier: ^0.0.13
       version: 0.0.13
@@ -315,18 +318,16 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
-      '@types/node':
+
+  packages/agent-codex-cli:
+    dependencies:
+      '@openai/codex-sdk':
         specifier: 'catalog:'
-        version: 26.0.1
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: catalog:vitest
-        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
+        version: 0.144.3
+    devDependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
 
   packages/agent-pi:
     dependencies:
@@ -343,18 +344,6 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.0.1
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: catalog:vitest
-        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/cli:
     dependencies:
@@ -395,9 +384,6 @@ importers:
       '@pnpm/find-workspace-dir':
         specifier: 'catalog:'
         version: 1000.1.5
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.0.1
       local-pkg:
         specifier: 'catalog:'
         version: 1.2.1
@@ -407,15 +393,6 @@ importers:
       tinyexec:
         specifier: 'catalog:'
         version: 1.2.4
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: catalog:vitest
-        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/config:
     dependencies:
@@ -471,24 +448,12 @@ importers:
         specifier: 'catalog:'
         version: 5.1.0
     devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.0.1
       '@types/tar-stream':
         specifier: 'catalog:'
         version: 3.1.4
       h3:
         specifier: 'catalog:'
         version: 2.0.1-rc.25
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: catalog:vitest
-        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/core:
     dependencies:
@@ -522,19 +487,6 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
-    devDependencies:
-      '@types/node':
-        specifier: 'catalog:'
-        version: 26.0.1
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
-      vitest:
-        specifier: catalog:vitest
-        version: 4.1.9(@opentelemetry/api@1.9.0)(@types/node@26.0.1)(@vitest/browser-playwright@4.1.9)(@vitest/coverage-v8@4.1.9)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
 
   packages/plugin-example:
     dependencies:
@@ -550,13 +502,6 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
-    devDependencies:
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   packages/plugin-example-agent:
     dependencies:
@@ -573,12 +518,6 @@ importers:
       '@alint-js/agent-pi':
         specifier: workspace:*
         version: link:../agent-pi
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   packages/plugin-example-go:
     dependencies:
@@ -600,13 +539,6 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
-    devDependencies:
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   packages/plugin-example-python:
     dependencies:
@@ -622,13 +554,6 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
-    devDependencies:
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   packages/plugin-example-rust:
     dependencies:
@@ -650,13 +575,6 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
-    devDependencies:
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
   packages/tools-fs:
     dependencies:
@@ -666,13 +584,6 @@ importers:
       tinyglobby:
         specifier: 'catalog:'
         version: 0.2.17
-    devDependencies:
-      tsdown:
-        specifier: 'catalog:'
-        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
-      typescript:
-        specifier: 'catalog:'
-        version: 6.0.3
 
 packages:
 
@@ -1518,6 +1429,51 @@ packages:
   '@nolyfill/safe-buffer@1.0.44':
     resolution: {integrity: sha512-SqlKXtlhNTDMeZKey9jnnuPhi8YTl1lJuEcY9zbm5i4Pqe79UJJ8IJ9oiD6DhgI8KjYc+HtLzpQJNRdNYqb/hw==}
     engines: {node: '>=12.4.0'}
+
+  '@openai/codex-sdk@0.144.3':
+    resolution: {integrity: sha512-WPtEx38iVyksWujOwmsxnJznRR8T/YF+lAJghMhHL1xIWdJrrvZ1iafhIsw4egY5CRoRmFm2ta8NQsK4f4XDZA==}
+    engines: {node: '>=18'}
+
+  '@openai/codex@0.144.3':
+    resolution: {integrity: sha512-8Re3wp5CdYiM7nsF4StFa5js6IT11N7srhxfvwtol7ENHDht05C+HS4e1CTmYjqkhgsUzl2R1gB27iN2pdbVnA==}
+    engines: {node: '>=16'}
+    hasBin: true
+
+  '@openai/codex@0.144.3-darwin-arm64':
+    resolution: {integrity: sha512-v/yT1wqslBcwquUvUPZvAdYyiZcCBIUL+pE4ymHpbUMVduwDJBw1EjLroOhe9FkYFDHzWGyv7YEw7iIV4k+0dA==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [darwin]
+
+  '@openai/codex@0.144.3-darwin-x64':
+    resolution: {integrity: sha512-308U0s7AeRg3AlnxJtmJk03yRRriEplC6ceFoB3OpWh+przqt8/u6MKDVU3KHdjb+vasa0IpmDWv5VrFw3oJAw==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [darwin]
+
+  '@openai/codex@0.144.3-linux-arm64':
+    resolution: {integrity: sha512-mJgDUmoPMry9a7g6ywsMQ4uQko2K0uHLqzEITUJMXiNNbCRBQKS+PxDWBlSK0bF0v72uAhWRRRGvPXslwhIdyg==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [linux]
+
+  '@openai/codex@0.144.3-linux-x64':
+    resolution: {integrity: sha512-xtDY5sWQPbYBj2lLWZJvc0jBre0XQ7ZmN4VbSEvazbQ2X7uHhm1D/0oZ7AI+SgC/VfZrUhvxRHd43/AmXSaAzA==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [linux]
+
+  '@openai/codex@0.144.3-win32-arm64':
+    resolution: {integrity: sha512-uvgBLuBX58GIq58CquhvhEmwLlH9Lc46rLmE5/CkEf1vQiCvWqVHxL28t7P9cmWGoeMuxsrIwqJgyzmRu6wZMQ==}
+    engines: {node: '>=16'}
+    cpu: [arm64]
+    os: [win32]
+
+  '@openai/codex@0.144.3-win32-x64':
+    resolution: {integrity: sha512-0o8LpbZuBvqcAdIqMh96pECFTtfkgMT2sP/Q2IKYUOOlSudq3ulvdDW6zARq04HhbOxSsU9TBYDkdqtDs2YcYQ==}
+    engines: {node: '>=16'}
+    cpu: [x64]
+    os: [win32]
 
   '@opentelemetry/api@1.9.0':
     resolution: {integrity: sha512-3giAOQvZiH5F9bMlMiv8+GSPMeqg0dbaeo58/0SlA9sxSqZhnUtxzX9/2FzyhS9sWQf5S0GJE0AKBrFqjpeYcg==}
@@ -5982,6 +5938,37 @@ snapshots:
     optional: true
 
   '@nolyfill/safe-buffer@1.0.44': {}
+
+  '@openai/codex-sdk@0.144.3':
+    dependencies:
+      '@openai/codex': 0.144.3
+
+  '@openai/codex@0.144.3':
+    optionalDependencies:
+      '@openai/codex-darwin-arm64': '@openai/codex@0.144.3-darwin-arm64'
+      '@openai/codex-darwin-x64': '@openai/codex@0.144.3-darwin-x64'
+      '@openai/codex-linux-arm64': '@openai/codex@0.144.3-linux-arm64'
+      '@openai/codex-linux-x64': '@openai/codex@0.144.3-linux-x64'
+      '@openai/codex-win32-arm64': '@openai/codex@0.144.3-win32-arm64'
+      '@openai/codex-win32-x64': '@openai/codex@0.144.3-win32-x64'
+
+  '@openai/codex@0.144.3-darwin-arm64':
+    optional: true
+
+  '@openai/codex@0.144.3-darwin-x64':
+    optional: true
+
+  '@openai/codex@0.144.3-linux-arm64':
+    optional: true
+
+  '@openai/codex@0.144.3-linux-x64':
+    optional: true
+
+  '@openai/codex@0.144.3-win32-arm64':
+    optional: true
+
+  '@openai/codex@0.144.3-win32-x64':
+    optional: true
 
   '@opentelemetry/api@1.9.0': {}
 

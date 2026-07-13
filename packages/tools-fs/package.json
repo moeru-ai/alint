@@ -19,9 +19,5 @@
   "dependencies": {
     "@alint-js/core": "workspace:*",
     "tinyglobby": "catalog:"
-  },
-  "devDependencies": {
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
   }
 }
