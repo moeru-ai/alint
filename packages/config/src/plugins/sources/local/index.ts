@@ -4,10 +4,11 @@ import type { DirectoryPluginSpecifier } from '../../spec'
 import type { DirectoryPluginLockEntry, ParsedDirectoryPluginLockEntry } from '../../types'
 import type { PluginImportTarget } from '../types'
 
-import { readFile, realpath, stat } from 'node:fs/promises'
+import { access, readFile, realpath, stat } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve as resolvePath, win32 } from 'node:path'
 
 import { isENOENTError, isPathInside } from '../../../utils/fs'
+import { loadDeclarativeRules } from '../../declarative'
 import { resolveRelativeRootEntry } from '../manifest'
 
 export interface InstalledLocalSource {
@@ -64,7 +65,7 @@ export async function resolve(entry: ParsedDirectoryPluginLockEntry): Promise<Pl
     throw new Error(`Directory plugin "${entry.alias}" has moved or its symlink target changed. Run: alint plugin install`)
   }
 
-  return { cache: 'content', entry: await validateRoot(entry.alias, packageDir) }
+  return validateRoot(entry.alias, packageDir)
 }
 
 async function canonicalRoot(alias: string, directory: string): Promise<string> {
@@ -97,6 +98,20 @@ async function canonicalRoot(alias: string, directory: string): Promise<string> 
   return packageDir
 }
 
+async function hasPackageJson(packageDir: string): Promise<boolean> {
+  try {
+    await access(join(packageDir, 'package.json'))
+    return true
+  }
+  catch (error) {
+    if (isENOENTError(error)) {
+      return false
+    }
+
+    throw error
+  }
+}
+
 async function lockedRoot(
   alias: string,
   directory: string,
@@ -114,7 +129,7 @@ async function lockedRoot(
   }
 }
 
-async function validateRoot(alias: string, packageDir: string): Promise<string> {
+async function validatePackageRoot(alias: string, packageDir: string): Promise<string> {
   const manifestPath = join(packageDir, 'package.json')
   let packageJson: PackageJson
 
@@ -167,4 +182,24 @@ async function validateRoot(alias: string, packageDir: string): Promise<string> 
   }
 
   return physicalEntry
+}
+
+async function validateRoot(alias: string, packageDir: string): Promise<PluginImportTarget> {
+  if (await hasPackageJson(packageDir)) {
+    return {
+      alias,
+      cache: 'content',
+      entry: await validatePackageRoot(alias, packageDir),
+      kind: 'module',
+    }
+  }
+
+  await loadDeclarativeRules({ alias, root: packageDir })
+
+  return {
+    alias,
+    cache: 'content',
+    entry: packageDir,
+    kind: 'declarative',
+  }
 }

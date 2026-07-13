@@ -261,6 +261,44 @@ python = "@alint-js/plugin-python@0.3.1"
     expect(await loadAlintConfig(cwd)).toEqual([{ plugins: { local: { rules: { second: {} } } } }])
   })
 
+  it('loads declarative local plugins from a static TOML config and lockfile', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-declarative-local-'))
+    const pluginRoot = join(cwd, 'rules', 'architecture')
+    await mkdir(join(pluginRoot, 'semantic'), { recursive: true })
+    await writeFile(join(pluginRoot, 'semantic', 'rule.alint.toml'), [
+      'name = "semantic-boundary"',
+      'builtInAgent = "basic-structured"',
+      'instruction = "Find semantic boundary issues."',
+    ].join('\n'), 'utf8')
+    await writeFile(join(cwd, 'alint.config.toml'), `
+[[config.group]]
+language = "text/plain"
+
+[config.group.plugins]
+arch = "./rules/architecture"
+
+[config.group.rules]
+"arch/semantic-boundary" = "warn"
+`)
+    await writePluginLock(cwd, {
+      arch: { alias: 'arch', path: pluginRoot, specifier: './rules/architecture', type: 'directory' },
+    })
+
+    const config = await loadAlintConfig(cwd)
+
+    expect(config).toMatchObject([
+      {
+        plugins: {
+          arch: {
+            rules: {
+              'semantic-boundary': { cache: true },
+            },
+          },
+        },
+      },
+    ])
+  })
+
   it('loads JS config with plugin objects when the lock file is malformed', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-plugin-object-malformed-lock-'))
     await writeFile(join(cwd, 'alint.config.mjs'), `
