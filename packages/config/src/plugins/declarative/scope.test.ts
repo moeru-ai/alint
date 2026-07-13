@@ -37,7 +37,7 @@ describe('createReportScope', () => {
     })
 
     expect(scope.canReport(undefined)).toBe(true)
-    expect(scope.canReport(join('/repo', 'src', 'main.go'))).toBe(true)
+    expect(scope.canReport(join('/repo', 'src', 'main.go'))).toBe(false)
 
     const includedScope = createReportScope({
       cwd: '/repo',

@@ -29,7 +29,7 @@ export function createReportScope(options: CreateReportScopeOptions): ReportScop
 
       const relativePath = normalizePath(relative(options.cwd, filePath))
       const included = includeFiles === undefined
-        ? targetFilePath === undefined || relativePath === targetFilePath
+        ? targetFilePath !== undefined && relativePath === targetFilePath
         : includeFiles.some(pattern => minimatch(relativePath, pattern, { dot: true }))
 
       if (!included) {
