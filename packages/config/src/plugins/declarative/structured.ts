@@ -2,7 +2,8 @@ import type { RuleContext, RuleDefinition } from '@alint-js/core'
 
 import type { DeclarativeFinding, DeclarativeRuleDefinition } from './types'
 
-import { readFile } from 'node:fs/promises'
+import { Buffer } from 'node:buffer'
+import { open } from 'node:fs/promises'
 import { isAbsolute, relative, resolve } from 'node:path'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured } from '@alint-js/core/structured-output'
@@ -15,6 +16,7 @@ export interface CreateStructuredMessagesOptions {
   cwd: string
   includeFiles?: readonly string[]
   instruction: string
+  logger?: RuleContext['logger']
   outputLanguage?: string
   retryFeedback?: string
   ruleFilePath: string
@@ -31,6 +33,7 @@ export interface ReportDeclarativeFindingsOptions {
   targetFilePath: string
 }
 
+const maxSupplementalFileBytes = 64 * 1024
 const maxSupplementalFiles = 12
 
 interface SupplementalFile {
@@ -42,6 +45,7 @@ export async function createStructuredMessages(options: CreateStructuredMessages
   const supplementalFiles = options.supplementalFiles ?? await collectSupplementalFiles({
     cwd: options.cwd,
     includeFiles: options.includeFiles,
+    logger: options.logger,
     targetFilePath: options.targetFilePath,
   })
 
@@ -80,7 +84,7 @@ export function createStructuredMessagesSync(options: CreateStructuredMessagesOp
 
 export function createStructuredRule(rule: DeclarativeRuleDefinition): RuleDefinition {
   return {
-    cache: true,
+    cache: rule.includeFiles === undefined || rule.includeFiles.length === 0,
     create: ctx => ({
       async onTarget(target) {
         if (target.kind !== 'file') {
@@ -91,6 +95,7 @@ export function createStructuredRule(rule: DeclarativeRuleDefinition): RuleDefin
         const supplementalFiles = await collectSupplementalFiles({
           cwd: ctx.cwd,
           includeFiles: rule.includeFiles,
+          logger: ctx.logger,
           targetFilePath: target.file.path,
         })
 
@@ -163,6 +168,7 @@ export function reportDeclarativeFindings(options: ReportDeclarativeFindingsOpti
 async function collectSupplementalFiles(options: {
   cwd: string
   includeFiles?: readonly string[]
+  logger?: RuleContext['logger']
   targetFilePath: string
 }): Promise<SupplementalFile[]> {
   if (options.includeFiles === undefined || options.includeFiles.length === 0) {
@@ -179,8 +185,14 @@ async function collectSupplementalFiles(options: {
   const files: SupplementalFile[] = []
 
   for (const filePath of filePaths) {
+    const content = await readSupplementalFile(filePath, options.logger)
+
+    if (content === undefined) {
+      continue
+    }
+
     files.push({
-      content: await readFile(filePath, 'utf8'),
+      content,
       filePath,
     })
   }
@@ -209,6 +221,36 @@ function formatSupplementalFiles(cwd: string, files: readonly SupplementalFile[]
       file.content,
     ].join('\n\n')),
   ].join('\n\n')
+}
+
+async function readSupplementalFile(filePath: string, logger: RuleContext['logger'] | undefined): Promise<string | undefined> {
+  let handle: Awaited<ReturnType<typeof open>> | undefined
+
+  try {
+    handle = await open(filePath, 'r')
+    const buffer = Buffer.alloc(maxSupplementalFileBytes + 1)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+
+    if (bytesRead > maxSupplementalFileBytes) {
+      logger?.debug('Skipping oversized declarative supplemental file', {
+        filePath,
+        maxBytes: maxSupplementalFileBytes,
+      })
+      return undefined
+    }
+
+    return buffer.subarray(0, bytesRead).toString('utf8')
+  }
+  catch (error) {
+    logger?.debug('Skipping unreadable declarative supplemental file', {
+      error,
+      filePath,
+    })
+    return undefined
+  }
+  finally {
+    await handle?.close()
+  }
 }
 
 function resolveFindingFilePath(cwd: string, targetFilePath: string, findingFilePath: string | undefined): string {

@@ -18,7 +18,7 @@ describe('createDeclarativePlugin', () => {
     })
 
     expect(Object.keys(plugin.rules ?? {})).toEqual(['semantic-boundary'])
-    expect(plugin.rules?.['semantic-boundary']).toMatchObject({ cache: true })
+    expect(plugin.rules?.['semantic-boundary']).toMatchObject({ cache: false })
   })
 
   it('marks coding-agent rules as not cacheable', () => {

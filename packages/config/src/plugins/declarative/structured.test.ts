@@ -48,6 +48,30 @@ describe('basic-structured declarative preset', () => {
     expect(content).toContain('def helper():')
   })
 
+  it('skips oversized supplemental files while keeping small supplemental files', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-structured-sized-context-'))
+    await mkdir(join(root, 'src'), { recursive: true })
+    const targetPath = join(root, 'src', 'main.py')
+    const helperPath = join(root, 'src', 'helper.py')
+    const oversizedPath = join(root, 'src', 'large.py')
+    await writeFile(targetPath, 'def main():\n    pass\n')
+    await writeFile(helperPath, 'small_helper_marker = True\n')
+    await writeFile(oversizedPath, `${'x'.repeat(65 * 1024)}oversized_marker\n`)
+
+    const messages = await createStructuredMessages({
+      cwd: root,
+      includeFiles: ['src/*.py'],
+      instruction: 'Find boundary issues.',
+      ruleFilePath: join(root, 'rules', 'rule.alint.toml'),
+      sourceText: 'def main():\n    pass\n',
+      targetFilePath: targetPath,
+    })
+
+    const content = messages.map(message => message.content).join('\n')
+    expect(content).toContain('small_helper_marker')
+    expect(content).not.toContain('oversized_marker')
+  })
+
   it('maps findings to diagnostics and filters out-of-scope files', () => {
     const reports: unknown[] = []
     const ctx = {
@@ -81,7 +105,7 @@ describe('basic-structured declarative preset', () => {
     expect(ctx.logger.debug).toHaveBeenCalledOnce()
   })
 
-  it('creates a cacheable file-target rule', () => {
+  it('creates a cacheable file-target rule without included supplemental files', () => {
     const rule = createStructuredRule({
       builtInAgent: 'basic-structured',
       excludeFiles: [],
@@ -91,6 +115,21 @@ describe('basic-structured declarative preset', () => {
     })
 
     expect(rule.cache).toBe(true)
+    expect(rule.create).toEqual(expect.any(Function))
+    expect(rule.create(createRuleContext()).onTarget).toEqual(expect.any(Function))
+  })
+
+  it('creates a non-cacheable file-target rule with included supplemental files', () => {
+    const rule = createStructuredRule({
+      builtInAgent: 'basic-structured',
+      excludeFiles: [],
+      filePath: '/repo/rules/semantic/rule.alint.toml',
+      includeFiles: ['src/**/*.py'],
+      instruction: 'Find semantic boundary issues.',
+      name: 'semantic-boundary',
+    })
+
+    expect(rule.cache).toBe(false)
     expect(rule.create).toEqual(expect.any(Function))
     expect(rule.create(createRuleContext()).onTarget).toEqual(expect.any(Function))
   })
