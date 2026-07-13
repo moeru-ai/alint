@@ -34,7 +34,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
   cli
     .option('--no-cache', 'Disable cache for this run')
     .option('--cache-location <path>', 'Path to the alint cache file or directory')
-    .option('--config <path>', 'Path to alint config file')
+    .option('-c, --config <path>', 'Path to alint config file')
     .option('--file-concurrency <count>', 'Number of files to lint concurrently')
     .option('--format <format>', 'Reporter format', { default: 'stylish' })
     .option('--model <model>', 'Force a model override')
