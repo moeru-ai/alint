@@ -111,6 +111,11 @@ export interface RuleContext {
   src: SourceRuntime
 }
 
+export interface RepositoryTarget {
+  files: SourceFile[]
+  targets: SourceTarget[]
+}
+
 export interface RuleDefinition {
   cache?: RuleCacheConfig
   create: (context: RuleContext) => RuleHandlers
@@ -119,6 +124,7 @@ export interface RuleDefinition {
 }
 
 export interface RuleHandlers {
+  onRepository?: (repository: RepositoryTarget) => Awaitable<void>
   onTarget?: (target: SourceTarget) => Awaitable<void>
 }
 

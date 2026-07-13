@@ -21,6 +21,7 @@
     "@alint-js/core": "workspace:*"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "catalog:",
     "@openai/codex-sdk": "catalog:"
   },
   "devDependencies": {
