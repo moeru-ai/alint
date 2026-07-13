@@ -31,12 +31,13 @@ export interface InteractiveSetupIo {
 }
 
 interface SelectOption<T extends string> {
+  hint?: string
   label: string
   value: T
 }
 
 interface SetupDraft {
-  addDefaultAlias?: boolean
+  defaultAliasTarget?: DefaultAliasTarget
   discoveredModels?: string[]
   endpoint?: string
   headerInput?: string
@@ -48,7 +49,7 @@ interface SetupDraft {
 }
 
 type SetupScope = 'global' | 'local'
-type SetupStep = 'confirm' | 'defaultAlias' | 'endpoint' | 'headers' | 'models' | 'providerId' | 'scope' | 'source'
+type SetupStep = 'confirm' | 'defaultAlias' | 'endpoint' | 'headers' | 'models' | 'providerId' | 'scope' | 'selectDefaultModel' | 'source'
 
 const nonTtyMessage = 'interactive setup requires a TTY. Use -N/--no-interactive with --provider-id and --provider-endpoint.\n'
 const backValue = '__alint_back__'
@@ -311,24 +312,85 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
     }
 
     if (step === 'defaultAlias') {
-      const addDefaultAlias = await prompts.select<'no' | 'yes' | typeof backValue>({
+      const defaultAliasAction = await prompts.select<'no' | 'selectAnother' | 'yes' | typeof backValue>({
         message: `Add alias "default" to ${draft.selectedModels?.[0]}?`,
         options: withBackOption([
           { label: 'Yes', value: 'yes' },
           { label: 'No', value: 'no' },
+          { label: 'Select another', value: 'selectAnother' },
         ]),
       })
 
-      if (prompts.isCancel(addDefaultAlias)) {
+      if (prompts.isCancel(defaultAliasAction)) {
         return cancelPrompt()
       }
 
-      if (addDefaultAlias === backValue) {
+      if (defaultAliasAction === backValue) {
         step = 'models'
         continue
       }
 
-      draft.addDefaultAlias = addDefaultAlias === 'yes'
+      if (defaultAliasAction === 'selectAnother') {
+        step = 'selectDefaultModel'
+        continue
+      }
+
+      draft.defaultAliasTarget = defaultAliasAction === 'yes'
+        ? {
+            modelId: draft.selectedModels?.[0] ?? '',
+            providerId: (draft.providerId ?? '').trim(),
+          }
+        : undefined
+      step = 'confirm'
+      continue
+    }
+
+    if (step === 'selectDefaultModel') {
+      const configPath = getConfigPath(io, draft.scope ?? 'global')
+      const existingConfig = await loadSetupConfig(configPath)
+      const draftProvider = createProviderConfig(
+        (draft.providerId ?? '').trim(),
+        (draft.endpoint ?? '').trim(),
+        draft.headers,
+        draft.selectedModels ?? [],
+      )
+      const candidateConfig = mergeSetupConfigs(existingConfig, {
+        providers: [draftProvider],
+        version: 1,
+      })
+      const candidates = createDefaultModelCandidates(
+        candidateConfig,
+        draftProvider.id,
+        draft.selectedModels ?? [],
+      )
+      const defaultModel = await prompts.select<string | typeof backValue>({
+        message: 'Select default model',
+        options: withBackOption(candidates.map(candidate => ({
+          hint: candidate.isCurrentDefault ? 'current default' : candidate.isNew ? 'new' : undefined,
+          label: candidate.label,
+          value: candidate.value,
+        }))),
+      })
+
+      if (prompts.isCancel(defaultModel)) {
+        return cancelPrompt()
+      }
+
+      if (defaultModel === backValue) {
+        step = 'defaultAlias'
+        continue
+      }
+
+      const candidate = candidates.find(item => item.value === defaultModel)
+
+      if (candidate === undefined) {
+        return cancelPrompt()
+      }
+
+      draft.defaultAliasTarget = {
+        modelId: candidate.modelId,
+        providerId: candidate.providerId,
+      }
       step = 'confirm'
       continue
     }
@@ -338,7 +400,6 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
       (draft.endpoint ?? '').trim(),
       draft.headers,
       draft.selectedModels ?? [],
-      draft.addDefaultAlias ?? true,
     )
     const confirmed = await prompts.select<'no' | 'yes' | typeof backValue>({
       message: [
@@ -368,10 +429,13 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
     const configPath = getConfigPath(io, draft.scope ?? 'global')
     const existingConfig = await loadSetupConfig(configPath)
-    const nextConfig = mergeSetupConfigs(existingConfig, {
+    const mergedConfig = mergeSetupConfigs(existingConfig, {
       providers: [nextProvider],
       version: 1,
     })
+    const nextConfig = draft.defaultAliasTarget === undefined
+      ? mergedConfig
+      : applyDefaultAlias(mergedConfig, draft.defaultAliasTarget)
 
     await writeSetupConfig(configPath, nextConfig)
     prompts.outro(`Wrote ${configPath}`)
@@ -392,14 +456,12 @@ function createProviderConfig(
   endpoint: string,
   headers: Record<string, string> | undefined,
   modelIds: string[],
-  addDefaultAlias: boolean,
 ): ProviderDefinition {
   return {
     endpoint,
     headers,
     id: providerId,
-    models: modelIds.map((modelId, index): SetupModelDefinition => ({
-      aliases: index === 0 && addDefaultAlias ? ['default'] : undefined,
+    models: modelIds.map((modelId): SetupModelDefinition => ({
       id: modelId,
       name: modelId,
     })),

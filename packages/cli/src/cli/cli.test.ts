@@ -430,6 +430,35 @@ describe('interactive setup default model helpers', () => {
     expect(config.providers[1]?.models[0]?.aliases).toEqual(['review', 'default'])
     expect(config.providers[1]?.models[1]?.aliases).toBeUndefined()
   })
+
+  it('models the Yes action by making the first selected new model the only default', () => {
+    const nextConfig = applyDefaultAlias({
+      providers: [
+        {
+          endpoint: 'https://openrouter.ai/api/v1',
+          id: 'openrouter',
+          models: [
+            { aliases: ['default'], id: 'openrouter-small', name: 'openrouter-small' },
+          ],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'http://127.0.0.1:8317/v1',
+          id: 'cliproxyapi',
+          models: [
+            { id: 'gpt-5.6-luna', name: 'gpt-5.6-luna' },
+            { id: 'gpt-5.6-sol', name: 'gpt-5.6-sol' },
+          ],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    }, { modelId: 'gpt-5.6-luna', providerId: 'cliproxyapi' })
+
+    expect(nextConfig.providers[0]?.models[0]?.aliases).toBeUndefined()
+    expect(nextConfig.providers[1]?.models[0]?.aliases).toEqual(['default'])
+    expect(nextConfig.providers[1]?.models[1]?.aliases).toBeUndefined()
+  })
 })
 
 describe('executeCli', () => {
