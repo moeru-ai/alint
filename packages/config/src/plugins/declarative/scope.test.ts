@@ -58,4 +58,45 @@ describe('createReportScope', () => {
     expect(scope.canReport(join('/repo', '.app.env'))).toBe(true)
     expect(scope.canReport(join('/repo', '.secret.env'))).toBe(false)
   })
+
+  it('rejects paths outside cwd before matching include globs', () => {
+    const scope = createReportScope({
+      cwd: '/repo',
+      excludeFiles: [],
+      includeFiles: ['**/*.py'],
+    })
+
+    expect(scope.canReport(join('/repo', 'src', 'main.py'))).toBe(true)
+    expect(scope.canReport('/outside/main.py')).toBe(false)
+    expect(scope.canReport('/repo/../outside/main.py')).toBe(false)
+
+    const escapingPatternScope = createReportScope({
+      cwd: '/repo',
+      excludeFiles: [],
+      includeFiles: ['../**/*.py'],
+    })
+
+    expect(escapingPatternScope.canReport('/outside/main.py')).toBe(false)
+  })
+
+  it('rejects target files outside cwd', () => {
+    const scope = createReportScope({
+      cwd: '/repo',
+      excludeFiles: [],
+      targetFilePath: '/outside/main.py',
+    })
+
+    expect(scope.canReport('/outside/main.py')).toBe(false)
+  })
+
+  it('rejects drive-qualified paths outside cwd before matching include globs', () => {
+    const scope = createReportScope({
+      cwd: 'C:/repo',
+      excludeFiles: [],
+      includeFiles: ['**/*.py'],
+    })
+
+    expect(scope.canReport('C:/repo/src/main.py')).toBe(true)
+    expect(scope.canReport('D:/other/main.py')).toBe(false)
+  })
 })

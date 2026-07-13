@@ -1,4 +1,4 @@
-import { relative } from 'node:path'
+import { isAbsolute, relative, win32 } from 'node:path'
 
 import { minimatch } from 'minimatch'
 import { normalize } from 'pathe'
@@ -17,17 +17,24 @@ export interface ReportScope {
 export function createReportScope(options: CreateReportScopeOptions): ReportScope {
   const includeFiles = options.includeFiles
   const excludeFiles = options.excludeFiles
-  const targetFilePath = options.targetFilePath === undefined
+  const rawTargetFilePath = options.targetFilePath
+  const hasTargetFilePath = rawTargetFilePath !== undefined
+  const targetFilePath = rawTargetFilePath === undefined
     ? undefined
-    : normalizePath(relative(options.cwd, options.targetFilePath))
+    : toScopedRelativePath(options.cwd, rawTargetFilePath)
 
   return {
     canReport(filePath) {
       if (filePath === undefined) {
-        return targetFilePath === undefined && includeFiles === undefined
+        return !hasTargetFilePath && includeFiles === undefined
       }
 
-      const relativePath = normalizePath(relative(options.cwd, filePath))
+      const relativePath = toScopedRelativePath(options.cwd, filePath)
+
+      if (relativePath === undefined) {
+        return false
+      }
+
       const included = includeFiles === undefined
         ? targetFilePath !== undefined && relativePath === targetFilePath
         : includeFiles.some(pattern => minimatch(relativePath, pattern, { dot: true }))
@@ -41,6 +48,24 @@ export function createReportScope(options: CreateReportScopeOptions): ReportScop
   }
 }
 
+function isOutsideScopePath(path: string): boolean {
+  return path === '..'
+    || path.startsWith('../')
+    || isAbsolute(path)
+    || win32.isAbsolute(path)
+    || /^[A-Za-z]:/u.test(path)
+}
+
 function normalizePath(path: string): string {
   return normalize(path).replace(/^\.\//u, '')
+}
+
+function toScopedRelativePath(cwd: string, filePath: string): string | undefined {
+  const path = normalizePath(relative(cwd, filePath))
+
+  if (isOutsideScopePath(path)) {
+    return undefined
+  }
+
+  return path
 }
