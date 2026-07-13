@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createBasicStructuredRule, createStructuredMessages, reportDeclarativeFindings } from './basicStructured'
+import { createBasicStructuredRule, createStructuredMessages, reportDeclarativeFindings } from './basic-structured'
 
 const generateStructuredMock = vi.hoisted(() => vi.fn())
 

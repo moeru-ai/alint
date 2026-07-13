@@ -2,8 +2,8 @@ import type { PluginDefinition, RuleDefinition } from '@alint-js/core'
 
 import type { DeclarativeRuleDefinition } from './types'
 
-import { createBasicCodingAgentRule } from '../../agents/presets/basicCodingAgent'
-import { createBasicStructuredRule } from '../../agents/presets/basicStructured'
+import { createBasicCodingAgentRule } from '../../agents/presets/basic-coding-agent'
+import { createBasicStructuredRule } from '../../agents/presets/basic-structured'
 
 export interface CreateDeclarativePluginOptions {
   rules: readonly DeclarativeRuleDefinition[]

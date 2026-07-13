@@ -12,7 +12,7 @@ import { chat, stepCountAtLeast, user } from 'apeira'
 import { parse } from 'valibot'
 
 import { declarativeFindingResponseSchema } from '../../plugins/declarative/types'
-import { reportDeclarativeFindings } from './basicStructured'
+import { reportDeclarativeFindings } from './basic-structured'
 
 const maxAgentSteps = 8
 const maxAnswerPreviewLength = 200

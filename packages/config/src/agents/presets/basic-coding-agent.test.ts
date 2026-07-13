@@ -11,7 +11,7 @@ import {
   parseCodingAgentAnswer,
   recordCodingAgentUsage,
   toRunnerTools,
-} from './basicCodingAgent'
+} from './basic-coding-agent'
 
 describe('basic-coding-agent declarative preset', () => {
   it('builds an agent request with fs tools and report instructions', () => {
