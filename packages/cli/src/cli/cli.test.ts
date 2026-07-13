@@ -32,6 +32,18 @@ function clearCiEnv(env: NodeJS.ProcessEnv | undefined): void {
   }
 }
 
+async function createDirectoryPlugin(cwd: string, name: string): Promise<void> {
+  const pluginRoot = join(cwd, 'plugins', name)
+  await mkdir(pluginRoot, { recursive: true })
+  await writeFile(join(pluginRoot, 'index.mjs'), 'export default { rules: {} }\n', 'utf8')
+  await writeFile(join(pluginRoot, 'package.json'), JSON.stringify({
+    exports: './index.mjs',
+    name,
+    type: 'module',
+    version: '1.0.0',
+  }), 'utf8')
+}
+
 async function createTestIo(): Promise<TestIo> {
   const cwd = await mkdtemp(join(tmpdir(), 'alint-cli-'))
   const configHome = await mkdtemp(join(tmpdir(), 'alint-config-home-'))
@@ -531,6 +543,30 @@ describe('executeCli', () => {
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toBe('No static plugins configured. Wrote empty plugin lock.\n')
     expect(io.stderrText).toBe('')
+  })
+
+  it('reports one installed local plugin directory', async () => {
+    const io = await createTestIo()
+    await createDirectoryPlugin(io.cwd, 'local-plugin')
+    await writeFile(join(io.cwd, 'alint.config.toml'), `
+[[config.group]]
+[config.group.plugins]
+local = "./plugins/local-plugin"
+`, 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe('Installed packages: 0, local directories: 1.\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('documents local directory installation in plugin help', async () => {
+    const io = await createTestIo()
+
+    await executeCli(['node', 'alint', 'plugin', '--help'], io)
+
+    expect(io.stdoutText).toContain('[[config.group]]')
   })
 
   it('prints contextual help when global options come before the command', async () => {

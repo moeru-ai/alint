@@ -9,7 +9,8 @@ import { loadConfig } from 'c12'
 import { createJiti } from 'jiti/static'
 
 import { listMissing, listUnresolved, loadPluginLockFile, parsePluginLockFile } from '../plugins/lock'
-import { importResolvedPluginPackage, resolveLockedPluginPackage } from '../plugins/package'
+import { resolvePluginImportTarget } from '../plugins/resolve'
+import { importPlugin } from '../plugins/sources/import'
 import {
   parseStaticConfig,
   toAlintConfig,
@@ -44,13 +45,14 @@ export async function loadAlintConfig(
   const unresolved = await listUnresolved(staticConfig, lock)
 
   if (unresolved.length > 0) {
-    throw new Error(`Static plugin packages could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`)
+    const message = `Static plugins could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`
+    throw new Error(message, { cause: unresolved[0]?.resolutionError })
   }
 
   return toAlintConfig(staticConfig, {
     async pluginResolver(reference) {
-      const resolved = await resolveLockedPluginPackage(lock.get(reference))
-      return importResolvedPluginPackage(resolved)
+      const resolved = await resolvePluginImportTarget(lock.get(reference))
+      return importPlugin(resolved)
     },
   })
 }

@@ -24,7 +24,7 @@ While `alint` is inspired by `eslint`, we expect the concept that `alint` brings
 
 ### Prerequisites
 
-`alint` is published as ESM packages and is intended for modern Node.js projects. Install Node.js and a package manager such as npm or pnpm before using the CLI.
+`alint` is published as ESM packages and runs on modern Node.js. It can analyze projects in any language, but the CLI requires Node.js and a package manager such as npm or pnpm.
 
 You also need at least one OpenAI-compatible model provider. Local providers such as Ollama and LM Studio work well for repeated lint runs because they keep token cost predictable.
 
@@ -171,12 +171,12 @@ In order to provision models and LLMs for `alint` while keeping it clean for con
 The priorities follow:
 
 ```text
-~/.config/alint/config.toml < .alint/config.toml < alint.config.ts < environment and CLI overrides
+~/.config/alint/config.toml < .alint/config.toml < alint.config.* < environment and CLI overrides
 ```
 
 - `~/.config/alint/config.toml` stores user-level provider setup.
 - `.alint/config.toml` stores optional project-local provider setup.
-- `alint.config.ts` stores project lint config, plugins, files, ignores, and rule settings.
+- `alint.config.*` stores project lint config, plugins, files, ignores, and rule settings.
 - Environment variables and CLI flags are the highest-priority overrides.
 
 Use setup TOML for machine or project provider definitions:
@@ -239,6 +239,47 @@ export default defineConfig([
   },
 ])
 ```
+
+#### Executable and static configs
+
+`alint` supports executable configs (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`) and data-only static configs (`.toml`, `.yaml`, `.yml`, `.json`, `.jsonc`, and `.json5`).
+
+- Executable configs export a flat config array and can import plugin definitions directly.
+- Static configs use a `config.group` array and identify plugin sources with strings. They are useful for Python, Rust, Go, and other repositories that do not want to author a JavaScript config file. The `alint` CLI itself still requires Node.js.
+
+For example, a TOML static config can install an exact remote package or a local plugin directory:
+
+```toml
+[[config.group]]
+
+[config.group.plugins]
+registry = "@scope/alint-plugin@1.2.3"
+relative = "./plugins/relative-plugin"
+absolute = "/opt/alint/plugins/absolute-plugin"
+file_url = "file:///opt/alint/plugins/file-url-plugin"
+```
+
+Relative plugin paths are resolved from the directory containing the config file, including when `--config` points to a nested config. On Windows, use TOML literal strings to preserve native backslashes:
+
+```toml
+[[config.group]]
+
+[config.group.plugins]
+native = 'C:\alint\plugins\native-plugin'
+```
+
+Use `alint plugin install` after adding or changing plugin sources.
+
+- **Package:** `@scope/alint-plugin@1.2.3` downloads that exact version into `.alint/plugins/store`, verifies its integrity, and loads its root export.
+- **Local:** `./plugins/my-plugin`, an absolute directory, or a `file:` URL loads the current package root export in place. `alint` checks that the package and entry exist and that the entry stays inside the package directory. It does not build the plugin or install the plugin's dependencies.
+
+Run the install command again after changing a source string, moving a local directory, or changing its symlink target. Changes inside the same local directory are loaded by the next CLI process without reinstalling.
+
+Local plugins execute as trusted Node.js code. Directory containment checks validate the installed source; they are not a sandbox.
+
+#### Plugin lockfile
+
+`alint plugin install` writes `.alint/plugins/lock.json`. Package entries lock the downloaded package and integrity metadata. Local entries lock the physical directory identity while loading its current contents at runtime.
 
 Rule severities follow the familiar lint convention:
 

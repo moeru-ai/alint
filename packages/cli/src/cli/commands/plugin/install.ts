@@ -20,23 +20,27 @@ export const install = defineCommand({
       return 0
     }
 
-    context.io.stdout.write(`Installed ${result.installedCount} static plugin package${result.installedCount === 1 ? '' : 's'}.\n`)
+    context.io.stdout.write(`Installed packages: ${result.installedPackageCount}, local directories: ${result.installedLocalDirectoryCount}.\n`)
     return 0
   },
-  description: 'Install static plugin packages',
+  description: 'Install plugins from static configs',
   examples: [
     [
-      '# Install plugin packages referenced by static config',
+      '# Install plugins referenced by static configs',
       'alint plugin install',
     ].join('\n'),
     [
       '# Install using a custom registry',
       'alint plugin install --registry https://registry.npmjs.org/',
     ].join('\n'),
+    [
+      '# Install a local directory configured as ./plugins/local-plugin',
+      'alint plugin install',
+    ].join('\n'),
   ],
   help: [
-    'Install npm packages referenced by static config plugin strings.',
-    'Packages are extracted into the project plugin store and recorded in `.alint/plugins/lock.json`.',
+    'Install remote packages or local directories from static configs.',
+    'Remote packages are extracted into the project plugin store. Local directories are installed in place. Both are recorded in `.alint/plugins/lock.json`.',
   ].join('\n\n'),
   name: 'install',
   options: [

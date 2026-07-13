@@ -19,6 +19,7 @@ function createLockEntry(alias: string, specifier: string, entry: string) {
     registry: 'https://registry.npmjs.org/',
     specifier,
     tarball: 'https://registry.npmjs.org/plugin.tgz',
+    type: 'registry' as const,
     version,
   }
 }
@@ -41,7 +42,7 @@ async function writeInstalledPackage(projectRoot: string): Promise<string> {
 async function writePluginLock(root: string, plugins: Record<string, unknown>): Promise<void> {
   const lockDir = join(root, '.alint', 'plugins')
   await mkdir(lockDir, { recursive: true })
-  await writeFile(join(lockDir, 'lock.json'), JSON.stringify({ plugins, version: 1 }), 'utf8')
+  await writeFile(join(lockDir, 'lock.json'), JSON.stringify({ plugins, version: 2 }), 'utf8')
 }
 
 describe('loadAlintConfig', () => {
@@ -167,7 +168,48 @@ python = "@alint-js/plugin-python@0.3.1"
 
     await expect(loadAlintConfig(cwd))
       .rejects
-      .toThrow('Static plugin packages could not be resolved from the lock file: python (@alint-js/plugin-python@0.3.1).\nRun: alint plugin install')
+      .toThrow('Static plugins could not be resolved from the lock file: python (@alint-js/plugin-python@0.3.1).\nRun: alint plugin install')
+  })
+
+  it('surfaces the specific missing build output for a locked directory plugin', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-local-unbuilt-'))
+    const pluginRoot = join(cwd, 'plugins', 'local')
+    await mkdir(pluginRoot, { recursive: true })
+    await writeFile(join(pluginRoot, 'package.json'), JSON.stringify({
+      exports: { '.': './dist/index.mjs' },
+      name: 'local',
+      type: 'module',
+      version: '1.0.0',
+    }))
+    await writeFile(join(cwd, 'alint.config.toml'), `
+[[config.group]]
+[config.group.plugins]
+local = "./plugins/local"
+`)
+    await writePluginLock(cwd, {
+      local: { alias: 'local', path: pluginRoot, specifier: './plugins/local', type: 'directory' },
+    })
+
+    try {
+      await loadAlintConfig(cwd)
+      expect.fail('Expected directory plugin loading to fail.')
+    }
+    catch (error) {
+      expect(error).toBeInstanceOf(Error)
+
+      if (!(error instanceof Error)) {
+        throw error
+      }
+
+      expect(error.message).toContain('Run: alint plugin install')
+      expect(error.cause).toBeInstanceOf(Error)
+
+      if (!(error.cause instanceof Error)) {
+        throw error
+      }
+
+      expect(error.cause.message).toBe('Directory plugin "local" entry "dist/index.mjs" does not exist. Build the package and try again.')
+    }
   })
 
   it('imports installed locked static plugin packages', async () => {
@@ -202,6 +244,21 @@ python = "@alint-js/plugin-python@0.3.1"
         },
       },
     ])
+  })
+
+  it('imports current directory plugin content without reinstalling', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'alint-config-live-local-'))
+    const pluginRoot = join(cwd, 'plugins', 'local')
+    await mkdir(join(pluginRoot, 'dist'), { recursive: true })
+    await writeFile(join(pluginRoot, 'package.json'), JSON.stringify({ exports: { '.': './dist/index.mjs' }, name: 'local', type: 'module' }))
+    const entry = join(pluginRoot, 'dist', 'index.mjs')
+    await writeFile(entry, 'export default { rules: { first: {} } }\n')
+    await writeFile(join(cwd, 'alint.config.toml'), `[[config.group]]\n[config.group.plugins]\nlocal = "./plugins/local"\n`)
+    await writePluginLock(cwd, { local: { alias: 'local', path: pluginRoot, specifier: './plugins/local', type: 'directory' } })
+
+    expect(await loadAlintConfig(cwd)).toEqual([{ plugins: { local: { rules: { first: {} } } } }])
+    await writeFile(entry, 'export default { rules: { second: {} } }\n')
+    expect(await loadAlintConfig(cwd)).toEqual([{ plugins: { local: { rules: { second: {} } } } }])
   })
 
   it('loads JS config with plugin objects when the lock file is malformed', async () => {
