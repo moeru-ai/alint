@@ -107,7 +107,7 @@ describe('plugin lock parsing', () => {
     }, { cwd: '/repo' })
     const reference = {
       alias: 'example',
-      specifier: parsePluginSpecifier('file:///repo/plugins/example'),
+      specifier: parsePluginSpecifier('/repo/plugins/example'),
     }
 
     expect(lock.find(reference)).toMatchObject({

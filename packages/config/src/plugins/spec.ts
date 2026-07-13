@@ -1,5 +1,4 @@
 import { dirname, isAbsolute, normalize, posix, resolve, sep, win32 } from 'node:path'
-import { fileURLToPath } from 'node:url'
 
 export interface DirectoryPluginSpecifier {
   directory: string
@@ -31,8 +30,7 @@ export function getPluginSpecifierKey(specifier: ParsedPluginSpecifier): string 
 }
 
 export function isDirectoryPluginSpecifier(value: string): boolean {
-  return /^file:/iu.test(value)
-    || isAbsolute(value)
+  return isAbsolute(value)
     || win32.isAbsolute(value)
     || explicitRelativePathPattern.test(value)
 }
@@ -42,7 +40,7 @@ export function parsePluginSpecifier(
   options: ParsePluginSpecifierOptions = {},
 ): ParsedPluginSpecifier {
   if (/^file:/iu.test(value)) {
-    return parseFileUrlSpecifier(value)
+    throw new Error('Static plugin file URLs are not supported. Use a relative or absolute directory path instead.')
   }
 
   if (isAbsolute(value) || win32.isAbsolute(value)) {
@@ -91,33 +89,6 @@ export function parsePluginSpecifier(
 function normalizeDirectoryIdentity(directory: string): string {
   // Parse-layer identity stays lexical and case-preserving; resolvers own physical realpath canonicalization.
   return isAbsolute(directory) ? normalize(directory) : win32.normalize(directory)
-}
-
-function parseFileUrlSpecifier(value: string): DirectoryPluginSpecifier {
-  try {
-    const url = new URL(value)
-
-    if (
-      !value.slice('file:'.length).startsWith('/')
-      || url.protocol !== 'file:'
-      || url.search !== ''
-      || url.hash !== ''
-      || url.username !== ''
-      || url.password !== ''
-      || url.port !== ''
-    ) {
-      throw new Error('invalid file URL shape')
-    }
-
-    return {
-      directory: normalize(fileURLToPath(url)),
-      raw: value,
-      type: 'directory',
-    }
-  }
-  catch {
-    throw new Error(`Invalid static plugin file URL "${value}".`)
-  }
 }
 
 function parsePackageNameSegments(name: string): string[] {

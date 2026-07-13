@@ -42,16 +42,15 @@ await writeSetupConfig(setupPath, setup)
 
 Static configs can use TOML, YAML, JSON, JSONC, or JSON5. They are data-only alternatives to executable JavaScript and TypeScript flat configs, and identify plugin sources with strings.
 
-For example, TOML supports exact remote packages, config-relative directories, native absolute paths, and file URLs:
+For example, TOML supports exact remote packages, config-relative directories, and native absolute paths:
 
 ```toml
 [[config.group]]
 
 [config.group.plugins]
-registry = "@scope/alint-plugin@1.2.3"
-relative = "./plugins/relative-plugin"
-absolute = "/opt/alint/plugins/absolute-plugin"
-file_url = "file:///opt/alint/plugins/file-url-plugin"
+plugin_1 = "@scope/alint-plugin-example1@1.2.3" # package
+plugin_2 = "./plugins/relative-plugin-examplex" # relative directory
+plugin_3 = "/opt/alint/plugins/absolute-plugin" # absolute directory
 ```
 
 Relative paths use the config file's directory as their base. Windows native paths should use TOML literal strings so backslashes remain literal:
