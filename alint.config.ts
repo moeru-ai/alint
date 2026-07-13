@@ -7,6 +7,9 @@ export default defineConfig([
     ignores: [
       ...ignorePatternsCommon,
       ...ignorePatternsAIAgents,
+
+      // Ignore internal fixtures
+      'packages/plugin-simplicity/fixtures/**',
     ],
   },
   {

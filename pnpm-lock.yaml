@@ -156,6 +156,9 @@ catalogs:
     tinyrainbow:
       specifier: ^3.1.0
       version: 3.1.0
+    tree-sitter-wasms:
+      specifier: ^0.1.13
+      version: 0.1.13
     tsdown:
       specifier: ^0.22.3
       version: 0.22.3
@@ -180,6 +183,9 @@ catalogs:
     vite:
       specifier: ^8.1.0
       version: 8.1.0
+    web-tree-sitter:
+      specifier: ^0.24.7
+      version: 0.24.7
     xdg-basedir:
       specifier: ^5.1.0
       version: 5.1.0
@@ -639,6 +645,43 @@ importers:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
     devDependencies:
+      tsdown:
+        specifier: 'catalog:'
+        version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
+
+  packages/plugin-simplicity:
+    dependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@alint-js/tools-fs':
+        specifier: workspace:*
+        version: link:../tools-fs
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.18
+      minimatch:
+        specifier: 'catalog:'
+        version: 10.2.5
+      pathe:
+        specifier: 'catalog:'
+        version: 2.0.3
+      tree-sitter-wasms:
+        specifier: 'catalog:'
+        version: 0.1.13
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.1(typescript@6.0.3)
+      web-tree-sitter:
+        specifier: 'catalog:'
+        version: 0.24.7
+    devDependencies:
+      '@alint-js/agent-apeira':
+        specifier: workspace:*
+        version: link:../agent-apeira
       tsdown:
         specifier: 'catalog:'
         version: 0.22.3(@arethetypeswrong/core@0.18.4)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.22.4)(typescript@6.0.3)(unplugin-unused@0.5.7)(unrun@0.2.39(synckit@0.11.13))
@@ -4639,6 +4682,9 @@ packages:
     resolution: {integrity: sha512-L0Orpi8qGpRG//Nd+H90vFB+3iHnue1zSSGmNOOCh1GLJ7rUKVwV2HvijphGQS2UmhUZewS9VgvxYIdgr+fG1A==}
     hasBin: true
 
+  tree-sitter-wasms@0.1.13:
+    resolution: {integrity: sha512-wT+cR6DwaIz80/vho3AvSF0N4txuNx/5bcRKoXouOfClpxh/qqrF4URNLQXbbt8MaAxeksZcZd1j8gcGjc+QxQ==}
+
   trough@1.0.5:
     resolution: {integrity: sha512-rvuRbTarPXmMb79SmzEp8aqXNKcK+y0XaB298IXueQ8I2PsrATcPBCSPyK/dDNa2iWOhKlfNnOjdAOTBU/nkFA==}
 
@@ -4921,6 +4967,9 @@ packages:
   web-streams-polyfill@3.3.3:
     resolution: {integrity: sha512-d2JWLCivmZYTSIoge9MsgFCZrt571BikcWGYkjC1khllbTeDlGqZ2D8vD8E/lJa8WGWbb7Plm8/XJYV7IJHZZw==}
     engines: {node: '>= 8'}
+
+  web-tree-sitter@0.24.7:
+    resolution: {integrity: sha512-CdC/TqVFbXqR+C51v38hv6wOPatKEUGxa39scAeFSm98wIhZxAYonhRQPSMmfZ2w7JDI0zQDdzdmgtNk06/krQ==}
 
   webpack-virtual-modules@0.6.2:
     resolution: {integrity: sha512-66/V2i5hQanC51vBQKPH4aI8NMAcBW59FVBs+rC7eGHupMyfn34q7rZIE+ETlJ+XTevqfUhVVBgSUNSW2flEUQ==}
@@ -9260,6 +9309,8 @@ snapshots:
 
   tree-kill@1.2.2: {}
 
+  tree-sitter-wasms@0.1.13: {}
+
   trough@1.0.5: {}
 
   ts-algebra@2.0.0: {}
@@ -9515,6 +9566,8 @@ snapshots:
   walk-up-path@4.0.0: {}
 
   web-streams-polyfill@3.3.3: {}
+
+  web-tree-sitter@0.24.7: {}
 
   webpack-virtual-modules@0.6.2: {}
 

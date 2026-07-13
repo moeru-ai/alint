@@ -71,6 +71,9 @@ components.d.ts
 
 # Cache
 .alintcache
+# Written by a run that lints the plugin-simplicity fixtures.
+packages/plugin-simplicity/fixtures/.alint/
+
 .eslintcache
 **/.cache/
 **/.vitepress/cache/

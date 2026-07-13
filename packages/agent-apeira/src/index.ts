@@ -33,6 +33,7 @@ export function createApeiraRunner(model: ResolvedModel): Runner {
     headers: model.provider.headers,
     model: model.id,
     stopWhen: stepCountAtLeast(maxSteps),
+    streamOptions: { includeUsage: true },
   })
 }
 
