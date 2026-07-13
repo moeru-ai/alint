@@ -2,7 +2,7 @@ import type { ResolvedModel, RuleContext, RuleDefinition } from '@alint-js/core'
 import type { AgentTool, AgentUsage } from '@alint-js/core/agent'
 import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
-import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from './types'
+import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from '../../plugins/declarative/types'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers } from '@alint-js/core/structured-output'
 import { createTools } from '@alint-js/tools-fs'
@@ -11,8 +11,8 @@ import { rawTool } from '@xsai/tool'
 import { chat, stepCountAtLeast, user } from 'apeira'
 import { parse } from 'valibot'
 
-import { reportDeclarativeFindings } from './structured'
-import { declarativeFindingResponseSchema } from './types'
+import { declarativeFindingResponseSchema } from '../../plugins/declarative/types'
+import { reportDeclarativeFindings } from './basicStructured'
 
 const maxAgentSteps = 8
 const maxAnswerPreviewLength = 200
@@ -56,7 +56,7 @@ export function buildCodingAgentRequest(options: BuildCodingAgentRequestOptions)
   }
 }
 
-export function createCodingAgentRule(_rule: DeclarativeRuleDefinition): RuleDefinition {
+export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): RuleDefinition {
   return {
     cache: false,
     create: ctx => ({

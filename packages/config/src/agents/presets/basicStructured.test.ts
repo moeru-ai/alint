@@ -6,7 +6,7 @@ import { join } from 'node:path'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { createStructuredMessages, createStructuredRule, reportDeclarativeFindings } from './structured'
+import { createBasicStructuredRule, createStructuredMessages, reportDeclarativeFindings } from './basicStructured'
 
 const generateStructuredMock = vi.hoisted(() => vi.fn())
 
@@ -106,7 +106,7 @@ describe('basic-structured declarative preset', () => {
   })
 
   it('creates a cacheable file-target rule without included supplemental files', () => {
-    const rule = createStructuredRule({
+    const rule = createBasicStructuredRule({
       builtInAgent: 'basic-structured',
       excludeFiles: [],
       filePath: '/repo/rules/semantic/rule.alint.toml',
@@ -120,7 +120,7 @@ describe('basic-structured declarative preset', () => {
   })
 
   it('creates a non-cacheable file-target rule with included supplemental files', () => {
-    const rule = createStructuredRule({
+    const rule = createBasicStructuredRule({
       builtInAgent: 'basic-structured',
       excludeFiles: [],
       filePath: '/repo/rules/semantic/rule.alint.toml',
@@ -145,7 +145,7 @@ describe('basic-structured declarative preset', () => {
     })
 
     const ctx = createRuleContext()
-    const rule = createStructuredRule({
+    const rule = createBasicStructuredRule({
       builtInAgent: 'basic-structured',
       excludeFiles: [],
       filePath: '/repo/rules/semantic/rule.alint.toml',

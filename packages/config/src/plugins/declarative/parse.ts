@@ -1,5 +1,4 @@
 import type {
-  BuiltInAgentName,
   DeclarativeRuleDefinition,
 } from './types'
 
@@ -8,8 +7,9 @@ import { basename, dirname, join } from 'node:path'
 
 import { errorMessageFrom } from '@moeru/std/error'
 import { loadConfig } from 'c12'
+import { array, check, object, optional, parse, picklist, pipe, string } from 'valibot'
 
-import { isBuiltInAgentName } from './types'
+import { builtInAgentNames, isBuiltInAgentName } from './types'
 
 export interface LoadDeclarativeRulesOptions {
   alias: string
@@ -18,6 +18,23 @@ export interface LoadDeclarativeRulesOptions {
 
 const declarativeRuleFileNamePattern = /^rule\.alint\.(?:toml|ya?ml|json|jsonc|json5)$/
 const declarativeRuleNamePattern = /^[\w.-]+$/
+const nonEmptyStringSchema = pipe(
+  string(),
+  check(value => value.trim() !== '', 'must be a non-empty string'),
+)
+const declarativeRuleFileSchema = object({
+  builtInAgent: picklist(builtInAgentNames),
+  excludeFiles: optional(array(string())),
+  includeFiles: optional(array(string())),
+  instruction: nonEmptyStringSchema,
+  name: pipe(
+    nonEmptyStringSchema,
+    check(
+      value => declarativeRuleNamePattern.test(value),
+      'Declarative rule "name" must contain only letters, numbers, dots, underscores, and hyphens.',
+    ),
+  ),
+})
 
 export async function hasDeclarativeRuleFiles(root: string): Promise<boolean> {
   return (await findDeclarativeRuleFiles(root)).length > 0
@@ -86,19 +103,15 @@ async function loadDeclarativeRuleFile(filePath: string): Promise<DeclarativeRul
     throw new Error(`Declarative rule file ${filePath} must contain an object.`)
   }
 
-  const name = readRuleName(input.name, filePath)
-  const builtInAgent = readBuiltInAgent(input.builtInAgent, filePath)
-  const instruction = readNonEmptyString(input.instruction, 'instruction', filePath)
-  const includeFiles = readOptionalStringArray(input.includeFiles, 'includeFiles', filePath)
-  const excludeFiles = readOptionalStringArray(input.excludeFiles, 'excludeFiles', filePath) ?? []
+  const parsed = parseDeclarativeRuleFileInput(input, filePath)
 
   return {
-    builtInAgent,
-    excludeFiles,
+    builtInAgent: parsed.builtInAgent,
+    excludeFiles: parsed.excludeFiles ?? [],
     filePath,
-    includeFiles,
-    instruction,
-    name,
+    includeFiles: parsed.includeFiles,
+    instruction: parsed.instruction,
+    name: parsed.name,
   }
 }
 
@@ -122,46 +135,17 @@ async function loadDeclarativeRuleFileContent(filePath: string): Promise<unknown
   }
 }
 
-function readBuiltInAgent(value: unknown, filePath: string): BuiltInAgentName {
-  const builtInAgent = readNonEmptyString(value, 'builtInAgent', filePath)
-
-  if (!isBuiltInAgentName(builtInAgent)) {
-    throw new Error(`Unknown builtInAgent "${builtInAgent}" in ${filePath}.`)
+function parseDeclarativeRuleFileInput(input: Record<string, unknown>, filePath: string) {
+  try {
+    return parse(declarativeRuleFileSchema, input)
   }
+  catch (error) {
+    if (typeof input.builtInAgent === 'string' && !isBuiltInAgentName(input.builtInAgent)) {
+      throw new Error(`Unknown builtInAgent "${input.builtInAgent}" in ${filePath}.`, { cause: error })
+    }
 
-  return builtInAgent
-}
-
-function readNonEmptyString(value: unknown, field: string, filePath: string): string {
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new Error(`Declarative rule "${field}" in ${filePath} must be a non-empty string.`)
+    throw new Error(`Invalid declarative rule file ${filePath}: ${errorMessageFrom(error) ?? 'Unknown error'}`, {
+      cause: error,
+    })
   }
-
-  return value
-}
-
-function readOptionalStringArray(
-  value: unknown,
-  field: string,
-  filePath: string,
-): string[] | undefined {
-  if (value === undefined) {
-    return undefined
-  }
-
-  if (!Array.isArray(value) || value.some(item => typeof item !== 'string')) {
-    throw new Error(`Declarative rule "${field}" in ${filePath} must be an array of strings.`)
-  }
-
-  return value
-}
-
-function readRuleName(value: unknown, filePath: string): string {
-  const name = readNonEmptyString(value, 'name', filePath)
-
-  if (!declarativeRuleNamePattern.test(name)) {
-    throw new Error(`Declarative rule "name" in ${filePath} must contain only letters, numbers, dots, underscores, and hyphens.`)
-  }
-
-  return name
 }

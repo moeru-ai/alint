@@ -62,14 +62,6 @@ export interface DeclarativeRuleDefinition {
   name: string
 }
 
-export interface DeclarativeRuleInput {
-  builtInAgent?: unknown
-  excludeFiles?: unknown
-  includeFiles?: unknown
-  instruction?: unknown
-  name?: unknown
-}
-
 export function isBuiltInAgentName(value: unknown): value is BuiltInAgentName {
   return builtInAgentNames.includes(value as BuiltInAgentName)
 }

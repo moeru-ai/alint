@@ -5,13 +5,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   buildCodingAgentRequest,
-  createCodingAgentRule,
+  createBasicCodingAgentRule,
   extractAnswer,
   InvalidCodingAgentOutputError,
   parseCodingAgentAnswer,
   recordCodingAgentUsage,
   toRunnerTools,
-} from './coding-agent'
+} from './basicCodingAgent'
 
 describe('basic-coding-agent declarative preset', () => {
   it('builds an agent request with fs tools and report instructions', () => {
@@ -65,7 +65,7 @@ describe('basic-coding-agent declarative preset', () => {
   })
 
   it('creates a non-cacheable rule without requiring ctx.agent', () => {
-    const rule = createCodingAgentRule({
+    const rule = createBasicCodingAgentRule({
       builtInAgent: 'basic-coding-agent',
       excludeFiles: [],
       filePath: '/repo/rules/reinvented/rule.alint.toml',

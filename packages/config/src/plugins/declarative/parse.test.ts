@@ -109,7 +109,7 @@ describe('loadDeclarativeRules', () => {
 
     await expect(loadDeclarativeRules({ alias: 'local', root: invalidRoot }))
       .rejects
-      .toThrow('Declarative rule "name" in')
+      .toThrow('Declarative rule "name" must contain only letters, numbers, dots, underscores, and hyphens.')
 
     const unknownRoot = await createRuleRoot()
     await mkdir(join(unknownRoot, 'rule'), { recursive: true })
