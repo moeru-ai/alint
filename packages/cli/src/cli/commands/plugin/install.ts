@@ -12,7 +12,7 @@ interface PluginInstallOptions {
   registry?: string
 }
 
-export function formatInstallSummary(counts: InstallSummaryCounts): string {
+function formatInstallSummary(counts: InstallSummaryCounts): string {
   const clauses: string[] = []
 
   if (counts.installedRegistryCount > 0) {

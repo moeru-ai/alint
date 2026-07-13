@@ -1,3 +1,5 @@
+import type { InstalledLocalSource } from './sources/local'
+import type { InstalledPackageSource } from './sources/package'
 import type {
   StaticPluginInstallOptions,
   StaticPluginInstallResult,
@@ -5,10 +7,15 @@ import type {
 
 import { loadStaticConfig } from '../config/load'
 import { createEmptyPluginLockFile, writePluginLockFile } from './lock'
+import {
+  createLockEntry as createLocalLockEntry,
+  install as installLocalSource,
+} from './sources/local'
+import {
+  createLockEntry as createPackageLockEntry,
+  install as installPackageSource,
+} from './sources/package'
 import { getPluginSpecifierKey } from './spec'
-
-import * as localSource from './sources/local'
-import * as packageSource from './sources/package'
 
 const DEFAULT_REGISTRY = 'https://registry.npmjs.org/'
 
@@ -19,9 +26,9 @@ export async function installStaticPlugins(
   const configuredPlugins = config.groups.flatMap(group => group.plugins)
   const npmRegistry = options.registry ?? DEFAULT_REGISTRY
   const lockFile = createEmptyPluginLockFile()
-  const registryInstallations = new Map<string, Promise<packageSource.InstalledPackageSource>>()
-  const directoryRegistrations = new Map<string, Promise<localSource.InstalledLocalSource>>()
-  const directoryEntries = new Map<string, localSource.InstalledLocalSource>()
+  const registryInstallations = new Map<string, Promise<InstalledPackageSource>>()
+  const directoryRegistrations = new Map<string, Promise<InstalledLocalSource>>()
+  const directoryEntries = new Map<string, InstalledLocalSource>()
 
   for (const configuredPlugin of configuredPlugins) {
     const specifier = configuredPlugin.specifier
@@ -31,7 +38,7 @@ export async function installStaticPlugins(
       let registration = directoryRegistrations.get(key)
 
       if (registration === undefined) {
-        registration = localSource.install({ alias: configuredPlugin.alias, specifier })
+        registration = installLocalSource({ alias: configuredPlugin.alias, specifier })
         directoryRegistrations.set(key, registration)
       }
 
@@ -40,7 +47,7 @@ export async function installStaticPlugins(
       const existing = directoryEntries.get(canonical)
       const entry = existing ?? registered
       directoryEntries.set(canonical, entry)
-      lockFile.plugins[configuredPlugin.alias] = await localSource.createLockEntry(entry, {
+      lockFile.plugins[configuredPlugin.alias] = await createLocalLockEntry(entry, {
         alias: configuredPlugin.alias,
         cwd: options.cwd,
         specifier,
@@ -52,7 +59,7 @@ export async function installStaticPlugins(
     let packageInstallation = registryInstallations.get(key)
 
     if (packageInstallation === undefined) {
-      packageInstallation = packageSource.install({
+      packageInstallation = installPackageSource({
         cwd: options.cwd,
         npmRegistry,
         specifier,
@@ -62,7 +69,7 @@ export async function installStaticPlugins(
 
     const installedPackage = await packageInstallation
 
-    lockFile.plugins[configuredPlugin.alias] = packageSource.createLockEntry(installedPackage, {
+    lockFile.plugins[configuredPlugin.alias] = createPackageLockEntry(installedPackage, {
       alias: configuredPlugin.alias,
       specifier,
     })

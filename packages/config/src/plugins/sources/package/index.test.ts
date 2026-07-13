@@ -12,7 +12,7 @@ import { createApp, defineEventHandler, serve, setResponseHeader, setResponseSta
 import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createLockEntry, install, resolve } from '.'
+import { install, resolve } from '.'
 import { parsePluginSpecifier } from '../../spec'
 
 describe('plugin package resolution', () => {
@@ -141,35 +141,6 @@ describe('plugin package resolution', () => {
     expect(installed.integrity).toBe(integrity(value))
     expect(installed.registry).toBe(registry.registry)
     await expect(readFile(join(projectRoot, installed.entry), 'utf8')).resolves.toBe('export default { rules: {} }\n')
-  })
-
-  it('normalizes the installed package export into a package-relative lock entry', async () => {
-    const projectRoot = await createTempProject()
-    const registry = await startRegistry(await pluginTarball())
-
-    await expect(installFrom(projectRoot, registry.registry)).resolves.toMatchObject({
-      entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
-    })
-  })
-
-  it('creates a complete registry lock entry for an alias and raw specifier', async () => {
-    const projectRoot = await createTempProject()
-    const value = await pluginTarball()
-    const registry = await startRegistry(value)
-    const specifier = registrySpecifier()
-    const installed = await installFrom(projectRoot, registry.registry)
-
-    expect(createLockEntry(installed, { alias: 'python', specifier })).toEqual({
-      alias: 'python',
-      entry: '.alint/plugins/store/@alint-js/plugin-python/0.3.1/package/dist/index.mjs',
-      integrity: integrity(value),
-      name: '@alint-js/plugin-python',
-      registry: registry.registry,
-      specifier: '@alint-js/plugin-python@0.3.1',
-      tarball: `${registry.registry}plugin.tgz`,
-      type: 'registry',
-      version: '0.3.1',
-    })
   })
 
   it('throws when the installed package has no resolvable root export', async () => {

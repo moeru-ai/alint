@@ -52,41 +52,49 @@ export async function install(options: InstallOptions): Promise<InstalledLocalSo
 }
 
 export async function resolve(entry: ParsedDirectoryPluginLockEntry): Promise<PluginImportTarget> {
+  const lockedPath = isAbsolute(entry.lockEntry.path) || win32.isAbsolute(entry.lockEntry.path)
+    ? entry.lockEntry.path
+    : resolvePath(entry.cwd, entry.lockEntry.path)
   const [packageDir, lockedPackageDir] = await Promise.all([
     lockedRoot(entry.alias, entry.specifier.directory, 'configured'),
-    lockedRoot(entry.alias, lockPath(entry), 'locked'),
+    lockedRoot(entry.alias, lockedPath, 'locked'),
   ])
 
   if (packageDir !== lockedPackageDir) {
-    throw changedRootError(entry.alias)
+    throw new Error(`Directory plugin "${entry.alias}" has moved or its symlink target changed. Run: alint plugin install`)
   }
 
   return { cache: 'content', entry: await validateRoot(entry.alias, packageDir) }
 }
 
 async function canonicalRoot(alias: string, directory: string): Promise<string> {
-  let directoryStat
+  let packageDir
 
   try {
-    directoryStat = await stat(directory)
+    packageDir = await realpath(directory)
   }
   catch (error) {
     if (isENOENTError(error)) {
-      throw new Error(`Directory plugin "${alias}" does not exist at "${directory}".`)
+      throw new Error(`Directory plugin "${alias}" does not exist at "${directory}".`, { cause: error })
     }
 
-    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`)
+    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+  }
+
+  let directoryStat
+
+  try {
+    directoryStat = await stat(packageDir)
+  }
+  catch (error) {
+    throw new Error(`Could not inspect directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
   }
 
   if (!directoryStat.isDirectory()) {
     throw new Error(`Directory plugin "${alias}" path "${directory}" is not a directory.`)
   }
 
-  return realpath(directory)
-}
-
-function changedRootError(alias: string): Error {
-  return new Error(`Directory plugin "${alias}" has moved or its symlink target changed. Run: alint plugin install`)
+  return packageDir
 }
 
 async function lockedRoot(
@@ -99,32 +107,19 @@ async function lockedRoot(
   }
   catch (error) {
     if (isENOENTError(error)) {
-      throw changedRootError(alias)
+      throw new Error(`Directory plugin "${alias}" has moved or its symlink target changed. Run: alint plugin install`, { cause: error })
     }
 
-    throw new Error(`Could not resolve ${source} directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`)
-  }
-}
-
-function lockPath(entry: ParsedDirectoryPluginLockEntry): string {
-  return isAbsolute(entry.lockEntry.path) || win32.isAbsolute(entry.lockEntry.path)
-    ? entry.lockEntry.path
-    : resolvePath(entry.cwd, entry.lockEntry.path)
-}
-
-async function readLocalManifest(alias: string, packageDir: string) {
-  const manifestPath = join(packageDir, 'package.json')
-
-  try {
-    return await readManifest(manifestPath)
-  }
-  catch (error) {
-    throw new Error(`Directory plugin "${alias}" has an unreadable or invalid package.json at "${manifestPath}": ${errorMessageFrom(error) ?? 'unknown error'}`)
+    throw new Error(`Could not resolve ${source} directory plugin "${alias}" at "${directory}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
   }
 }
 
 async function validateRoot(alias: string, packageDir: string): Promise<string> {
-  const packageJson = await readLocalManifest(alias, packageDir)
+  const manifestPath = join(packageDir, 'package.json')
+  const packageJson = await readManifest(manifestPath).catch((error: unknown) => {
+    throw new Error(`Directory plugin "${alias}" has an unreadable or invalid package.json at "${manifestPath}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+  })
+
   const relativeEntry = resolveRelativeRootEntry(packageJson)
   const entry = resolvePath(packageDir, relativeEntry)
 
@@ -132,27 +127,38 @@ async function validateRoot(alias: string, packageDir: string): Promise<string> 
     throw new Error(`Directory plugin "${alias}" root export escapes the package directory.`)
   }
 
-  let entryStat
+  let physicalEntry
 
   try {
-    entryStat = await stat(entry)
+    physicalEntry = await realpath(entry)
   }
   catch (error) {
     if (isENOENTError(error)) {
-      throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" does not exist. Build the package and try again.`)
+      throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" does not exist. Build the package and try again.`, { cause: error })
     }
 
-    throw new Error(`Could not inspect directory plugin "${alias}" entry "${relativeEntry}": ${errorMessageFrom(error) ?? 'unknown error'}`)
+    throw new Error(`Could not resolve directory plugin "${alias}" entry "${relativeEntry}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
+  }
+
+  if (!isPathInside(physicalEntry, packageDir)) {
+    throw new Error(`Directory plugin "${alias}" entry physically escapes the package directory.`)
+  }
+
+  let entryStat
+
+  try {
+    entryStat = await stat(physicalEntry)
+  }
+  catch (error) {
+    if (isENOENTError(error)) {
+      throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" does not exist. Build the package and try again.`, { cause: error })
+    }
+
+    throw new Error(`Could not inspect directory plugin "${alias}" entry "${relativeEntry}": ${errorMessageFrom(error) ?? 'unknown error'}`, { cause: error })
   }
 
   if (!entryStat.isFile()) {
     throw new Error(`Directory plugin "${alias}" entry "${relativeEntry}" is not a regular file.`)
-  }
-
-  const physicalEntry = await realpath(entry)
-
-  if (!isPathInside(physicalEntry, packageDir)) {
-    throw new Error(`Directory plugin "${alias}" entry physically escapes the package directory.`)
   }
 
   return physicalEntry

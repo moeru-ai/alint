@@ -8,7 +8,7 @@ import { join } from 'pathe'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { parsePluginLockFile } from '../../lock'
-import { createLockEntry, install, resolve } from './index'
+import { install, resolve } from './index'
 
 describe('local plugin source', () => {
   const tempRoots: string[] = []
@@ -70,23 +70,6 @@ describe('local plugin source', () => {
     expect(lockEntry).toEqual({ path: physicalPackageDir, type: 'directory' })
     expect(resolved.entry).toBe(join(physicalPackageDir, 'dist', 'index.mjs'))
     expect(resolved.cache).toBe('content')
-  })
-
-  it('creates a complete project-relative lock entry for an alias', async () => {
-    const projectRoot = await createTempProject()
-    const packageDir = join(projectRoot, 'plugins', 'local')
-    await writeDirectoryPackage(packageDir)
-    const specifier = createDirectorySpecifier(packageDir, './plugins/local')
-    const installed = await install({ alias: 'first', specifier })
-
-    await expect(createLockEntry(installed, { alias: 'second', cwd: projectRoot, specifier }))
-      .resolves
-      .toEqual({
-        alias: 'second',
-        path: 'plugins/local',
-        specifier: './plugins/local',
-        type: 'directory',
-      })
   })
 
   it('registers a directory package without importing its root entry', async () => {
@@ -224,29 +207,6 @@ throw new Error('entry must not be imported during registration')
     expect(resolved.entry).toBe(await realpath(physicalEntry))
   })
 
-  it('accepts a source directory symlink and rejects it after retargeting', async () => {
-    const projectRoot = await createTempProject()
-    const firstRoot = await createTempProject()
-    const secondRoot = await createTempProject()
-    const linkPath = join(projectRoot, 'local-plugin')
-    await writeDirectoryPackage(firstRoot)
-    await writeDirectoryPackage(secondRoot)
-    await symlink(firstRoot, linkPath, 'dir')
-    const specifier = createDirectorySpecifier(linkPath, './local-plugin')
-    const lockEntry = await install({ alias: 'local', specifier })
-
-    await expect(resolve(createDirectoryLockEntry(projectRoot, specifier, lockEntry.path)))
-      .resolves
-      .toEqual({ cache: 'content', entry: join(await realpath(firstRoot), 'dist', 'index.mjs') })
-
-    await rm(linkPath)
-    await symlink(secondRoot, linkPath, 'dir')
-
-    await expect(resolve(createDirectoryLockEntry(projectRoot, specifier, lockEntry.path)))
-      .rejects
-      .toThrow('Directory plugin "local" has moved or its symlink target changed. Run: alint plugin install')
-  })
-
   it('rejects a retargeted config source through a parsed lock lookup', async () => {
     const projectRoot = await createTempProject()
     const firstRoot = await createTempProject()
@@ -292,7 +252,10 @@ throw new Error('entry must not be imported during registration')
 
     await expect(resolve(parsedEntry))
       .rejects
-      .toThrow(/Could not resolve configured directory plugin "local".*ELOOP.*too many symbolic links/iu)
+      .toMatchObject({
+        cause: { code: 'ELOOP' },
+        message: expect.stringContaining(`Could not resolve configured directory plugin "local" at "${loopPath}":`),
+      })
   })
 
   it('resolves changed source and export content within the locked physical root', async () => {

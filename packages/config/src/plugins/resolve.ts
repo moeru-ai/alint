@@ -1,9 +1,9 @@
 import type { PluginImportTarget } from './sources/types'
 import type { ParsedPluginLockEntry } from './types'
 
-import * as localSource from './sources/local'
-import * as packageSource from './sources/package'
+import { resolve as resolveLocalSource } from './sources/local'
+import { resolve as resolvePackageSource } from './sources/package'
 
 export function resolvePluginImportTarget(entry: ParsedPluginLockEntry): Promise<PluginImportTarget> {
-  return entry.type === 'directory' ? localSource.resolve(entry) : packageSource.resolve(entry)
+  return entry.type === 'directory' ? resolveLocalSource(entry) : resolvePackageSource(entry)
 }

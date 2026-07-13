@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest'
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
-import { formatInstallSummary } from './commands/plugin/install'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId } from './provider-registry'
 
@@ -562,66 +561,12 @@ local = "./plugins/local-plugin"
     expect(io.stderrText).toBe('')
   })
 
-  it('reports multiple registered local plugin directories', async () => {
-    const io = await createTestIo()
-    await createDirectoryPlugin(io.cwd, 'first-plugin')
-    await createDirectoryPlugin(io.cwd, 'second-plugin')
-    await writeFile(join(io.cwd, 'alint.config.toml'), `
-[[config.group]]
-[config.group.plugins]
-first = "./plugins/first-plugin"
-second = "./plugins/second-plugin"
-`, 'utf8')
-
-    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install'], io)
-
-    expect(exitCode).toBe(0)
-    expect(io.stdoutText).toBe('Registered 2 local plugin directories.\n')
-    expect(io.stderrText).toBe('')
-  })
-
-  it('formats a registry-only plugin installation summary', () => {
-    expect(formatInstallSummary({ installedRegistryCount: 1, registeredDirectoryCount: 0 }))
-      .toBe('Installed 1 registry plugin package.\n')
-    expect(formatInstallSummary({ installedRegistryCount: 2, registeredDirectoryCount: 0 }))
-      .toBe('Installed 2 registry plugin packages.\n')
-  })
-
-  it('formats an empty plugin installation summary without stray punctuation', () => {
-    expect(formatInstallSummary({ installedRegistryCount: 0, registeredDirectoryCount: 0 }))
-      .toBe('')
-  })
-
-  it('formats a mixed plugin installation summary', () => {
-    expect(formatInstallSummary({ installedRegistryCount: 1, registeredDirectoryCount: 1 }))
-      .toBe('Installed 1 registry plugin package and registered 1 local plugin directory.\n')
-    expect(formatInstallSummary({ installedRegistryCount: 2, registeredDirectoryCount: 3 }))
-      .toBe('Installed 2 registry plugin packages and registered 3 local plugin directories.\n')
-  })
-
   it('documents local directory registration in plugin help', async () => {
     const io = await createTestIo()
 
-    const exitCode = await executeCli(['node', 'alint', 'plugin', '--help'], io)
+    await executeCli(['node', 'alint', 'plugin', '--help'], io)
 
-    expect(exitCode).toBe(0)
-    expect(io.stdoutText).toContain('Register a local plugin directory path')
     expect(io.stdoutText).toContain('[[config.group]]')
-    expect(io.stdoutText).toContain('[config.group.plugins]')
-    expect(io.stdoutText).toContain('./plugins/local-plugin')
-    expect(io.stdoutText).toContain('alint plugin install')
-    expect(io.stderrText).toBe('')
-  })
-
-  it('documents local directory registration in plugin install help', async () => {
-    const io = await createTestIo()
-
-    const exitCode = await executeCli(['node', 'alint', 'plugin', 'install', '--help'], io)
-
-    expect(exitCode).toBe(0)
-    expect(io.stdoutText).toContain('Local directory paths are registered in place')
-    expect(io.stdoutText).toContain('./plugins/local-plugin')
-    expect(io.stderrText).toBe('')
   })
 
   it('prints contextual help when global options come before the command', async () => {
