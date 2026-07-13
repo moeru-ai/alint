@@ -20,8 +20,10 @@ words:
   - apeira
   - bumpp
   - BYOA
+  - docstrings
   - doctoc
   - earendil
+  - ENOENT
   - eslintcache
   - eventa
   - gitmoji
@@ -41,6 +43,9 @@ words:
   - qwen
   - RAII
   - referer
+  - reimplementation
+  - reindenting
+  - renameable
   - retriable
   - smol
   - sonarjs
@@ -54,6 +59,7 @@ words:
   - unocss
   - Unrefable
   - venv
+  - wasms
   - xsai
 ignoreWords: []
 import: []
