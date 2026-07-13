@@ -261,17 +261,22 @@ python = "@alint-js/plugin-python@0.3.1"
     expect(await loadAlintConfig(cwd)).toEqual([{ plugins: { local: { rules: { second: {} } } } }])
   })
 
-  it('loads declarative local plugins from a static TOML config and lockfile', async () => {
+  it('loads declarative structured rules from a static TOML config and lockfile', async () => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-config-declarative-local-'))
     const pluginRoot = join(cwd, 'rules', 'architecture')
+    const sourcePath = join(cwd, 'src', 'main.py')
     await mkdir(join(pluginRoot, 'semantic'), { recursive: true })
+    await mkdir(join(cwd, 'src'), { recursive: true })
     await writeFile(join(pluginRoot, 'semantic', 'rule.alint.toml'), [
       'name = "semantic-boundary"',
       'builtInAgent = "basic-structured"',
       'instruction = "Find semantic boundary issues."',
+      'includeFiles = ["src/**/*.py"]',
     ].join('\n'), 'utf8')
+    await writeFile(sourcePath, 'def main():\n    return 1\n')
     await writeFile(join(cwd, 'alint.config.toml'), `
 [[config.group]]
+files = ["src/**/*.py"]
 language = "text/plain"
 
 [config.group.plugins]
@@ -288,10 +293,11 @@ arch = "./rules/architecture"
 
     expect(config).toMatchObject([
       {
+        files: ['src/**/*.py'],
         plugins: {
           arch: {
             rules: {
-              'semantic-boundary': { cache: true },
+              'semantic-boundary': { cache: false },
             },
           },
         },

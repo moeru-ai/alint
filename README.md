@@ -274,6 +274,41 @@ Use `alint plugin install` after adding or changing plugin sources.
 - **Package:** `@scope/alint-plugin-example1@1.2.3` downloads that exact version into `.alint/plugins/store`, verifies its integrity, and loads its root export.
 - **Local:** `./plugins/my-plugin` or an absolute directory loads the current package root export in place. `alint` checks that the package and entry exist and that the entry stays inside the package directory. It does not build the plugin or install the plugin's dependencies.
 
+#### Declarative local rule plugins
+
+For simple prompt-backed rules, a local plugin directory can omit `package.json` and contain one or more `rule.alint.*` files:
+
+```toml
+# rules/architecture/semantic/rule.alint.toml
+name = "semantic-boundary"
+builtInAgent = "basic-structured"
+instruction = """
+Find semantic boundary problems in the reviewed source.
+Report concrete findings with line numbers and short suggestions.
+"""
+includeFiles = [ "src/**/*.py" ]
+excludeFiles = [
+  "**/*_test.py",
+  "**/vendor/**",
+]
+```
+
+Reference the directory through the same static `plugins` table:
+
+```toml
+[[config.group]]
+files = [ "src/**/*.py" ]
+language = "text/plain"
+
+[config.group.plugins]
+arch = "./rules/architecture"
+
+[config.group.rules]
+"arch/semantic-boundary" = "warn"
+```
+
+`name` becomes the local rule id. `builtInAgent` can be `basic-structured` for a prompt-only structured-output rule or `basic-coding-agent` for a small built-in agent with filesystem tools. `includeFiles` and `excludeFiles` define where diagnostics may be reported; they do not limit what `basic-coding-agent` can inspect.
+
 Run the install command again after changing a source string, moving a local directory, or changing its symlink target. Changes inside the same local directory are loaded by the next CLI process without reinstalling.
 
 Local plugins execute as trusted Node.js code. Directory containment checks validate the installed source; they are not a sandbox.
