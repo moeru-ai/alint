@@ -1,21 +1,20 @@
 import type { ResolvedModel, RuleContext, RuleDefinition } from '@alint-js/core'
 import type { AgentTool, AgentUsage } from '@alint-js/core/agent'
-import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
+import type { AgentChannel, ChatRunnerOptions, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
 import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from '../../plugins/declarative/types'
 
-import { formatOutputLanguageInstruction, formatSourceWithLineNumbers } from '@alint-js/core/structured-output'
+import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, toolParametersFromSchema } from '@alint-js/core/structured-output'
 import { createTools } from '@alint-js/tools-fs'
-import { errorMessageFrom } from '@moeru/std/error'
 import { rawTool } from '@xsai/tool'
-import { chat, stepCountAtLeast, user } from 'apeira'
+import { chat, hasToolCall, or, stepCountAtLeast, user } from 'apeira'
 import { parse } from 'valibot'
 
 import { declarativeFindingResponseSchema } from '../../plugins/declarative/types'
 import { reportDeclarativeFindings } from './basic-structured'
 
 const maxAgentSteps = 8
-const maxAnswerPreviewLength = 200
+export const reportFindingsToolName = 'report_findings'
 
 export interface BuildCodingAgentRequestOptions {
   cwd: string
@@ -32,19 +31,12 @@ export interface CodingAgentRequest {
   tools: AgentTool[]
 }
 
-export class InvalidCodingAgentOutputError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'InvalidCodingAgentOutputError'
-  }
-}
-
 export function buildCodingAgentRequest(options: BuildCodingAgentRequestOptions): CodingAgentRequest {
   return {
     instructions: [
       options.instruction,
-      'Return only JSON matching this shape: {"findings":[{"filePath":"optional/path","line":1,"message":"finding message","suggestion":"optional suggestion","confidence":"high|medium|low"}]}.',
-      'Do not wrap the JSON in Markdown fences, prose, or comments. Return {"findings":[]} when there are no issues.',
+      'Use the filesystem tools to inspect the project as needed before reaching a conclusion.',
+      `When the review is complete, call ${reportFindingsToolName} exactly once with all findings. Submit an empty findings array when there are no issues.`,
     ].join('\n\n'),
     prompt: [
       formatOutputLanguageInstruction(options.outputLanguage),
@@ -87,12 +79,10 @@ export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): Ru
           usage: result.usage,
         })
 
-        const { findings } = parseCodingAgentAnswer(result.answer)
-
         reportDeclarativeFindings({
           ctx,
           excludeFiles: _rule.excludeFiles,
-          findings,
+          findings: result.findings,
           includeFiles: _rule.includeFiles,
           targetFilePath: target.file.path,
         })
@@ -101,27 +91,29 @@ export function createBasicCodingAgentRule(_rule: DeclarativeRuleDefinition): Ru
   }
 }
 
-export function extractAnswer(output: readonly AgentInput[]): string {
-  for (let index = output.length - 1; index >= 0; index -= 1) {
-    const item = output[index] as { content?: unknown, role?: unknown }
-
-    if (item.role === 'assistant' && typeof item.content === 'string') {
-      return item.content
-    }
+export function createCodingAgentRunnerOptions(model: ResolvedModel): ChatRunnerOptions {
+  return {
+    baseURL: model.provider.endpoint,
+    headers: model.provider.headers,
+    model: model.id,
+    parallelToolCalls: false,
+    stopWhen: or(hasToolCall(reportFindingsToolName), stepCountAtLeast(maxAgentSteps)),
+    toolChoice: 'required',
   }
-
-  return ''
 }
 
-export function parseCodingAgentAnswer(answer: string): DeclarativeFindingResponse {
-  try {
-    return parse(declarativeFindingResponseSchema, JSON.parse(answer))
-  }
-  catch (error) {
-    throw new InvalidCodingAgentOutputError(
-      `Invalid basic-coding-agent JSON response: ${errorMessageFrom(error) ?? String(error)}. Answer preview: ${previewAnswer(answer)}`,
-    )
-  }
+export function createReportFindingsTool(onReport: (report: DeclarativeFindingResponse) => void): Tool {
+  return rawTool({
+    description: 'Submit all findings and finish the review. Submit an empty findings array when there are no issues.',
+    execute: async (input) => {
+      const report = parse(declarativeFindingResponseSchema, input)
+      onReport(report)
+      return report
+    },
+    name: reportFindingsToolName,
+    parameters: toolParametersFromSchema(declarativeFindingResponseSchema),
+    strict: true,
+  })
 }
 
 export function recordCodingAgentUsage(options: {
@@ -149,6 +141,26 @@ export function recordCodingAgentUsage(options: {
   })
 }
 
+export async function runCodingAgent(
+  request: CodingAgentRequest & { model: ResolvedModel },
+  runner: Runner = createCodingAgentRunner(request.model),
+): Promise<{
+  findings: DeclarativeFindingResponse['findings']
+  usage?: AgentUsage
+}> {
+  let report: DeclarativeFindingResponse | undefined
+  const result = await runner(buildRunnerContext(request, value => report = value))
+
+  if (!report) {
+    throw new Error(`basic-coding-agent stopped without calling ${reportFindingsToolName}`)
+  }
+
+  return {
+    findings: report.findings,
+    usage: mapUsage(result.usage),
+  }
+}
+
 export function toRunnerTools(tools: AgentTool[]): Tool[] {
   return tools.map(agentTool => rawTool({
     description: agentTool.description,
@@ -161,23 +173,21 @@ export function toRunnerTools(tools: AgentTool[]): Tool[] {
   }))
 }
 
-function buildRunnerContext(request: CodingAgentRequest): RunnerContext {
+function buildRunnerContext(
+  request: CodingAgentRequest,
+  onReport: (report: DeclarativeFindingResponse) => void,
+): RunnerContext {
   return {
     channel: noopChannel(),
     input: [user(request.prompt)],
     instructions: request.instructions,
-    tools: toRunnerTools(request.tools),
+    tools: [...toRunnerTools(request.tools), createReportFindingsTool(onReport)],
     turnId: 'alint',
   }
 }
 
 function createCodingAgentRunner(model: ResolvedModel): Runner {
-  return chat({
-    baseURL: model.provider.endpoint,
-    headers: model.provider.headers,
-    model: model.id,
-    stopWhen: stepCountAtLeast(maxAgentSteps),
-  })
+  return chat(createCodingAgentRunnerOptions(model))
 }
 
 function mapUsage(usage?: Usage): AgentUsage | undefined {
@@ -196,24 +206,5 @@ function noopChannel(): AgentChannel {
   return {
     emit: () => {},
     subscribe: () => () => {},
-  }
-}
-
-function previewAnswer(answer: string): string {
-  return answer.length > maxAnswerPreviewLength
-    ? answer.slice(0, maxAnswerPreviewLength)
-    : answer
-}
-
-async function runCodingAgent(request: CodingAgentRequest & { model: ResolvedModel }): Promise<{
-  answer: string
-  usage?: AgentUsage
-}> {
-  const runner = createCodingAgentRunner(request.model)
-  const result = await runner(buildRunnerContext(request))
-
-  return {
-    answer: extractAnswer(result.output),
-    usage: mapUsage(result.usage),
   }
 }
