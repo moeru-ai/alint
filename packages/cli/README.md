@@ -24,11 +24,13 @@ While `alint` is inspired by `eslint`, we expect the concept that `alint` brings
 
 ### Prerequisites
 
-`alint` is published as ESM packages and runs on modern Node.js. It can analyze projects in any language, but the CLI requires Node.js and a package manager such as npm or pnpm.
+`alint` is written in TypeScript and published as ESM packages for JavaScript and TypeScript projects. Release builds also include standalone binaries, so teams working in Python, Go, Rust, and other non-Node.js projects can run the CLI without setting up Node.js, npm, or pnpm.
 
 You also need at least one OpenAI-compatible model provider. Local providers such as Ollama and LM Studio work well for repeated lint runs because they keep token cost predictable.
 
 ### Install the CLI
+
+Download a standalone binary from the GitHub release assets when you want to use `alint` without a Node.js toolchain.
 
 Install globally if you want an `alint` command available everywhere:
 
@@ -245,7 +247,7 @@ export default defineConfig([
 `alint` supports executable configs (`.js`, `.ts`, `.mjs`, `.cjs`, `.mts`, and `.cts`) and data-only static configs (`.toml`, `.yaml`, `.yml`, `.json`, `.jsonc`, and `.json5`).
 
 - Executable configs export a flat config array and can import plugin definitions directly.
-- Static configs use a `config.group` array and identify plugin sources with strings. They are useful for Python, Rust, Go, and other repositories that do not want to author a JavaScript config file. The `alint` CLI itself still requires Node.js.
+- Static configs use a `config.group` array and identify plugin sources with strings. They are useful for Python, Rust, Go, and other repositories that do not want to author a JavaScript config file or install a Node.js package manager just to run `alint`.
 
 For example, a TOML static config can install an exact remote package or a local plugin directory:
 
