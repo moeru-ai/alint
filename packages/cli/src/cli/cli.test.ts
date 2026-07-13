@@ -255,14 +255,16 @@ export default [
 
 describe('createProviderId', () => {
   it('creates endpoint-based provider ids and avoids collisions', () => {
-    expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('localhost')
+    expect(createProviderId('https://openrouter.ai/api/v1', new Set())).toBe('openrouter-ai')
     expect(createProviderId('https://openrouter.ai/api/v1', new Set(['openrouter-ai']))).toBe('openrouter-ai-2')
     expect(createProviderId('not a url', new Set())).toBe('provider')
   })
 
-  it('uses the built-in CLIProxyAPI provider id for its default endpoint', () => {
-    expect(createProviderId('http://127.0.0.1:8317/v1', new Set())).toBe('CLIProxyAPI')
-    expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['CLIProxyAPI']))).toBe('CLIProxyAPI-2')
+  it('uses lower-case built-in provider ids and avoids collisions', () => {
+    expect(createProviderId('http://127.0.0.1:8317/v1', new Set())).toBe('cliproxyapi')
+    expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi']))).toBe('cliproxyapi-2')
+    expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi', 'cliproxyapi-2']))).toBe('cliproxyapi-3')
+    expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('ollama')
   })
 })
 

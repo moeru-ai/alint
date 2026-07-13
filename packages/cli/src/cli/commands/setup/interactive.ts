@@ -140,9 +140,8 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
       const configPath = getConfigPath(io, draft.scope ?? 'global')
       const existingConfig = await loadSetupConfig(configPath)
       const providerId = await prompts.text({
-        defaultValue: draft.providerId ?? createProviderId(draft.endpoint ?? '', new Set(existingConfig.providers.map(provider => provider.id))),
-        message: 'Provider id',
-        placeholder: 'Type .. to go back',
+        initialValue: draft.providerId ?? createProviderId(draft.endpoint ?? '', new Set(existingConfig.providers.map(provider => provider.id))),
+        message: 'Provider id (type .. to go back)',
         validate: value => isBackInput(value ?? '') || (value ?? '').trim().length > 0 ? undefined : 'Provider id is required.',
       })
 
@@ -166,9 +165,9 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
     if (step === 'headers') {
       const headerInput = await prompts.text({
-        defaultValue: draft.headerInput ?? '',
-        message: 'Headers',
-        placeholder: 'Authorization=Bearer token, X-Test=true; type .. to go back',
+        initialValue: draft.headerInput,
+        message: 'Headers (leave empty to skip; type .. to go back)',
+        placeholder: 'Authorization=Bearer token, X-Test=true',
         validate: (value) => {
           if (isBackInput(value ?? '')) {
             return undefined
@@ -351,9 +350,9 @@ async function promptEndpoint(
   source: ProviderSetupSource,
 ): Promise<string | symbol> {
   return prompts.text({
-    defaultValue: source.defaultEndpoint,
-    message: 'Provider endpoint',
-    placeholder: `${source.defaultEndpoint ?? 'https://example.test/v1'}; type .. to go back`,
+    initialValue: source.defaultEndpoint,
+    message: 'Provider endpoint (type .. to go back)',
+    placeholder: source.defaultEndpoint ?? 'https://example.test/v1',
     validate: value => isBackInput(value ?? '') || (value ?? '').trim().length > 0 ? undefined : 'Provider endpoint is required.',
   })
 }
