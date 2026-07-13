@@ -1205,6 +1205,38 @@ export default [
     expect(io.stderrText).toBe('')
   })
 
+  it('uses the -c alias as the global custom config option', async () => {
+    const io = await createTestIo()
+    await writeFile(join(io.cwd, 'custom.config.ts'), `
+export default [
+  {
+    name: 'custom config',
+    files: ['**/*.go'],
+    language: 'text/markdown',
+    rules: {
+      'custom/file': 'error',
+    },
+  },
+]
+`)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      '-c',
+      'custom.config.ts',
+      'config',
+      'inspect',
+      'main.go',
+    ], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('  - custom config')
+    expect(io.stdoutText).toContain('language: text/markdown')
+    expect(io.stdoutText).toContain('  custom/file: error')
+    expect(io.stderrText).toBe('')
+  })
+
   it('prints help and returns 0', async () => {
     const io = await createTestIo()
 

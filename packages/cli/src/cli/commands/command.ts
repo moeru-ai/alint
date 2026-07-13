@@ -405,6 +405,7 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--rule-concurrency',
     '--since',
     '--timeout-ms',
+    '-c',
     '-f',
     '-l',
   ].includes(arg)
