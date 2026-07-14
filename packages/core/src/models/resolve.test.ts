@@ -59,6 +59,13 @@ describe('resolveModel', () => {
     expect(model.id).toBe('local:qwen-32b')
   })
 
+  it('matches a provider-qualified model id', () => {
+    const model = resolveModel(registry, { request: 'ollama/local:qwen-32b' })
+
+    expect(model.provider.id).toBe('ollama')
+    expect(model.id).toBe('local:qwen-32b')
+  })
+
   it('defaults the concrete model name to id when name is absent', () => {
     const model = resolveModel(registry, { request: 'local:nameless' })
     expect(model.name).toBe('local:nameless')

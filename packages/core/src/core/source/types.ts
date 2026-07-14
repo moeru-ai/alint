@@ -1,3 +1,9 @@
+export type ClassTarget = SourceTargetOfKind<'class'>
+
+export type FileTarget = SourceTargetOfKind<'file'>
+
+export type FunctionTarget = SourceTargetOfKind<'function'>
+
 export interface LanguageContext {
   cwd: string
   languageOptions: Record<string, unknown>
@@ -55,14 +61,12 @@ export interface SourceRange {
   end: number
   start: number
 }
-
 export interface SourceRuntime {
   getText: (target: SourceFile | SourceTarget) => string
   readFile: (filePath: string) => Promise<SourceFile>
   sliceLines: (file: SourceFile, range: LineRange) => SourceText
   sliceRange: (file: SourceFile, range: SourceRange) => SourceText
 }
-
 export interface SourceTarget {
   file: SourceFile
   identity: string
@@ -77,6 +81,10 @@ export interface SourceTarget {
 }
 
 export type SourceTargetKind = 'class' | 'file' | 'fragment' | 'function' | 'symbol' | (string & {})
+
+export type SourceTargetOfKind<Kind extends SourceTargetKind> = Omit<SourceTarget, 'kind'> & {
+  kind: Kind
+}
 
 export interface SourceTargetOrigin {
   physicalPath: string

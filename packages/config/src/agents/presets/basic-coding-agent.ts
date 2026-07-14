@@ -28,11 +28,7 @@ export function createBasicCodingAgentRule(rule: DeclarativeRuleDefinition): Rul
   return {
     cache: false,
     create: ctx => ({
-      async onTarget(target) {
-        if (target.kind !== 'file') {
-          return
-        }
-
+      async onTargetFile(target) {
         const model = await ctx.model()
         const result = await createCodingAgent(model).run({
           cwd: ctx.cwd,

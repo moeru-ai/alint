@@ -1,6 +1,9 @@
 import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig } from '../config/types'
 import type {
+  ClassTarget,
+  FileTarget,
+  FunctionTarget,
   LanguageContext,
   ProcessedSource,
   ProcessorContext,
@@ -20,6 +23,7 @@ export type AlintConfigInput = AlintConfigItem | readonly AlintConfigInput[]
 export interface AlintConfigItem {
   agent?: AgentAdapter
   basePath?: string
+  directories?: readonly (readonly string[] | string)[]
   extends?: readonly AlintConfigExtends[]
   files?: readonly (readonly string[] | string)[]
   ignore?: IgnoreConfig
@@ -52,6 +56,11 @@ export interface DiagnosticDescriptor {
 export interface DiagnosticLocation {
   end?: { column: number, line: number }
   start: { column: number, line: number }
+}
+
+export interface DirectoryTarget {
+  kind: 'directory'
+  path: string
 }
 
 export interface EnabledRule {
@@ -89,8 +98,10 @@ export interface ProcessorDefinition {
   ) => Awaitable<ProcessedSource[]>
 }
 
-export interface RepositoryTarget {
+export interface ProjectTarget {
   files: SourceFile[]
+  kind: 'project'
+  root: string
   targets: SourceTarget[]
 }
 
@@ -118,15 +129,14 @@ export interface RuleContext {
 
 export interface RuleDefinition {
   cache?: RuleCacheConfig
+  /** Additional stable rule inputs, such as imported prompts, that invalidate cached results when changed. */
+  cacheKey?: unknown
   create: (context: RuleContext) => RuleHandlers
   // TODO: Add `meta.languages` so rules can opt into specific alint languages.
   model?: ModelRequirement
 }
 
-export interface RuleHandlers {
-  onRepository?: (repository: RepositoryTarget) => Awaitable<void>
-  onTarget?: (target: SourceTarget) => Awaitable<void>
-}
+export type RuleHandlers = RuleSpecializedHandlers | RuleWithHandler
 
 export interface RuleInferenceUsageRecord {
   filePath?: string
@@ -145,3 +155,23 @@ export interface RuleRegistry {
 }
 
 export type RuleSeverity = 'error' | 'off' | 'warn'
+
+export interface RuleSpecializedHandlers {
+  onTargetClass?: (target: ClassTarget) => Awaitable<void>
+  onTargetDirectory?: (target: DirectoryTarget) => Awaitable<void>
+  onTargetFile?: (target: FileTarget) => Awaitable<void>
+  onTargetFunction?: (target: FunctionTarget) => Awaitable<void>
+  onTargetProject?: (target: ProjectTarget) => Awaitable<void>
+  onTargetWith?: never
+}
+
+export interface RuleWithHandler {
+  onTargetClass?: never
+  onTargetDirectory?: never
+  onTargetFile?: never
+  onTargetFunction?: never
+  onTargetProject?: never
+  onTargetWith: (target: Target) => Awaitable<void>
+}
+
+export type Target = DirectoryTarget | ProjectTarget | SourceTarget

@@ -26,7 +26,7 @@ import { defineRule } from '@alint-js/core'
 
 export const rule = defineRule({
   create: ctx => ({
-    async onTarget(target) {
+    async onTargetFile(target) {
       const model = await ctx.model({ size: 'small' })
 
       ctx.report({

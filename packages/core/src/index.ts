@@ -1,4 +1,11 @@
-export { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolveConfigForFile } from './config/config-array'
+export {
+  hasDiscoveryFilePatterns,
+  matchesDiscoveryFile,
+  normalizeConfig,
+  resolveConfigForDirectory,
+  resolveConfigForFile,
+  resolveConfigForProject,
+} from './config/config-array'
 export type { EffectiveAlintConfig, ResolveConfigResult } from './config/config-array'
 export type {
   ModelSize,
@@ -19,6 +26,9 @@ export { extractJsSourceTargets } from './core/languages/js/extract'
 export { AlintRunError, runAlint } from './core/run'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
 export type {
+  ClassTarget,
+  FileTarget,
+  FunctionTarget,
   LanguageContext,
   LineRange,
   ProcessedSource,
@@ -32,10 +42,12 @@ export type {
   SourceRuntime,
   SourceTarget,
   SourceTargetKind,
+  SourceTargetOfKind,
   SourceTargetOrigin,
   SourceText,
 } from './core/source/types'
 export type {
+  AlintRunFailure,
   Diagnostic,
   DiagnosticProgressPayload,
   FileProgressPayload,
@@ -47,10 +59,12 @@ export type {
   RuleEndPayload,
   RuleStartPayload,
   RunEndPayload,
+  RunExecution,
   RunOptions,
   RunResult,
   RunStartPayload,
   RunUsage,
+  RunUsageTotals,
   TargetProgressPayload,
   UsageProgressPayload,
 } from './core/types'
@@ -65,11 +79,13 @@ export type {
   Awaitable,
   DiagnosticDescriptor,
   DiagnosticLocation,
+  DirectoryTarget,
   EnabledRule,
   IgnoreConfig,
   LanguageDefinition,
   PluginDefinition,
   ProcessorDefinition,
+  ProjectTarget,
   RuleCacheConfig,
   RuleConfigEntry,
   RuleContext,
@@ -78,6 +94,9 @@ export type {
   RuleInferenceUsageRecord,
   RuleRegistry,
   RuleSeverity,
+  RuleSpecializedHandlers,
+  RuleWithHandler,
+  Target,
 } from './dsl/types'
 export { resolveModel } from './models/resolve'
 export type { ModelRequirement, ResolvedModel, ResolvedProvider, ResolveModelOptions } from './models/types'

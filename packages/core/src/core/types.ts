@@ -2,7 +2,18 @@ import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
 import type { SourceTargetKind } from './source/types'
 
+export interface AlintRunFailure {
+  filePath?: string
+  message: string
+  ruleId?: string
+  target?: {
+    kind: ProgressTargetKind
+    name?: string
+  }
+}
+
 export interface Diagnostic {
+  cached?: boolean
   evidence?: unknown
   filePath: string
   loc?: DiagnosticLocation
@@ -93,13 +104,19 @@ export interface RunEndPayload {
   usage: RunUsage
 }
 
-export interface RunnerOptions extends RunnerConfig {
-  clock?: () => number
+export interface RunExecution {
+  cached: number
+  completed: number
+  errored: number
+  planned: number
 }
+
+export type RunnerOptions = RunnerConfig
 
 export interface RunOptions {
   config?: AlintConfig
   cwd?: string
+  directories?: string[]
   files?: string[]
   modelOverride?: string
   outputLanguage?: string
@@ -110,6 +127,7 @@ export interface RunOptions {
 
 export interface RunResult {
   diagnostics: Diagnostic[]
+  execution?: RunExecution
   usage: RunUsage
 }
 
@@ -122,6 +140,14 @@ export interface RunStartPayload {
 }
 
 export interface RunUsage {
+  cached?: RunUsageTotals
+  inputTokens: number
+  outputTokens: number
+  records: InferenceUsageRecord[]
+  totalTokens: number
+}
+
+export interface RunUsageTotals {
   inputTokens: number
   outputTokens: number
   records: InferenceUsageRecord[]

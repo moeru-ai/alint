@@ -1,26 +1,9 @@
 import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/core'
 
-import type {
-  DirectoryPluginSpecifier,
-  ParsedPluginSpecifier,
-  ParsePluginSpecifierOptions,
-  RegistryPluginSpecifier,
-} from '../plugins/spec'
+import type { DirectoryPluginSpecifier, ParsedPluginSpecifier, ParsePluginSpecifierOptions, RegistryPluginSpecifier } from '../plugins/spec'
 
 import { extname } from 'pathe'
-import {
-  array,
-  boolean,
-  looseObject,
-  optional,
-  parse,
-  picklist,
-  record,
-  string,
-  tuple,
-  union,
-  unknown,
-} from 'valibot'
+import { array, boolean, looseObject, optional, parse, picklist, record, string, tuple, union, unknown } from 'valibot'
 
 import { getPluginSpecifierKey, parsePluginSpecifier } from '../plugins/spec'
 
@@ -80,6 +63,7 @@ const ruleConfigEntrySchema = union([ruleSeveritySchema, tuple([ruleSeveritySche
 const staticConfigItemSchema = looseObject({
   agent: optional(unknown()),
   basePath: optional(string()),
+  directories: optional(array(filePatternSchema)),
   extends: optional(array(unknown())),
   files: optional(array(filePatternSchema)),
   ignore: optional(looseObject({

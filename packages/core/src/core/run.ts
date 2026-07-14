@@ -1,10 +1,10 @@
 import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
-import type { Awaitable, EnabledRule, RepositoryTarget, RuleContext, RuleHandlers } from '../dsl/types'
+import type { DirectoryTarget, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
-import type { CacheEntry, CacheStore } from './cache'
-import type { SourceFile, SourceTarget } from './source/types'
-import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunOptions, RunResult, RunUsage } from './types'
+import type { PreparedDirectory } from './targets/directory'
+import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleEndCounters, RuleRuntime, RuleRuntimeState, TargetExecutionPlan, UsageAccumulator } from './targets/types'
+import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, RunOptions, RunResult, RunUsage } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { cwd as processCwd } from 'node:process'
@@ -12,127 +12,16 @@ import { cwd as processCwd } from 'node:process'
 import { errorCauseFrom, errorMessageFrom } from '@moeru/std/error'
 import { resolve } from 'pathe'
 
-import packageJson from '../../package.json'
-
-import { resolveConfigForFile } from '../config/config-array'
+import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
-import {
-  createCacheKey,
-  createCacheStore,
-  createTargetIdentityResolver,
-  hashText,
-  normalizeCachePath,
-  normalizeRunnerCacheConfig,
-  stableHash,
-} from './cache'
+import { createCacheStore, hashText, normalizeCachePath, normalizeRunnerCacheConfig, stableHash } from './cache'
 import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
 import { createSourceRuntime } from './source/runtime'
-
-export interface AlintRunFailure {
-  filePath?: string
-  message: string
-  ruleId?: string
-  target?: {
-    kind: ProgressTargetKind
-    name?: string
-  }
-}
-
-interface CacheRunContext {
-  cwd: string
-  enabled: boolean
-  fileEntryKeys: Map<string, Set<string>>
-  modelHash: string
-  store: CacheStore
-}
-
-interface ExecutionPlanEntry {
-  fileIndex: number
-  filePlanned: number
-  fileTotal: number
-  ruleIndex: number
-  ruleTotal: number
-  targetIndex: number
-  targetKind: ProgressTargetKind
-  targetName?: string
-  targetTotal: number
-}
-
-interface ExecutionTarget {
-  configHash: string
-  executions: RuleTargetExecution[]
-  identity: string
-  kind: ProgressTargetKind
-  language: string
-  loc?: CacheEntry['target']['loc']
-  metadata?: Record<string, unknown>
-  name?: string
-  origin?: SourceTarget['origin']
-  range?: CacheEntry['target']['range']
-  text: string
-}
-
-interface PreparedFile {
-  configHash: string
-  file: SourceFile
-  ruleRuntimes: RuleRuntime[]
-  targets: SourceTarget[]
-}
-
-interface PreparedFileExecutionPlan {
-  fileIndex: number
-  planned: number
-  preparedFile: PreparedFile
-  targets: ExecutionTarget[]
-}
-
-interface RepositoryExecution {
-  run: (repository: RepositoryTarget) => Awaitable<void>
-  runtime: RuleRuntime
-  target: ExecutionTarget
-}
-
-interface RuleRuntime {
-  cacheable: boolean
-  enabledRule: EnabledRule
-  executionState: AsyncLocalStorage<RuleRuntimeState>
-  handlers: RuleHandlers
-  ruleHash: string
-}
-
-interface RuleRuntimeState {
-  activeFilePath?: string
-  cacheDiagnostics?: Diagnostic[]
-  cacheUsage?: InferenceUsageRecord[]
-  currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  progressPath?: ProgressPath
-}
-
-interface RuleTargetExecution {
-  run: () => Awaitable<void>
-  runtime: RuleRuntime
-}
-
-class AlintRuleExecutionError extends Error {
-  readonly failure: AlintRunFailure
-
-  constructor(error: unknown, path: ProgressPath) {
-    const message = errorMessageFrom(error) ?? String(error)
-
-    super(message, { cause: error })
-    this.name = 'AlintRuleExecutionError'
-    this.failure = {
-      filePath: path.file.path,
-      message,
-      ruleId: path.rule.id,
-      target: {
-        kind: path.target.kind,
-        name: path.target.name,
-      },
-    }
-  }
-}
+import { createDirectoryExecutionPlans } from './targets/directory'
+import { AlintRuleExecutionError, executeTargetPlans } from './targets/execution'
+import { createProjectExecutionPlan } from './targets/project'
+import { createSourceExecutionPlans } from './targets/source'
 
 export class AlintRunError extends Error {
   readonly failure?: AlintRunFailure
@@ -150,8 +39,9 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? processCwd()
   const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
-  const clock = options.runner?.clock ?? Date.now
+  const clock = Date.now
   const diagnostics: Diagnostic[] = []
+
   const usage = createUsageAccumulator()
   const src = createSourceRuntime()
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
@@ -160,6 +50,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     enabled: normalizedCacheConfig.enabled,
     location: normalizedCacheConfig.location,
   })
+
   const cacheContext: CacheRunContext = {
     cwd,
     enabled: normalizedCacheConfig.enabled,
@@ -171,34 +62,76 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     }),
     store: cacheStore,
   }
-  const files = (await Promise.all(
-    (options.files ?? []).map(async (filePath): Promise<PreparedFile | undefined> => {
-      const file = await src.readFile(resolve(cwd, filePath))
-      const resolvedConfig = resolveConfigForFile(file.path, config, { cwd })
 
-      if (resolvedConfig.ignored) {
-        return undefined
+  const pendingFiles = [...(options.files ?? [])]
+  const pendingDirectories = [...(options.directories ?? [])]
+
+  const files = (await Promise.all(pendingFiles.map(async (filePath): Promise<PreparedFile | undefined> => {
+    const file = await src.readFile(resolve(cwd, filePath))
+
+    const resolvedConfig = resolveConfigForFile(file.path, config, { cwd })
+    if (resolvedConfig.ignored) {
+      return undefined
+    }
+
+    const effectiveConfig = resolvedConfig.config
+    const languageRegistry = createBuiltInLanguageRegistry()
+
+    for (const plugin of Object.values(effectiveConfig.plugins)) {
+      for (const language of Object.values(plugin.languages ?? {})) {
+        registerLanguage(languageRegistry, language)
       }
+    }
 
-      const effectiveConfig = resolvedConfig.config
-      const languageRegistry = createBuiltInLanguageRegistry()
+    const language = resolveLanguage(file, languageRegistry, { language: effectiveConfig.language })
+    const targets = await language.extract(file, { cwd, languageOptions: effectiveConfig.languageOptions, src })
+    const registry = buildRuleRegistry(effectiveConfig)
 
-      for (const plugin of Object.values(effectiveConfig.plugins)) {
-        for (const language of Object.values(plugin.languages ?? {})) {
-          registerLanguage(languageRegistry, language)
-        }
-      }
+    const ruleRuntimes = createRuleRuntimes({
+      cwd,
+      diagnostics,
+      effectiveAgent: effectiveConfig.agent,
+      effectiveSettings: effectiveConfig.settings,
+      options,
+      registry,
+      setupConfig,
+      src,
+      usage,
+    })
 
-      const language = resolveLanguage(file, languageRegistry, {
+    return {
+      configHash: stableHash({
         language: effectiveConfig.language,
-      })
-      const targets = await language.extract(file, {
-        cwd,
         languageOptions: effectiveConfig.languageOptions,
-        src,
-      })
-      const registry = buildRuleRegistry(effectiveConfig)
-      const ruleRuntimes = createRuleRuntimes({
+        processor: effectiveConfig.processor,
+        resolvedLanguage: language.name,
+        settings: effectiveConfig.settings,
+      }),
+      file,
+      ruleRuntimes,
+      targets,
+    }
+  }))).filter((file): file is PreparedFile => file !== undefined)
+
+  const directories = pendingDirectories.map((directoryPath): PreparedDirectory | undefined => {
+    const target: DirectoryTarget = {
+      kind: 'directory',
+      path: resolve(cwd, directoryPath),
+    }
+
+    const resolvedConfig = resolveConfigForDirectory(target.path, config, { cwd })
+    if (resolvedConfig.ignored) {
+      return undefined
+    }
+
+    const effectiveConfig = resolvedConfig.config
+    const registry = buildRuleRegistry(effectiveConfig)
+
+    return {
+      configHash: stableHash({
+        settings: effectiveConfig.settings,
+      }),
+      ruleRuntimes: createRuleRuntimes({
         cwd,
         diagnostics,
         effectiveAgent: effectiveConfig.agent,
@@ -208,73 +141,132 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         setupConfig,
         src,
         usage,
-      })
+      }),
+      target,
+    }
+  }).filter((directory): directory is PreparedDirectory => directory !== undefined)
 
-      return {
-        configHash: stableHash({
-          language: effectiveConfig.language,
-          languageOptions: effectiveConfig.languageOptions,
-          processor: effectiveConfig.processor,
-          resolvedLanguage: language.name,
-          rules: effectiveConfig.rules,
-          settings: effectiveConfig.settings,
-        }),
-        file,
-        ruleRuntimes,
-        targets,
-      }
-    }),
-  )).filter((file): file is PreparedFile => file !== undefined)
+  const resolvedProjectConfig = resolveConfigForProject(cwd, config, { cwd })
+  const projectConfig = resolvedProjectConfig.config
+  const projectRuleRuntimes = resolvedProjectConfig.ignored
+    ? []
+    : createRuleRuntimes({
+        cwd,
+        diagnostics,
+        effectiveAgent: projectConfig.agent,
+        effectiveSettings: projectConfig.settings,
+        options,
+        registry: buildRuleRegistry(projectConfig),
+        setupConfig,
+        src,
+        usage,
+      })
   let planned = 0
   const counters = createRuleEndCounters()
-  const primaryError = createPrimaryErrorState()
   let filePlans: PreparedFileExecutionPlan[] = []
-  let repositoryExecutions: RepositoryExecution[] = []
+  let directoryPlans: TargetExecutionPlan[] = []
+  let projectPlan: TargetExecutionPlan | undefined
   let runStartedAt: number | undefined
   let runError: unknown
 
   try {
-    filePlans = createPreparedFileExecutionPlans(files, cwd)
-    repositoryExecutions = createRepositoryExecutions(files, cwd)
-    planned = calculatePlannedExecutions(filePlans) + repositoryExecutions.length
+    filePlans = createSourceExecutionPlans(files, cwd)
+    directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
+    projectPlan = resolvedProjectConfig.ignored
+      ? undefined
+      : createProjectExecutionPlan({
+          configHash: stableHash({
+            settings: projectConfig.settings,
+          }),
+          files,
+          root: cwd,
+          ruleRuntimes: projectRuleRuntimes,
+        })
+
+    const activeDirectoryPlans = directoryPlans
+      .filter(plan => plan.targets.length > 0)
+      .map((plan, directoryOffset) => ({
+        ...plan,
+        fileIndex: filePlans.length + directoryOffset + 1,
+      }))
+
+    const inputsTotal = files.length + activeDirectoryPlans.length
+    planned = calculatePlannedExecutions([...filePlans, ...directoryPlans]) + (projectPlan?.planned ?? 0)
     runStartedAt = clock()
 
     options.progress?.onRunStart?.({
-      files: filePlans.map(filePlan => toProgressFilePath(filePlan, files.length)),
-      filesTotal: files.length,
+      files: [...filePlans, ...activeDirectoryPlans].map(plan => toProgressFilePath(plan, inputsTotal)),
+      filesTotal: inputsTotal,
       planned,
-      rulesTotal: countEnabledRuleIds(files),
+      rulesTotal: countEnabledRuleIds(files, directories, projectRuleRuntimes),
       startedAt: runStartedAt,
     })
 
     await runConcurrently(
       filePlans.filter(filePlan => filePlan.targets.length > 0),
       resolveFileConcurrency(options.runner?.fileConcurrency),
-      filePlan => executeFilePlan(filePlan, files.length, clock, counters, diagnostics, usage, cacheContext, options),
+      filePlan => executeTargetPlans({
+        cache: cacheContext,
+        clock,
+        counters,
+        diagnostics,
+        filesTotal: inputsTotal,
+        plans: [filePlan],
+        progress: options.progress,
+        usage,
+      }),
     )
 
-    await executeRepositoryExecutions(repositoryExecutions, createRepositoryTarget(files), files.length, clock, counters, diagnostics, usage, cacheContext, options)
+    await runConcurrently(
+      activeDirectoryPlans,
+      resolveFileConcurrency(options.runner?.fileConcurrency),
+      directoryPlan => executeTargetPlans({
+        cache: cacheContext,
+        clock,
+        counters,
+        diagnostics,
+        filesTotal: inputsTotal,
+        plans: [directoryPlan],
+        progress: options.progress,
+        usage,
+      }),
+    )
+
+    if (projectPlan) {
+      await executeTargetPlans({
+        cache: cacheContext,
+        clock,
+        counters,
+        diagnostics,
+        filesTotal: inputsTotal,
+        plans: [projectPlan],
+        progress: options.progress,
+        usage,
+      })
+    }
   }
   catch (error) {
-    primaryError.set()
     runError = error
   }
   finally {
     await reconcileCache(filePlans, cacheContext)
-    emitCleanupProgress(
-      () => options.progress?.onRunEnd?.({
+    try {
+      options.progress?.onRunEnd?.({
         ...counters.snapshot(planned),
         diagnostics,
         endedAt: clock(),
         startedAt: runStartedAt ?? clock(),
         usage: usage.toJSON(),
-      }),
-      primaryError,
-    )
+      })
+    }
+    catch (error) {
+      runError ??= error
+    }
   }
 
   const result = {
     diagnostics,
+    execution: counters.snapshot(planned),
     usage: usage.toJSON(),
   }
 
@@ -289,67 +281,33 @@ function addTokenCount(base: number, value: number | undefined): number {
   return typeof value === 'number' && Number.isFinite(value) ? base + value : base
 }
 
-function calculateFilePlanExecutions(filePlan: PreparedFileExecutionPlan): number {
-  return filePlan.targets.reduce(
-    (total, target) => total + target.executions.length,
-    0,
-  )
-}
-
 function calculatePlannedExecutions(
-  filePlans: PreparedFileExecutionPlan[],
+  filePlans: TargetExecutionPlan[],
 ): number {
   return filePlans.reduce((total, filePlan) => total + filePlan.planned, 0)
 }
 
-function collectExecutionTargets(
-  preparedFile: PreparedFile,
-): ExecutionTarget[] {
-  const targets: ExecutionTarget[] = []
-
-  for (const sourceTarget of preparedFile.targets) {
-    const executions = preparedFile.ruleRuntimes
-      .map((runtime): RuleTargetExecution | undefined => {
-        if (!runtime.handlers.onTarget) {
-          return undefined
-        }
-
-        return {
-          run: () => runtime.handlers.onTarget?.(sourceTarget),
-          runtime,
-        }
-      })
-      .filter((execution): execution is RuleTargetExecution => execution !== undefined)
-
-    if (executions.length === 0) {
-      continue
-    }
-
-    targets.push({
-      configHash: preparedFile.configHash,
-      executions,
-      identity: sourceTarget.identity,
-      kind: sourceTarget.kind,
-      language: sourceTarget.language,
-      loc: sourceTarget.loc,
-      metadata: sourceTarget.metadata,
-      name: sourceTarget.name,
-      origin: sourceTarget.origin,
-      range: sourceTarget.range,
-      text: sourceTarget.text,
-    })
-  }
-
-  return targets
-}
-
-function countEnabledRuleIds(files: PreparedFile[]): number {
+function countEnabledRuleIds(
+  files: PreparedFile[],
+  directories: PreparedDirectory[],
+  projectRuleRuntimes: RuleRuntime[],
+): number {
   const ids = new Set<string>()
 
   for (const file of files) {
     for (const runtime of file.ruleRuntimes) {
       ids.add(runtime.enabledRule.id)
     }
+  }
+
+  for (const directory of directories) {
+    for (const runtime of directory.ruleRuntimes) {
+      ids.add(runtime.enabledRule.id)
+    }
+  }
+
+  for (const runtime of projectRuleRuntimes) {
+    ids.add(runtime.enabledRule.id)
   }
 
   return ids.size
@@ -372,164 +330,7 @@ function createAlintRunError(error: unknown, result: RunResult): AlintRunError {
   })
 }
 
-function createExecutionCacheKey(
-  runtime: RuleRuntime,
-  target: ExecutionTarget,
-  path: ProgressPath,
-  cacheContext: CacheRunContext,
-): string | undefined {
-  if (!cacheContext.enabled || !runtime.cacheable) {
-    return undefined
-  }
-
-  return createCacheKey({
-    alintVersion: packageJson.version,
-    configHash: target.configHash,
-    filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
-    modelHash: cacheContext.modelHash,
-    ruleHash: runtime.ruleHash,
-    schemaVersion: 1,
-    targetHash: createTargetHash(target),
-    targetIdentity: target.identity,
-    targetKind: target.kind,
-  })
-}
-
-function createPreparedFileExecutionPlans(
-  files: PreparedFile[],
-  cwd: string,
-): PreparedFileExecutionPlan[] {
-  return files.map((preparedFile, fileOffset) => {
-    const targets = collectExecutionTargets(preparedFile)
-    const resolveTargetIdentity = createTargetIdentityResolver(
-      targets.map(target => toTargetIdentityInput(cwd, preparedFile.file.path, target)),
-    )
-
-    for (const target of targets) {
-      target.identity = resolveTargetIdentity(toTargetIdentityInput(cwd, preparedFile.file.path, target))
-    }
-
-    const filePlan: PreparedFileExecutionPlan = {
-      fileIndex: fileOffset + 1,
-      planned: 0,
-      preparedFile,
-      targets,
-    }
-
-    filePlan.planned = calculateFilePlanExecutions(filePlan)
-
-    return filePlan
-  })
-}
-
-function createPrimaryErrorState() {
-  let hasError = false
-
-  return {
-    get hasError() {
-      return hasError
-    },
-    set() {
-      hasError = true
-    },
-  }
-}
-
-function createProgressPath(
-  filePath: string,
-  ruleId: string,
-  entry: ExecutionPlanEntry,
-): ProgressPath {
-  return {
-    file: {
-      index: entry.fileIndex,
-      path: filePath,
-      planned: entry.filePlanned,
-      total: entry.fileTotal,
-    },
-    rule: {
-      id: ruleId,
-      index: entry.ruleIndex,
-      total: entry.ruleTotal,
-    },
-    target: {
-      index: entry.targetIndex,
-      kind: entry.targetKind,
-      name: entry.targetName,
-      total: entry.targetTotal,
-    },
-  }
-}
-
-function createRepositoryExecutions(
-  files: PreparedFile[],
-  cwd: string,
-): RepositoryExecution[] {
-  const executions: RepositoryExecution[] = []
-  const seenRuleIds = new Set<string>()
-
-  for (const file of files) {
-    for (const runtime of file.ruleRuntimes) {
-      if (!runtime.handlers.onRepository || seenRuleIds.has(runtime.enabledRule.id)) {
-        continue
-      }
-
-      seenRuleIds.add(runtime.enabledRule.id)
-      executions.push({
-        run: repository => runtime.handlers.onRepository?.(repository),
-        runtime,
-        target: createRepositoryExecutionTarget(files, cwd),
-      })
-    }
-  }
-
-  return executions
-}
-
-function createRepositoryExecutionTarget(files: PreparedFile[], cwd: string): ExecutionTarget {
-  const treeShape = createRepositoryTreeShape(files, cwd)
-
-  return {
-    configHash: stableHash(files.map(file => ({
-      configHash: file.configHash,
-      path: normalizeCachePath(cwd, file.file.path),
-    })).sort((left, right) => left.path.localeCompare(right.path))),
-    executions: [],
-    identity: 'repository',
-    kind: 'repository',
-    language: 'repository',
-    text: stableHash(treeShape),
-  }
-}
-
-function createRepositoryTarget(files: PreparedFile[]): RepositoryTarget {
-  return {
-    files: files.map(file => file.file),
-    targets: files.flatMap(file => file.targets),
-  }
-}
-
-function createRepositoryTreeShape(files: PreparedFile[], cwd: string): { directories: string[], files: string[] } {
-  const directories = new Set<string>()
-  const paths = files
-    .map(file => normalizeCachePath(cwd, file.file.path))
-    .sort()
-
-  for (const path of paths) {
-    const parts = path.split('/')
-
-    for (let index = 1; index < parts.length; index += 1) {
-      directories.add(parts.slice(0, index).join('/'))
-    }
-  }
-
-  return {
-    directories: [...directories].sort(),
-    files: paths,
-  }
-}
-
-function createRuleEndCounters() {
+function createRuleEndCounters(): RuleEndCounters {
   let cached = 0
   let completed = 0
   let errored = 0
@@ -564,7 +365,7 @@ function createRuleRuntimes(options: {
   registry: ReturnType<typeof buildRuleRegistry>
   setupConfig: SetupConfig
   src: ReturnType<typeof createSourceRuntime>
-  usage: ReturnType<typeof createUsageAccumulator>
+  usage: UsageAccumulator
 }): RuleRuntime[] {
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
@@ -657,6 +458,7 @@ function createRuleRuntimes(options: {
       handlers: enabledRule.rule.create(context),
       ruleHash: stableHash({
         cache: enabledRule.rule.cache ?? true,
+        cacheKey: enabledRule.rule.cacheKey,
         create: String(enabledRule.rule.create),
         id: enabledRule.id,
         localId: enabledRule.localId,
@@ -667,19 +469,29 @@ function createRuleRuntimes(options: {
   })
 }
 
-function createTargetHash(target: ExecutionTarget): string {
-  return stableHash({
-    language: target.language,
-    loc: target.loc,
-    metadata: target.metadata,
-    name: target.name,
-    origin: target.origin,
-    range: target.range,
-    text: target.text,
-  })
+function createUsageAccumulator(): UsageAccumulator {
+  const live = createUsageTotals()
+  const cached = createUsageTotals()
+
+  return {
+    record(record: InferenceUsageRecord): InferenceUsageRecord {
+      return live.record(record)
+    },
+    recordCached(record: InferenceUsageRecord): InferenceUsageRecord {
+      return cached.record(record)
+    },
+    toJSON(): RunUsage {
+      const cachedUsage = cached.toJSON()
+
+      return {
+        ...live.toJSON(),
+        ...(cachedUsage.records.length > 0 ? { cached: cachedUsage } : {}),
+      }
+    },
+  }
 }
 
-function createUsageAccumulator() {
+function createUsageTotals() {
   const records: InferenceUsageRecord[] = []
   let inputTokens = 0
   let outputTokens = 0
@@ -693,7 +505,7 @@ function createUsageAccumulator() {
       totalTokens = addTokenCount(totalTokens, record.totalTokens)
       return record
     },
-    toJSON(): RunUsage {
+    toJSON() {
       return {
         inputTokens,
         outputTokens,
@@ -701,402 +513,6 @@ function createUsageAccumulator() {
         totalTokens,
       }
     },
-  }
-}
-
-function emitCleanupProgress(
-  callback: () => void,
-  primaryError: ReturnType<typeof createPrimaryErrorState>,
-): void {
-  try {
-    callback()
-  }
-  catch (error) {
-    if (!primaryError.hasError) {
-      throw error
-    }
-  }
-}
-
-async function executeFilePlan(
-  filePlan: PreparedFileExecutionPlan,
-  filesTotal: number,
-  clock: () => number,
-  counters: ReturnType<typeof createRuleEndCounters>,
-  diagnostics: Diagnostic[],
-  usage: ReturnType<typeof createUsageAccumulator>,
-  cacheContext: CacheRunContext,
-  options: RunOptions,
-): Promise<void> {
-  const preparedFile = filePlan.preparedFile
-  const fileStartedAt = clock()
-  const fileProgress = {
-    index: filePlan.fileIndex,
-    path: preparedFile.file.path,
-    planned: filePlan.planned,
-    total: filesTotal,
-  }
-
-  options.progress?.onFileStart?.({
-    file: fileProgress,
-    startedAt: fileStartedAt,
-  })
-
-  const fileError = createPrimaryErrorState()
-
-  try {
-    for (const [targetOffset, target] of filePlan.targets.entries()) {
-      const targetPath = createProgressPath(
-        preparedFile.file.path,
-        target.executions[0]?.runtime.enabledRule.id ?? '',
-        {
-          fileIndex: filePlan.fileIndex,
-          filePlanned: filePlan.planned,
-          fileTotal: filesTotal,
-          ruleIndex: 1,
-          ruleTotal: target.executions.length,
-          targetIndex: targetOffset + 1,
-          targetKind: target.kind,
-          targetName: target.name,
-          targetTotal: filePlan.targets.length,
-        },
-      )
-      const targetError = createPrimaryErrorState()
-      const targetStartedAt = clock()
-
-      options.progress?.onTargetStart?.({
-        path: targetPath,
-        startedAt: targetStartedAt,
-      })
-
-      try {
-        for (const [executionOffset, execution] of target.executions.entries()) {
-          const progressPath = createProgressPath(
-            preparedFile.file.path,
-            execution.runtime.enabledRule.id,
-            {
-              fileIndex: filePlan.fileIndex,
-              filePlanned: filePlan.planned,
-              fileTotal: filesTotal,
-              ruleIndex: executionOffset + 1,
-              ruleTotal: target.executions.length,
-              targetIndex: targetOffset + 1,
-              targetKind: target.kind,
-              targetName: target.name,
-              targetTotal: filePlan.targets.length,
-            },
-          )
-
-          await executeProgressTarget(
-            execution,
-            progressPath,
-            target,
-            clock,
-            counters,
-            diagnostics,
-            usage,
-            cacheContext,
-            options,
-          )
-        }
-      }
-      catch (error) {
-        targetError.set()
-        throw error
-      }
-      finally {
-        emitCleanupProgress(
-          () => options.progress?.onTargetEnd?.({
-            endedAt: clock(),
-            path: targetPath,
-            startedAt: targetStartedAt,
-          }),
-          targetError,
-        )
-      }
-    }
-  }
-  catch (error) {
-    fileError.set()
-    throw error
-  }
-  finally {
-    emitCleanupProgress(
-      () => options.progress?.onFileEnd?.({
-        endedAt: clock(),
-        file: fileProgress,
-        startedAt: fileStartedAt,
-      }),
-      fileError,
-    )
-  }
-}
-
-async function executeProgressTarget(
-  execution: RuleTargetExecution,
-  path: ProgressPath,
-  target: ExecutionTarget,
-  clock: () => number,
-  counters: ReturnType<typeof createRuleEndCounters>,
-  diagnostics: Diagnostic[],
-  usage: ReturnType<typeof createUsageAccumulator>,
-  cacheContext: CacheRunContext,
-  options: RunOptions,
-): Promise<void> {
-  const startedAt = clock()
-  const cacheKey = createExecutionCacheKey(execution.runtime, target, path, cacheContext)
-  const cachedEntry = cacheKey && cacheContext.enabled && execution.runtime.cacheable
-    ? cacheContext.store.get(cacheKey)
-    : undefined
-
-  options.progress?.onRuleStart?.({
-    path,
-    startedAt,
-  })
-
-  if (cacheKey && cachedEntry) {
-    rememberFileCacheEntry(cacheContext, path.file.path, cacheKey)
-    try {
-      replayCachedEntry(cachedEntry, path, diagnostics, usage, options)
-    }
-    catch (error) {
-      counters.error()
-
-      try {
-        options.progress?.onRuleEnd?.({
-          cache: 'hit',
-          endedAt: clock(),
-          path,
-          startedAt,
-          state: 'errored',
-        })
-      }
-      catch {
-        // Preserve the original replay failure when error-progress callbacks also fail.
-      }
-
-      throw new AlintRuleExecutionError(error, path)
-    }
-
-    counters.cache()
-    options.progress?.onRuleEnd?.({
-      cache: 'hit',
-      endedAt: clock(),
-      path,
-      startedAt,
-      state: 'completed',
-    })
-    return
-  }
-
-  let handlerError: unknown
-  let handlerSucceeded = false
-  const cacheDiagnostics: Diagnostic[] | undefined = cacheKey ? [] : undefined
-  const cacheUsage: InferenceUsageRecord[] | undefined = cacheKey ? [] : undefined
-
-  try {
-    await execution.runtime.executionState.run({
-      activeFilePath: path.file.path,
-      cacheDiagnostics,
-      cacheUsage,
-      progressPath: path,
-    }, execution.run)
-    handlerSucceeded = true
-  }
-  catch (error) {
-    handlerError = error
-  }
-
-  if (handlerSucceeded) {
-    if (cacheKey && cacheContext.enabled && execution.runtime.cacheable) {
-      cacheContext.store.set(cacheKey, {
-        diagnostics: cacheDiagnostics ?? [],
-        filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
-        fingerprint: {
-          alintVersion: packageJson.version,
-          configHash: target.configHash,
-          modelHash: cacheContext.modelHash,
-          ruleHash: execution.runtime.ruleHash,
-        },
-        target: {
-          hash: createTargetHash(target),
-          identity: target.identity,
-          kind: target.kind,
-          loc: target.loc,
-          name: target.name,
-          range: target.range,
-        },
-        usage: cacheUsage ?? [],
-      })
-      rememberFileCacheEntry(cacheContext, path.file.path, cacheKey)
-    }
-
-    counters.complete()
-    options.progress?.onRuleEnd?.({
-      cache: 'miss',
-      endedAt: clock(),
-      path,
-      startedAt,
-      state: 'completed',
-    })
-    return
-  }
-
-  counters.error()
-
-  try {
-    options.progress?.onRuleEnd?.({
-      cache: 'miss',
-      endedAt: clock(),
-      path,
-      startedAt,
-      state: 'errored',
-    })
-  }
-  catch {
-    // Preserve the original rule failure when error-progress callbacks also fail.
-  }
-
-  throw new AlintRuleExecutionError(handlerError, path)
-}
-
-async function executeRepositoryExecutions(
-  executions: RepositoryExecution[],
-  repository: RepositoryTarget,
-  filesTotal: number,
-  clock: () => number,
-  counters: ReturnType<typeof createRuleEndCounters>,
-  diagnostics: Diagnostic[],
-  usage: ReturnType<typeof createUsageAccumulator>,
-  cacheContext: CacheRunContext,
-  options: RunOptions,
-): Promise<void> {
-  for (const [executionOffset, execution] of executions.entries()) {
-    const path = createProgressPath(
-      options.cwd ?? processCwd(),
-      execution.runtime.enabledRule.id,
-      {
-        fileIndex: 0,
-        filePlanned: executions.length,
-        fileTotal: filesTotal,
-        ruleIndex: executionOffset + 1,
-        ruleTotal: executions.length,
-        targetIndex: 1,
-        targetKind: 'repository',
-        targetTotal: 1,
-      },
-    )
-    const startedAt = clock()
-    const cacheKey = createExecutionCacheKey(execution.runtime, execution.target, path, cacheContext)
-    const cachedEntry = cacheKey && cacheContext.enabled && execution.runtime.cacheable
-      ? cacheContext.store.get(cacheKey)
-      : undefined
-
-    options.progress?.onRuleStart?.({
-      path,
-      startedAt,
-    })
-
-    if (cacheKey && cachedEntry) {
-      rememberRepositoryCacheEntry(cacheContext, repository, cacheKey)
-      try {
-        replayCachedEntry(cachedEntry, path, diagnostics, usage, options)
-      }
-      catch (error) {
-        counters.error()
-
-        try {
-          options.progress?.onRuleEnd?.({
-            cache: 'hit',
-            endedAt: clock(),
-            path,
-            startedAt,
-            state: 'errored',
-          })
-        }
-        catch {
-          // Preserve the original replay failure when error-progress callbacks also fail.
-        }
-
-        throw new AlintRuleExecutionError(error, path)
-      }
-
-      counters.cache()
-      options.progress?.onRuleEnd?.({
-        cache: 'hit',
-        endedAt: clock(),
-        path,
-        startedAt,
-        state: 'completed',
-      })
-      continue
-    }
-
-    let handlerError: unknown
-    let handlerSucceeded = false
-    const cacheDiagnostics: Diagnostic[] | undefined = cacheKey ? [] : undefined
-    const cacheUsage: InferenceUsageRecord[] | undefined = cacheKey ? [] : undefined
-
-    try {
-      await execution.runtime.executionState.run({
-        cacheDiagnostics,
-        cacheUsage,
-        progressPath: path,
-      }, () => execution.run(repository))
-      handlerSucceeded = true
-    }
-    catch (error) {
-      handlerError = error
-    }
-
-    if (handlerSucceeded) {
-      if (cacheKey && cacheContext.enabled && execution.runtime.cacheable) {
-        cacheContext.store.set(cacheKey, {
-          diagnostics: cacheDiagnostics ?? [],
-          filePath: normalizeCachePath(cacheContext.cwd, path.file.path),
-          fingerprint: {
-            alintVersion: packageJson.version,
-            configHash: execution.target.configHash,
-            modelHash: cacheContext.modelHash,
-            ruleHash: execution.runtime.ruleHash,
-          },
-          target: {
-            hash: createTargetHash(execution.target),
-            identity: execution.target.identity,
-            kind: execution.target.kind,
-          },
-          usage: cacheUsage ?? [],
-        })
-        rememberRepositoryCacheEntry(cacheContext, repository, cacheKey)
-      }
-
-      counters.complete()
-      options.progress?.onRuleEnd?.({
-        cache: 'miss',
-        endedAt: clock(),
-        path,
-        startedAt,
-        state: 'completed',
-      })
-      continue
-    }
-
-    counters.error()
-
-    try {
-      options.progress?.onRuleEnd?.({
-        cache: 'miss',
-        endedAt: clock(),
-        path,
-        startedAt,
-        state: 'errored',
-      })
-    }
-    catch {
-      // Preserve the original rule failure when error-progress callbacks also fail.
-    }
-
-    throw new AlintRuleExecutionError(handlerError, path)
   }
 }
 
@@ -1171,57 +587,6 @@ async function reconcileCache(
   }
 }
 
-function rememberFileCacheEntry(
-  cacheContext: CacheRunContext,
-  filePath: string,
-  cacheKey: string,
-): void {
-  const normalizedPath = normalizeCachePath(cacheContext.cwd, filePath)
-  const entries = cacheContext.fileEntryKeys.get(normalizedPath) ?? new Set<string>()
-
-  entries.add(cacheKey)
-  cacheContext.fileEntryKeys.set(normalizedPath, entries)
-}
-
-function rememberRepositoryCacheEntry(
-  cacheContext: CacheRunContext,
-  repository: RepositoryTarget,
-  cacheKey: string,
-): void {
-  for (const file of repository.files) {
-    rememberFileCacheEntry(cacheContext, file.path, cacheKey)
-  }
-}
-
-function replayCachedEntry(
-  entry: CacheEntry,
-  path: ProgressPath,
-  diagnostics: Diagnostic[],
-  usage: ReturnType<typeof createUsageAccumulator>,
-  options: RunOptions,
-): void {
-  for (const cachedDiagnostic of entry.diagnostics) {
-    const diagnostic = { ...cachedDiagnostic }
-
-    diagnostics.push(diagnostic)
-    options.progress?.onDiagnostic?.({
-      diagnostic,
-      diagnostics: [...diagnostics],
-      path,
-    })
-  }
-
-  for (const cachedUsage of entry.usage) {
-    const record = usage.record({ ...cachedUsage })
-
-    options.progress?.onUsage?.({
-      path,
-      record,
-      total: usage.toJSON(),
-    })
-  }
-}
-
 function resolveFileConcurrency(fileConcurrency: number | undefined): number {
   return fileConcurrency ?? 1
 }
@@ -1272,25 +637,11 @@ function toDiagnosticModel(
   }
 }
 
-function toProgressFilePath(filePlan: PreparedFileExecutionPlan, filesTotal: number) {
+function toProgressFilePath(filePlan: TargetExecutionPlan, filesTotal: number) {
   return {
     index: filePlan.fileIndex,
-    path: filePlan.preparedFile.file.path,
+    path: filePlan.path,
     planned: filePlan.planned,
     total: filesTotal,
-  }
-}
-
-function toTargetIdentityInput(
-  cwd: string,
-  filePath: string,
-  target: ExecutionTarget,
-) {
-  return {
-    filePath: target.kind === 'file' ? normalizeCachePath(cwd, filePath) : undefined,
-    identity: target.identity,
-    kind: target.kind,
-    name: target.name,
-    range: target.range,
   }
 }

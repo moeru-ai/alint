@@ -3,7 +3,12 @@ import type { AlintConfigExtends } from '../dsl/types'
 import { describe, expect, it } from 'vitest'
 
 import { definePlugin, defineRule } from '../dsl/define'
-import { normalizeConfig, resolveConfigForFile } from './config-array'
+import {
+  normalizeConfig,
+  resolveConfigForDirectory,
+  resolveConfigForFile,
+  resolveConfigForProject,
+} from './config-array'
 
 describe('config array resolution', () => {
   const plugin = definePlugin({
@@ -17,8 +22,8 @@ describe('config array resolution', () => {
       ],
     },
     rules: {
-      'file-review': defineRule({ create: () => ({ onTarget: () => {} }) }),
-      'strict-review': defineRule({ create: () => ({ onTarget: () => {} }) }),
+      'file-review': defineRule({ create: () => ({ onTargetWith: () => {} }) }),
+      'strict-review': defineRule({ create: () => ({ onTargetWith: () => {} }) }),
     },
   })
 
@@ -39,6 +44,76 @@ describe('config array resolution', () => {
 
     expect(result.config.rules).toEqual({})
     expect(result.config.plugins).toEqual({ review: plugin })
+  })
+
+  it('resolves directory rules without matching file patterns', () => {
+    const result = resolveConfigForDirectory('/repo/crates/auv-cli-invoke', [
+      {
+        directories: ['crates/*'],
+        plugins: { review: plugin },
+        rules: { 'review/file-review': 'warn' },
+      },
+      {
+        files: ['**/Cargo.toml'],
+        rules: { 'review/strict-review': 'warn' },
+      },
+    ], { cwd: '/repo' })
+
+    expect(result.config.rules).toEqual({
+      'review/file-review': 'warn',
+    })
+  })
+
+  it('keeps an empty files matcher global for file targets', () => {
+    const result = resolveConfigForFile('/repo/main.go', [
+      {
+        files: [],
+        rules: { 'review/file-review': 'warn' },
+      },
+    ], { cwd: '/repo' })
+
+    expect(result.config.rules).toEqual({
+      'review/file-review': 'warn',
+    })
+  })
+
+  it('resolves only global config for a project target', () => {
+    const result = resolveConfigForProject('/repo', [
+      {
+        name: 'global',
+        rules: { 'review/file-review': 'warn' },
+      },
+      {
+        files: ['**/*.go'],
+        name: 'files',
+        rules: { 'review/strict-review': 'warn' },
+      },
+      {
+        directories: ['crates/*'],
+        name: 'directories',
+        rules: { 'review/strict-review': 'error' },
+      },
+    ], { cwd: '/repo' })
+
+    expect(result.matched.map(item => item.name)).toEqual(['global'])
+    expect(result.config.rules).toEqual({
+      'review/file-review': 'warn',
+    })
+  })
+
+  it('applies a global ignore to the project root', () => {
+    const result = resolveConfigForProject('/repo/generated', [
+      {
+        ignores: ['generated/**'],
+        name: 'global ignores',
+      },
+      {
+        name: 'global',
+        rules: { 'review/file-review': 'warn' },
+      },
+    ], { cwd: '/repo' })
+
+    expect(result.ignored).toBe(true)
   })
 
   it('applies later matching rule entries over earlier ones', () => {

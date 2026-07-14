@@ -114,8 +114,10 @@ export async function generateStructured<Schema extends GenericSchema>(
       })
     }
     catch (error) {
-      previousError = `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`
-      options.logger?.debug(`${options.operation} attempt ${attempt} failed while calling the model: ${previousError}`)
+      const callError = `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`
+
+      previousError = isRetriableHttpError(error) ? undefined : callError
+      options.logger?.debug(`${options.operation} attempt ${attempt} failed while calling the model: ${callError}`)
 
       if (!isRetriableCallError(error) || attempt === maxAttempts) {
         throw error
@@ -172,11 +174,27 @@ function isRetriableCallError(error: unknown): boolean {
     return true
   }
 
+  if (isRetriableHttpError(error)) {
+    return true
+  }
+
   // Malformed tool calls are the model's fault and worth retrying with
   // feedback; anything else (transport, auth, provider errors) is not.
   return error.name === 'InvalidToolCallError'
     || error.name === 'InvalidToolInputError'
     || error.name === 'ToolExecutionError'
+}
+
+function isRetriableHttpError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const statusCode = 'statusCode' in error && typeof error.statusCode === 'number'
+    ? error.statusCode
+    : undefined
+
+  return statusCode !== undefined && (statusCode >= 500 || [408, 429].includes(statusCode))
 }
 
 function normalizeJsonSchemaDefinition(schema: boolean | JsonSchema): boolean | JsonSchema {

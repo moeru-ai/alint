@@ -261,8 +261,19 @@ describe('generateStructured', () => {
     expect(requests).toHaveLength(1)
   })
 
-  it('propagates transport errors without retrying', async () => {
-    responses.push({ body: { error: 'boom' }, status: 500 })
+  it.each([408, 429, 500, 599])('retries transient HTTP status %i', async (status) => {
+    responses.push({ body: { error: 'retry me' }, status })
+    responses.push({ body: toolCallCompletion(validPayload) })
+
+    const result = await generateStructured(createOptions())
+
+    expect(result).toEqual(validPayload)
+    expect(requests).toHaveLength(2)
+    expect(requests[1].body.messages).toEqual(requests[0].body.messages)
+  })
+
+  it('propagates other HTTP errors without retrying', async () => {
+    responses.push({ body: { error: 'forbidden' }, status: 403 })
 
     await expect(generateStructured(createOptions())).rejects.toThrow()
     expect(requests).toHaveLength(1)

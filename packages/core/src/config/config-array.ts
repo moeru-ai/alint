@@ -35,6 +35,8 @@ export interface ResolveConfigResult {
   skipped: Array<{ item: AlintConfigItem, reason: string }>
 }
 
+type ConfigTargetKind = 'directory' | 'file' | 'project'
+
 interface ExpandedConfigItem extends AlintConfigItem {
   [effectiveBasePathSymbol]?: string
   [inheritedMatcherScopesSymbol]?: MatcherScope[]
@@ -50,6 +52,7 @@ interface ExpandState {
 
 interface MatcherScope {
   basePath?: string
+  directories?: AlintConfigItem['directories']
   files?: AlintConfigItem['files']
   ignores?: AlintConfigItem['ignores']
 }
@@ -76,47 +79,28 @@ export function normalizeConfig(input: readonly AlintConfigInput[]): AlintConfig
   return normalizeConfigItems(input, [])
 }
 
+export function resolveConfigForDirectory(
+  directoryPath: string,
+  input: AlintConfig,
+  options: ResolveConfigOptions,
+): ResolveConfigResult {
+  return resolveConfig(directoryPath, input, options, 'directory')
+}
+
 export function resolveConfigForFile(
   filePath: string,
   input: AlintConfig,
   options: ResolveConfigOptions,
 ): ResolveConfigResult {
-  const items = expandConfig(input)
-  const matched: AlintConfigItem[] = []
-  const skipped: ResolveConfigResult['skipped'] = []
-  const config = createEmptyConfig()
+  return resolveConfig(filePath, input, options, 'file')
+}
 
-  for (const item of items) {
-    if (isGlobalIgnoreItem(item)) {
-      if (matchesInheritedScopes(filePath, item, options.cwd)
-        && matchesAny(filePath, item.ignores ?? [], options.cwd, getEffectiveBasePath(item))) {
-        return {
-          config: createEmptyConfig(),
-          ignored: true,
-          matched: [],
-          skipped,
-        }
-      }
-
-      skipped.push({ item, reason: 'global ignores did not match' })
-      continue
-    }
-
-    if (!matchesConfigItem(filePath, item, options.cwd)) {
-      skipped.push({ item, reason: 'files or ignores did not match' })
-      continue
-    }
-
-    matched.push(item)
-    mergeConfig(config, item)
-  }
-
-  return {
-    config,
-    ignored: false,
-    matched,
-    skipped,
-  }
+export function resolveConfigForProject(
+  projectPath: string,
+  input: AlintConfig,
+  options: ResolveConfigOptions,
+): ResolveConfigResult {
+  return resolveConfig(projectPath, input, options, 'project')
 }
 
 function createEmptyConfig(): EffectiveAlintConfig {
@@ -130,12 +114,13 @@ function createEmptyConfig(): EffectiveAlintConfig {
 }
 
 function createMatcherScope(item: AlintConfigItem, basePath: string | undefined): MatcherScope | undefined {
-  if (!item.files && !item.ignores) {
+  if (!item.directories && !item.files && !item.ignores) {
     return undefined
   }
 
   return {
     basePath,
+    directories: item.directories,
     files: item.files,
     ignores: item.ignores,
   }
@@ -218,6 +203,16 @@ function hasDiscoveryMatcher(item: AlintConfigItem): boolean {
     || getInheritedMatcherScopes(item).some(scope => hasPositiveFilePattern(scope.files))
 }
 
+function hasOtherTargetPatterns(item: MatcherScope, targetKind: ConfigTargetKind): boolean {
+  if (targetKind === 'project') {
+    return item.files !== undefined || item.directories !== undefined
+  }
+
+  return targetKind === 'directory'
+    ? item.files !== undefined
+    : item.directories !== undefined
+}
+
 function hasPositiveFilePattern(files: AlintConfigItem['files']): boolean {
   return files?.some(pattern =>
     isPatternList(pattern)
@@ -244,39 +239,67 @@ function isPositivePattern(pattern: string): boolean {
   return !pattern.startsWith('!')
 }
 
-function matchesAny(filePath: string, patterns: readonly string[], cwd: string, basePath?: string): boolean {
-  return patterns.some(pattern => matchesPattern(filePath, pattern, cwd, basePath))
-}
-
-function matchesConfigItem(filePath: string, item: AlintConfigItem, cwd: string): boolean {
+function matchesConfigItem(
+  filePath: string,
+  item: AlintConfigItem,
+  cwd: string,
+  targetKind: ConfigTargetKind,
+): boolean {
   const basePath = getEffectiveBasePath(item)
 
-  if (!matchesInheritedScopes(filePath, item, cwd)) {
+  if (!matchesInheritedScopes(filePath, item, cwd, targetKind)) {
     return false
   }
 
-  if (matchesAny(filePath, item.ignores ?? [], cwd, basePath)) {
+  if (matchesIgnores(filePath, item.ignores ?? [], cwd, basePath, targetKind)) {
     return false
   }
 
-  if (!item.files || item.files.length === 0) {
-    return true
+  const patterns = targetPatterns(item, targetKind)
+
+  if (patterns !== undefined) {
+    return patterns.length === 0
+      || patterns.some(pattern => matchesPattern(filePath, pattern, cwd, basePath))
   }
 
-  return item.files.some(pattern => matchesPattern(filePath, pattern, cwd, basePath))
+  return !hasOtherTargetPatterns(item, targetKind)
 }
 
-function matchesInheritedScopes(filePath: string, item: AlintConfigItem, cwd: string): boolean {
+function matchesIgnores(
+  targetPath: string,
+  patterns: readonly string[],
+  cwd: string,
+  basePath: string | undefined,
+  targetKind: ConfigTargetKind,
+): boolean {
+  return patterns.some(pattern => matchesPattern(
+    targetPath,
+    pattern,
+    cwd,
+    basePath,
+    targetKind === 'project',
+  ))
+}
+
+function matchesInheritedScopes(
+  filePath: string,
+  item: AlintConfigItem,
+  cwd: string,
+  targetKind: ConfigTargetKind,
+): boolean {
   return getInheritedMatcherScopes(item).every((scope) => {
-    if (matchesAny(filePath, scope.ignores ?? [], cwd, scope.basePath)) {
+    if (matchesIgnores(filePath, scope.ignores ?? [], cwd, scope.basePath, targetKind)) {
       return false
     }
 
-    if (!scope.files || scope.files.length === 0) {
-      return true
+    const patterns = targetPatterns(scope, targetKind)
+
+    if (patterns !== undefined) {
+      return patterns.length === 0
+        || patterns.some(pattern => matchesPattern(filePath, pattern, cwd, scope.basePath))
     }
 
-    return scope.files.some(pattern => matchesPattern(filePath, pattern, cwd, scope.basePath))
+    return !hasOtherTargetPatterns(scope, targetKind)
   })
 }
 
@@ -285,9 +308,10 @@ function matchesPattern(
   pattern: readonly string[] | string,
   cwd: string,
   basePath?: string,
+  matchDirectoryRoot = false,
 ): boolean {
   if (isPatternList(pattern)) {
-    return pattern.every(entry => matchesPattern(filePath, entry, cwd, basePath))
+    return pattern.every(entry => matchesPattern(filePath, entry, cwd, basePath, matchDirectoryRoot))
   }
 
   const base = basePath ? resolve(cwd, basePath) : cwd
@@ -298,6 +322,7 @@ function matchesPattern(
   }
 
   return minimatch(relativePath, pattern, { dot: true })
+    || (matchDirectoryRoot && minimatch(`${relativePath}/`, pattern, { dot: true }))
 }
 
 function mergeConfig(config: EffectiveAlintConfig, item: AlintConfigItem): void {
@@ -347,6 +372,56 @@ function normalizeConfigItems(
   )
 }
 
+function resolveConfig(
+  targetPath: string,
+  input: AlintConfig,
+  options: ResolveConfigOptions,
+  targetKind: ConfigTargetKind,
+): ResolveConfigResult {
+  const items = expandConfig(input)
+  const matched: AlintConfigItem[] = []
+  const skipped: ResolveConfigResult['skipped'] = []
+  const config = createEmptyConfig()
+
+  for (const item of items) {
+    if (isGlobalIgnoreItem(item)) {
+      if (matchesInheritedScopes(targetPath, item, options.cwd, targetKind)
+        && matchesIgnores(
+          targetPath,
+          item.ignores ?? [],
+          options.cwd,
+          getEffectiveBasePath(item),
+          targetKind,
+        )) {
+        return {
+          config: createEmptyConfig(),
+          ignored: true,
+          matched: [],
+          skipped,
+        }
+      }
+
+      skipped.push({ item, reason: 'global ignores did not match' })
+      continue
+    }
+
+    if (!matchesConfigItem(targetPath, item, options.cwd, targetKind)) {
+      skipped.push({ item, reason: 'target patterns or ignores did not match' })
+      continue
+    }
+
+    matched.push(item)
+    mergeConfig(config, item)
+  }
+
+  return {
+    config,
+    ignored: false,
+    matched,
+    skipped,
+  }
+}
+
 function resolvePluginConfig(
   reference: string,
   state: ExpandState,
@@ -368,6 +443,21 @@ function resolvePluginConfig(
     ...state,
     stringStack: [...state.stringStack, reference],
   })
+}
+
+function targetPatterns(
+  item: MatcherScope,
+  targetKind: ConfigTargetKind,
+): AlintConfigItem['directories'] | AlintConfigItem['files'] | undefined {
+  if (targetKind === 'directory') {
+    return item.directories
+  }
+
+  if (targetKind === 'file') {
+    return item.files
+  }
+
+  return undefined
 }
 
 function withExpansionMetadata(

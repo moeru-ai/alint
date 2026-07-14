@@ -45,11 +45,7 @@ export function createBasicStructuredRule(rule: DeclarativeRuleDefinition): Rule
   return {
     cache: rule.includeFiles === undefined || rule.includeFiles.length === 0,
     create: ctx => ({
-      async onTarget(target) {
-        if (target.kind !== 'file') {
-          return
-        }
-
+      async onTargetFile(target) {
         const model = await ctx.model()
         const supplementalFiles = await collectSupplementalFiles({
           cwd: ctx.cwd,

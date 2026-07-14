@@ -146,7 +146,7 @@ Ask model-backed rules to write diagnostics in a specific language:
 alint --lang zh-CN src
 ```
 
-`alint` returns exit code `1` when diagnostics are reported and `0` when the run is clean.
+`alint` returns exit code `0` when diagnostics contain no errors, including warning-only runs. It returns `1` when at least one error diagnostic is reported and `2` when the command cannot complete because of a configuration, input, or runtime failure. `alint output inspect` uses the same exit-code behavior for saved results.
 
 ### Inspect Configuration and Output
 
@@ -427,11 +427,7 @@ import { defineRule } from '@alint-js/core'
 
 export const checkFunctionRule = defineRule({
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'function') {
-        return
-      }
-
+    async onTargetFunction(target) {
       const model = await ctx.model({ capabilities: ['tool-call'], size: 'small' })
 
       ctx.report({
@@ -473,7 +469,7 @@ Rule authors can opt out of caching when a rule depends on external state:
 defineRule({
   cache: false,
   create: ctx => ({
-    onTarget(target) {
+    onTargetFile(target) {
       // Always reruns.
     },
   }),
@@ -538,4 +534,3 @@ MIT
 [license-href]: https://github.com/moeru-ai/alint/blob/main/LICENSE
 [jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
 [jsdocs-href]: https://www.jsdocs.io/package/@alint-js/cli
-

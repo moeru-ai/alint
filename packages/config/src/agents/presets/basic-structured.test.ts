@@ -116,7 +116,7 @@ describe('basic-structured declarative preset', () => {
 
     expect(rule.cache).toBe(true)
     expect(rule.create).toEqual(expect.any(Function))
-    expect(rule.create(createRuleContext()).onTarget).toEqual(expect.any(Function))
+    expect(rule.create(createRuleContext()).onTargetFile).toEqual(expect.any(Function))
   })
 
   it('creates a non-cacheable file-target rule with included supplemental files', () => {
@@ -131,10 +131,10 @@ describe('basic-structured declarative preset', () => {
 
     expect(rule.cache).toBe(false)
     expect(rule.create).toEqual(expect.any(Function))
-    expect(rule.create(createRuleContext()).onTarget).toEqual(expect.any(Function))
+    expect(rule.create(createRuleContext()).onTargetFile).toEqual(expect.any(Function))
   })
 
-  it('runs structured output only for file targets', async () => {
+  it('runs structured output for a file target', async () => {
     generateStructuredMock.mockResolvedValueOnce({
       findings: [
         {
@@ -153,8 +153,7 @@ describe('basic-structured declarative preset', () => {
       name: 'semantic-boundary',
     })
 
-    await rule.create(ctx).onTarget?.(createTarget('function'))
-    await rule.create(ctx).onTarget?.(createTarget('file'))
+    await rule.create(ctx).onTargetFile?.(createTarget('file'))
 
     expect(ctx.model).toHaveBeenCalledOnce()
     expect(generateStructuredMock).toHaveBeenCalledOnce()
@@ -216,7 +215,7 @@ function createRuleContext(): RuleContext {
   }
 }
 
-function createTarget(kind: SourceTarget['kind']): SourceTarget {
+function createTarget<Kind extends SourceTarget['kind']>(kind: Kind): SourceTarget & { kind: Kind } {
   return {
     file: {
       language: 'python',

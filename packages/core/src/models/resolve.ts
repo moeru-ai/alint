@@ -15,7 +15,7 @@ export function resolveModel(
 
   if (options.request !== undefined) {
     const request = options.request
-    const candidate = candidates.find(({ model, provider }) => matchesRequest(model, provider, request))
+    const candidate = candidates.find(candidate => matchesRequest(candidate, request))
 
     if (candidate === undefined) {
       throw new Error(`Unknown model "${request}".`)
@@ -49,25 +49,16 @@ function flattenModels(registry: SetupConfig): ModelCandidate[] {
   )
 }
 
-function matchesProviderQualifiedRequest(model: SetupModelDefinition, provider: ProviderDefinition, request: string): boolean {
-  const prefix = `${provider.id}/`
+function matchesRequest(candidate: ModelCandidate, request: string): boolean {
+  const names = [
+    candidate.model.id,
+    candidate.model.name,
+    ...(candidate.model.aliases ?? []),
+  ].filter((name): name is string => name !== undefined)
 
-  if (!request.startsWith(prefix)) {
-    return false
-  }
-
-  const modelRequest = request.slice(prefix.length)
-
-  return model.id === modelRequest
-    || model.name === modelRequest
-    || (model.aliases ?? []).includes(modelRequest)
-}
-
-function matchesRequest(model: SetupModelDefinition, provider: ProviderDefinition, request: string): boolean {
-  return model.id === request
-    || model.name === request
-    || (model.aliases ?? []).includes(request)
-    || matchesProviderQualifiedRequest(model, provider, request)
+  return names.some(name =>
+    name === request || `${candidate.provider.id}/${name}` === request,
+  )
 }
 
 function preferSize(

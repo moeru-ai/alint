@@ -4,11 +4,14 @@ Example `alint` plugin for model-backed JavaScript and TypeScript review rules.
 
 ## What it does
 
-This package demonstrates the public plugin and rule DSL from `@alint-js/core`. It exports `examplePlugin` with a `recommended` config and three example rules:
+This package demonstrates the public plugin and rule DSL from `@alint-js/core`. It exports `examplePlugin` with a `recommended` config and four example rules:
 
 - `example/inline-miniature-normalizer`
+- `example/no-redundant-binding`
 - `example/no-redundant-jsdoc`
 - `example/no-trivial-wrapper-stack`
+
+`example/no-redundant-binding` reports local bindings that only rename an unchanged value or reference without adding a useful boundary.
 
 The rules show how to request a model from `ctx.model(...)`, send source context to a structured judge, and convert model findings into lint diagnostics.
 
@@ -26,6 +29,7 @@ export default defineConfig([
     },
     rules: {
       'example/inline-miniature-normalizer': 'warn',
+      'example/no-redundant-binding': 'warn',
       'example/no-redundant-jsdoc': 'warn',
       'example/no-trivial-wrapper-stack': 'warn',
     },
