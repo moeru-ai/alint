@@ -36,5 +36,9 @@
     "oxc-parser": "catalog:",
     "pathe": "catalog:",
     "valibot": "catalog:"
+  },
+  "devDependencies": {
+    "effect": "catalog:",
+    "sury": "catalog:"
   }
 }
