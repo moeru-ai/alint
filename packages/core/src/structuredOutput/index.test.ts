@@ -23,7 +23,9 @@ const responseSchema = pipe(
   description('Report findings for this file.'),
 )
 
-interface QueuedResponse { body: unknown, status?: number }
+type QueuedResponse
+  = | { body: unknown, status?: number }
+    | { disconnect: true }
 
 interface RecordedRequest {
   body: Record<string, unknown>
@@ -48,6 +50,10 @@ beforeEach(async () => {
       requests.push({ body: JSON.parse(payload) as Record<string, unknown>, url: request.url ?? '' })
 
       const next = responses.shift() ?? { body: {}, status: 500 }
+      if ('disconnect' in next) {
+        request.socket.destroy()
+        return
+      }
       response.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify(next.body))
     })
@@ -270,6 +276,40 @@ describe('generateStructured', () => {
     expect(result).toEqual(validPayload)
     expect(requests).toHaveLength(2)
     expect(requests[1].body.messages).toEqual(requests[0].body.messages)
+  })
+
+  it('retries a disconnected request without restarting semantic validation', async () => {
+    responses.push({ disconnect: true })
+    responses.push({ body: toolCallCompletion(validPayload) })
+
+    const result = await generateStructured(createOptions())
+
+    expect(result).toEqual(validPayload)
+    expect(requests).toHaveLength(2)
+    expect(requests[1].body.messages).toEqual(requests[0].body.messages)
+  })
+
+  it('does not send a request when the caller signal is already aborted', async () => {
+    const controller = new AbortController()
+    const reason = new Error('rule timed out')
+    controller.abort(reason)
+
+    await expect(generateStructured({
+      ...createOptions(),
+      signal: controller.signal,
+    })).rejects.toBe(reason)
+    expect(requests).toHaveLength(0)
+  })
+
+  it('does not multiply exhausted transport retries through semantic attempts', async () => {
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+
+    await expect(generateStructured(createOptions()))
+      .rejects
+      .toThrow('Remote sent 500 response')
+    expect(requests).toHaveLength(3)
   })
 
   it('propagates other HTTP errors without retrying', async () => {

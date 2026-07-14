@@ -13,6 +13,8 @@ import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
 import { getDescription, parse } from 'valibot'
 
+import { createRetryingFetch } from '../inference/retry'
+
 const defaultMaxAttempts = 3
 const defaultToolName = 'reportFindings'
 
@@ -33,6 +35,8 @@ export interface GenerateStructuredOptions<Schema extends GenericSchema> {
   /** Milliseconds to wait before the given (1-based) attempt is retried. */
   retryDelay?: (attempt: number) => number
   schema: Schema
+  /** Cancels the active model request or a pending transport retry. */
+  signal?: AbortSignal
   temperature?: number
   /** Shown to the model as the tool description. Defaults to the schema's valibot description. */
   toolDescription?: string
@@ -80,6 +84,15 @@ export async function generateStructured<Schema extends GenericSchema>(
   const maxAttempts = options.maxAttempts ?? defaultMaxAttempts
   const retryDelay = options.retryDelay ?? exponentialRetryDelay
   const toolName = options.toolName ?? defaultToolName
+  const configuredRetryDelay = options.retryDelay
+  const fetch = createRetryingFetch({
+    policy: {
+      maxRetries: Math.max(0, maxAttempts - 1),
+      ...(configuredRetryDelay
+        ? { retryDelay: attempt => configuredRetryDelay(attempt) }
+        : {}),
+    },
+  })
 
   const tool = rawTool({
     description: options.toolDescription ?? getDescription(options.schema),
@@ -98,7 +111,9 @@ export async function generateStructured<Schema extends GenericSchema>(
 
     try {
       response = await generateText({
+        abortSignal: options.signal,
         baseURL: options.model.provider.endpoint,
+        fetch,
         headers: options.model.provider.headers,
         messages: options.createMessages(previousError ? retryFeedbackFrom(toolName, previousError) : undefined),
         model: options.model.id,
@@ -116,7 +131,7 @@ export async function generateStructured<Schema extends GenericSchema>(
     catch (error) {
       const callError = `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`
 
-      previousError = isRetriableHttpError(error) ? undefined : callError
+      previousError = callError
       options.logger?.debug(`${options.operation} attempt ${attempt} failed while calling the model: ${callError}`)
 
       if (!isRetriableCallError(error) || attempt === maxAttempts) {
@@ -170,31 +185,14 @@ function exponentialRetryDelay(attempt: number): number {
 }
 
 function isRetriableCallError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return true
-  }
+  if (!(error instanceof Error))
+    return false
 
-  if (isRetriableHttpError(error)) {
-    return true
-  }
-
-  // Malformed tool calls are the model's fault and worth retrying with
-  // feedback; anything else (transport, auth, provider errors) is not.
+  // These errors come from completed responses and can be corrected with
+  // validation feedback. Request transport retry is owned by the fetch layer.
   return error.name === 'InvalidToolCallError'
     || error.name === 'InvalidToolInputError'
     || error.name === 'ToolExecutionError'
-}
-
-function isRetriableHttpError(error: unknown): boolean {
-  if (!(error instanceof Error)) {
-    return false
-  }
-
-  const statusCode = 'statusCode' in error && typeof error.statusCode === 'number'
-    ? error.statusCode
-    : undefined
-
-  return statusCode !== undefined && (statusCode >= 500 || [408, 429].includes(statusCode))
 }
 
 function normalizeJsonSchemaDefinition(schema: boolean | JsonSchema): boolean | JsonSchema {
