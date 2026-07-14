@@ -11,6 +11,12 @@ A [Pi](https://github.com/earendil-works/pi)-backed `AgentAdapter` for alint. On
 `Agent`: it translates the framework-agnostic `AgentTool`s to Pi's TypeBox tools, runs
 the tool loop, and reads back the final assistant message.
 
+The adapter passes `maxRetries: 2` to every Pi provider request by default,
+using the shared Alint retry budget without replaying `agent.prompt()` or
+completed tools. Set `maxRetries` on `createPiAdapter()` to override the provider
+budget. Pi remains responsible for provider-specific status classification,
+backoff, and stream error handling.
+
 ## How to use
 
 ```ts
@@ -19,7 +25,8 @@ import { createPiAdapter } from '@alint-js/agent-pi'
 const adapter = createPiAdapter()
 ```
 
-Pass `{ run }` to inject a custom Pi run.
+Pass `{ run }` to inject a custom Pi run; it receives the resolved retry budget
+as its second argument.
 
 ## When to use
 

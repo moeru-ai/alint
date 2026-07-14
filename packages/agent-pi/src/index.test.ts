@@ -3,7 +3,7 @@ import type { AgentTool } from '@alint-js/core/agent'
 
 import { describe, expect, it } from 'vitest'
 
-import { apiKeyFromModel, extractPiText, toPiTools } from './index'
+import { apiKeyFromModel, createPiAdapter, extractPiText, toPiTools } from './index'
 
 function fakeModel(headers: Record<string, string>): ResolvedModel {
   return {
@@ -60,5 +60,50 @@ describe('apiKeyFromModel', () => {
 
   it('falls back to a placeholder when there is no auth header', () => {
     expect(apiKeyFromModel(fakeModel({}))).toBe('unused')
+  })
+})
+
+describe('pi adapter retry policy', () => {
+  it('passes two retries to the Pi provider by default', async () => {
+    let capturedMaxRetries: number | undefined
+    const adapter = createPiAdapter({
+      run: async (_request, maxRetries) => {
+        capturedMaxRetries = maxRetries
+        return [{ content: 'done', role: 'assistant' }]
+      },
+    })
+
+    await adapter({
+      instructions: 'review',
+      model: fakeModel({}),
+      prompt: 'inspect this component',
+      tools: [],
+    })
+
+    expect(capturedMaxRetries).toBe(2)
+  })
+
+  it('passes a configured retry budget to Pi', async () => {
+    let capturedMaxRetries: number | undefined
+    const adapter = createPiAdapter({
+      maxRetries: 4,
+      run: async (_request, maxRetries) => {
+        capturedMaxRetries = maxRetries
+        return []
+      },
+    })
+
+    await adapter({
+      instructions: 'review',
+      model: fakeModel({}),
+      prompt: 'inspect this component',
+      tools: [],
+    })
+
+    expect(capturedMaxRetries).toBe(4)
+  })
+
+  it.each([-1, 1.5])('rejects invalid maxRetries: %s', (maxRetries) => {
+    expect(() => createPiAdapter({ maxRetries })).toThrow(TypeError)
   })
 })
