@@ -10,8 +10,8 @@ export const reinventedHelperRule = defineRule({
   // Agentic rules read other files and are nondeterministic, so their output is not cacheable.
   cache: false,
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'file' || !target.file.path.endsWith('.ts')) {
+    async onTargetFile(target) {
+      if (!target.file.path.endsWith('.ts')) {
         return
       }
 

@@ -88,7 +88,7 @@ function createRuleContext(): RuleContext {
   }
 }
 
-function createSourceTarget(kind: SourceTarget['kind'], path = '/repo/processing/media/downloaders/resourceItem.py'): SourceTarget {
+function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/processing/media/downloaders/resourceItem.py'): SourceTarget & { kind: Kind } {
   const file = {
     language: 'text/plain',
     lines: ['class Downloader:', '    async def download(self):', '        pass'],
@@ -148,35 +148,22 @@ describe('pythonPlugin', () => {
     ])
   })
 
-  it('exposes the semantic-boundary rule through onTarget only', () => {
+  it('exposes the semantic-boundary rule through onTargetFile only', () => {
     const handlers = getPythonSemanticBoundaryRule().create(createRuleContext())
 
-    expect(handlers.onTarget).toBeTypeOf('function')
+    expect(handlers.onTargetFile).toBeTypeOf('function')
     expect('onFile' in handlers).toBe(false)
     expect('onFunction' in handlers).toBe(false)
     expect('onClass' in handlers).toBe(false)
   })
 
-  it('exposes the typed-artifact-boundary rule through onTarget only', () => {
+  it('exposes the typed-artifact-boundary rule through onTargetFile only', () => {
     const handlers = getPythonTypedArtifactBoundaryRule().create(createRuleContext())
 
-    expect(handlers.onTarget).toBeTypeOf('function')
+    expect(handlers.onTargetFile).toBeTypeOf('function')
     expect('onFile' in handlers).toBe(false)
     expect('onFunction' in handlers).toBe(false)
     expect('onClass' in handlers).toBe(false)
-  })
-
-  it('ignores non-file SourceTargets before requesting a model', async () => {
-    const context = createRuleContext()
-    let modelRequests = 0
-    context.model = async () => {
-      modelRequests += 1
-      throw new Error('Model should not be requested for non-file targets')
-    }
-
-    await getPythonSemanticBoundaryRule().create(context).onTarget?.(createSourceTarget('function'))
-
-    expect(modelRequests).toBe(0)
   })
 
   it('ignores non-Python files before requesting a model', async () => {
@@ -187,7 +174,7 @@ describe('pythonPlugin', () => {
       throw new Error('Model should not be requested for non-Python targets')
     }
 
-    await getPythonSemanticBoundaryRule().create(context).onTarget?.(createSourceTarget('file', '/repo/service.ts'))
+    await getPythonSemanticBoundaryRule().create(context).onTargetFile?.(createSourceTarget('file', '/repo/service.ts'))
 
     expect(modelRequests).toBe(0)
   })
@@ -215,7 +202,7 @@ describe('pythonPlugin', () => {
       ],
     })
 
-    await getPythonSemanticBoundaryRule().create(context).onTarget?.(createSourceTarget('file'))
+    await getPythonSemanticBoundaryRule().create(context).onTargetFile?.(createSourceTarget('file'))
 
     expect(generateStructuredMock).toHaveBeenCalledTimes(1)
     expect(diagnostics).toEqual([

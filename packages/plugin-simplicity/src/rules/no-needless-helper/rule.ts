@@ -49,8 +49,8 @@ export const needlessHelperRule = defineRule({
     const settings = readSimplicitySettings(ctx)
 
     return {
-      async onTarget(target) {
-        if (target.kind !== 'file' || resolveExtractLanguage(target.file.path) === undefined) {
+      async onTargetFile(target) {
+        if (resolveExtractLanguage(target.file.path) === undefined) {
           return
         }
 

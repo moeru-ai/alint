@@ -73,7 +73,7 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
   }
 }
 
-function createSourceTarget(kind: SourceTarget['kind'], path = '/repo/src/math.ts'): SourceTarget {
+function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/src/math.ts'): SourceTarget & { kind: Kind } {
   const file = {
     language: 'text/plain',
     lines: [
@@ -127,31 +127,19 @@ describe('agentExamplePlugin', () => {
     expect(plugin.configs?.recommended).toEqual(agentExamplePlugin.configs?.recommended)
   })
 
-  it('exposes the rule through onTarget only', () => {
+  it('exposes the rule through onTargetFile only', () => {
     const handlers = getRule().create(createRuleContext())
 
-    expect(handlers.onTarget).toBeTypeOf('function')
+    expect(handlers.onTargetFile).toBeTypeOf('function')
     expect('onFile' in handlers).toBe(false)
     expect('onFunction' in handlers).toBe(false)
     expect('onClass' in handlers).toBe(false)
   })
 
   it('throws a clear error when the rule runs without a configured agent', async () => {
-    await expect(getRule().create(createRuleContext()).onTarget?.(createSourceTarget('file')))
+    await expect(getRule().create(createRuleContext()).onTargetFile?.(createSourceTarget('file')))
       .rejects
       .toThrow(/requires an agent/i)
-  })
-
-  it('ignores non-file targets before invoking the agent', async () => {
-    let invoked = false
-    const context = createRuleContext(async () => {
-      invoked = true
-      return { answer: '' }
-    })
-
-    await getRule().create(context).onTarget?.(createSourceTarget('function'))
-
-    expect(invoked).toBe(false)
   })
 
   it('ignores non-TypeScript files before invoking the agent', async () => {
@@ -161,7 +149,7 @@ describe('agentExamplePlugin', () => {
       return { answer: '' }
     })
 
-    await getRule().create(context).onTarget?.(createSourceTarget('file', '/repo/src/math.go'))
+    await getRule().create(context).onTargetFile?.(createSourceTarget('file', '/repo/src/math.go'))
 
     expect(invoked).toBe(false)
   })
@@ -189,7 +177,7 @@ describe('agentExamplePlugin', () => {
     const context = createRuleContext(agent)
     context.report = diagnostic => diagnostics.push(diagnostic)
 
-    await getRule().create(context).onTarget?.(createSourceTarget('file'))
+    await getRule().create(context).onTargetFile?.(createSourceTarget('file'))
 
     expect(captured?.instructions).toBe(reinventedHelperInstructions)
     expect(captured?.model.id).toBe('model')

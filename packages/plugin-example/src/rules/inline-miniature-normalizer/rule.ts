@@ -4,12 +4,9 @@ import { judgeSource } from '../../agents/judge/agent'
 import { inlineMiniatureNormalizerPrompt } from './prompt'
 
 export const inlineMiniatureNormalizerRule = defineRule({
+  cacheKey: inlineMiniatureNormalizerPrompt,
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'file') {
-        return
-      }
-
+    async onTargetFile(target) {
       const model = await ctx.model()
       const findings = await judgeSource({
         logger: ctx.logger,

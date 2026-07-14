@@ -80,8 +80,8 @@ type ResponsibilityBoundaryFinding = InferOutput<typeof responsibilityBoundaryFi
 
 export const responsibilityBoundaryRule = defineRule({
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'file' || !target.file.path.endsWith('.go')) {
+    async onTargetFile(target) {
+      if (!target.file.path.endsWith('.go')) {
         return
       }
 

@@ -76,8 +76,8 @@ type PythonTypedArtifactBoundaryFinding = InferOutput<typeof pythonTypedArtifact
 
 export const pythonTypedArtifactBoundaryRule = defineRule({
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'file' || !target.file.path.endsWith('.py')) {
+    async onTargetFile(target) {
+      if (!target.file.path.endsWith('.py')) {
         return
       }
 

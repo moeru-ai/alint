@@ -1,4 +1,4 @@
-import type { DiagnosticDescriptor, RuleContext, SourceTarget } from '@alint-js/core'
+import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest, AgentTool } from '@alint-js/core/agent'
 
 import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
@@ -68,7 +68,7 @@ async function createWorkspace(): Promise<string> {
 async function lint(run: Run, relativePath: string, settings?: Record<string, unknown>): Promise<void> {
   const path = resolve(run.cwd, relativePath)
   const text = await readFile(path, 'utf8')
-  const target: SourceTarget = {
+  const target: FileTarget = {
     file: { language: 'text/plain', lines: text.split('\n'), path, text },
     identity: 'file',
     kind: 'file',
@@ -76,7 +76,7 @@ async function lint(run: Run, relativePath: string, settings?: Record<string, un
     text,
   }
 
-  await duplicatedHelperRule.create(run.contextFor(settings)).onTarget?.(target)
+  await duplicatedHelperRule.create(run.contextFor(settings)).onTargetFile?.(target)
 }
 
 const AST_ONLY = { simplicity: { cache: false, ignores: ['alint.config.ts'], judge: false } }
@@ -288,26 +288,10 @@ describe('no-duplicated-helper, the agentic approach', () => {
 })
 
 describe('no-duplicated-helper, files it will not touch', () => {
-  it('ignores a target that is not a whole file', async () => {
-    const run = createRun()
-    const path = resolve(FIXTURES_DIR, 'ts/store.ts')
-    const text = await readFile(path, 'utf8')
-
-    await duplicatedHelperRule.create(run.contextFor(AST_ONLY)).onTarget?.({
-      file: { language: 'text/plain', lines: text.split('\n'), path, text },
-      identity: 'function',
-      kind: 'function',
-      language: 'text/plain',
-      text,
-    })
-
-    expect(run.diagnostics).toStrictEqual([])
-  })
-
   it('ignores a file whose extension has no grammar', async () => {
     const run = createRun()
 
-    await duplicatedHelperRule.create(run.contextFor(AST_ONLY)).onTarget?.({
+    await duplicatedHelperRule.create(run.contextFor(AST_ONLY)).onTargetFile?.({
       file: { language: 'text/plain', lines: ['# hi'], path: resolve(FIXTURES_DIR, 'README.md'), text: '# hi' },
       identity: 'file',
       kind: 'file',

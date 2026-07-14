@@ -78,7 +78,7 @@ function createRuleContext(): RuleContext {
   }
 }
 
-function createSourceTarget(kind: SourceTarget['kind'], path = '/repo/internal/billing/service.go'): SourceTarget {
+function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/internal/billing/service.go'): SourceTarget & { kind: Kind } {
   const file = {
     language: 'text/plain',
     lines: ['package billing', '', 'func NewInvoiceService() {}'],
@@ -126,26 +126,13 @@ describe('goPlugin', () => {
     ])
   })
 
-  it('exposes the responsibility-boundary rule through onTarget only', () => {
+  it('exposes the responsibility-boundary rule through onTargetFile only', () => {
     const handlers = getResponsibilityBoundaryRule().create(createRuleContext())
 
-    expect(handlers.onTarget).toBeTypeOf('function')
+    expect(handlers.onTargetFile).toBeTypeOf('function')
     expect('onFile' in handlers).toBe(false)
     expect('onFunction' in handlers).toBe(false)
     expect('onClass' in handlers).toBe(false)
-  })
-
-  it('ignores non-file SourceTargets before requesting a model', async () => {
-    const context = createRuleContext()
-    let modelRequests = 0
-    context.model = async () => {
-      modelRequests += 1
-      throw new Error('Model should not be requested for non-file targets')
-    }
-
-    await getResponsibilityBoundaryRule().create(context).onTarget?.(createSourceTarget('function'))
-
-    expect(modelRequests).toBe(0)
   })
 
   it('ignores non-Go files before requesting a model', async () => {
@@ -156,7 +143,7 @@ describe('goPlugin', () => {
       throw new Error('Model should not be requested for non-Go targets')
     }
 
-    await getResponsibilityBoundaryRule().create(context).onTarget?.(createSourceTarget('file', '/repo/internal/billing/service.ts'))
+    await getResponsibilityBoundaryRule().create(context).onTargetFile?.(createSourceTarget('file', '/repo/internal/billing/service.ts'))
 
     expect(modelRequests).toBe(0)
   })
