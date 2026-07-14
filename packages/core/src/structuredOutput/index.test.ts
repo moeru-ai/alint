@@ -6,7 +6,7 @@ import type { ResolvedModel } from '../models/types'
 import { createServer } from 'node:http'
 
 import { array, description, number, object, optional, picklist, pipe, string } from 'valibot'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured, InvalidStructuredOutputError, toolParametersFromSchema } from './index'
 
@@ -23,7 +23,8 @@ const responseSchema = pipe(
   description('Report findings for this file.'),
 )
 
-interface QueuedResponse { body: unknown, status?: number }
+/** `delayMs` holds the response open so a test can cancel a request that is still in flight. */
+interface QueuedResponse { body: unknown, delayMs?: number, status?: number }
 
 interface RecordedRequest {
   body: Record<string, unknown>
@@ -39,6 +40,8 @@ beforeEach(async () => {
   requests = []
   responses = []
 
+  const pendingTimers = new Set<ReturnType<typeof setTimeout>>()
+
   const server = createServer((request, response) => {
     let payload = ''
     request.on('data', (chunk: Buffer) => {
@@ -48,14 +51,42 @@ beforeEach(async () => {
       requests.push({ body: JSON.parse(payload) as Record<string, unknown>, url: request.url ?? '' })
 
       const next = responses.shift() ?? { body: {}, status: 500 }
-      response.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' })
-      response.end(JSON.stringify(next.body))
+      const send = (): void => {
+        // A cancelled client destroys the socket, so a delayed reply can arrive with nothing
+        // left to write to.
+        if (response.destroyed) {
+          return
+        }
+
+        response.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' })
+        response.end(JSON.stringify(next.body))
+      }
+
+      if (next.delayMs === undefined) {
+        send()
+        return
+      }
+
+      const timer = setTimeout(() => {
+        pendingTimers.delete(timer)
+        send()
+      }, next.delayMs)
+
+      pendingTimers.add(timer)
     })
   })
 
   await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
   baseURL = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
-  close = async () => new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  close = async () => {
+    for (const timer of pendingTimers) {
+      clearTimeout(timer)
+    }
+
+    pendingTimers.clear()
+
+    return new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+  }
 })
 
 afterEach(async () => {
@@ -147,6 +178,54 @@ describe('generateStructured', () => {
     expect(result).toEqual(validPayload)
     expect(requests).toHaveLength(1)
     expect(requests[0].url).toBe('/v1/chat/completions')
+  })
+
+  describe('signal', () => {
+    it('does not call the model when the signal is already aborted', async () => {
+      responses.push({ body: toolCallCompletion(validPayload) })
+
+      const controller = new AbortController()
+      controller.abort()
+
+      await expect(generateStructured({ ...createOptions(), signal: controller.signal }))
+        .rejects
+        .toMatchObject({ name: 'AbortError' })
+      expect(requests).toHaveLength(0)
+    })
+
+    it('cancels a pending retry backoff instead of firing another model call', async () => {
+      // A 503 is retriable, so without an abortable backoff the retry would wake up after the
+      // delay and spend another call on a run the caller already cancelled.
+      responses.push({ body: {}, status: 503 })
+
+      const controller = new AbortController()
+      const pending = generateStructured({
+        ...createOptions(),
+        retryDelay: () => 10_000,
+        signal: controller.signal,
+      })
+
+      // Let the first call fail and the backoff start before cancelling.
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      controller.abort()
+
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+      expect(requests).toHaveLength(1)
+    })
+
+    it('forwards the signal to the model call so an in-flight request is cancelled', async () => {
+      // The server holds the reply open. Without `abortSignal` reaching the HTTP call, this
+      // request would run to completion and return findings for a run the caller cancelled.
+      responses.push({ body: toolCallCompletion(validPayload), delayMs: 10_000 })
+
+      const controller = new AbortController()
+      const pending = generateStructured({ ...createOptions(), signal: controller.signal })
+
+      await vi.waitFor(() => expect(requests).toHaveLength(1))
+      controller.abort()
+
+      await expect(pending).rejects.toMatchObject({ name: 'AbortError' })
+    })
   })
 
   it('forces a single tool call with the normalized schema as parameters', async () => {

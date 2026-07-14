@@ -73,6 +73,7 @@ interface VerifyOptions {
   metering: RuleContext['metering']
   model: ResolvedModel
   outputLanguage?: string
+  signal?: RuleContext['signal']
   source: string
 }
 
@@ -104,6 +105,7 @@ export async function verifyRedundantBindings(options: VerifyOptions): Promise<J
     model: options.model,
     operation: 'redundant-binding-verification',
     schema: verificationResponseSchema,
+    signal: options.signal,
   })
 
   return acceptedVerificationDecisions(decisions)

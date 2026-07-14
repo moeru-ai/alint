@@ -38,6 +38,7 @@ export const redundantBindingRule = defineRule({
         operation: 'redundant-binding-discovery',
         outputLanguage: ctx.outputLanguage,
         prompt: redundantBindingPrompt,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
 
@@ -52,6 +53,7 @@ export const redundantBindingRule = defineRule({
         metering: ctx.metering,
         model,
         outputLanguage: ctx.outputLanguage,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
       const reportedLines = new Set<number>()

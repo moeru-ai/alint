@@ -7,12 +7,19 @@ export function defineTool(tool: AgentTool): AgentTool {
   return tool
 }
 
-export function requireAgent(context: Pick<RuleContext, 'agent' | 'id'>): AgentAdapter {
+export function requireAgent(context: Pick<RuleContext, 'agent' | 'id' | 'signal'>): AgentAdapter {
   if (!context.agent) {
     throw new TypeError(
       `Rule "${context.id}" requires an agent, but none is configured. Set "agent" in alint config (e.g. agent: createApeiraAdapter()).`,
     )
   }
 
-  return context.agent
+  const agent = context.agent
+
+  // Inject the run's cancellation signal so rules get cancellation without opting in. A rule
+  // that passes its own signal keeps it, which is how a rule narrows cancellation to one call.
+  return async request => agent({
+    ...request,
+    signal: request.signal ?? context.signal,
+  })
 }

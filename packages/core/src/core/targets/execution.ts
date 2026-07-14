@@ -17,6 +17,7 @@ export interface ExecuteTargetPlansOptions {
   filesTotal: number
   plans: TargetExecutionPlan[]
   progress?: ProgressReporter
+  signal?: AbortSignal
   usage: UsageAccumulator
 }
 
@@ -134,7 +135,12 @@ async function executeRule(
   target: ExecutionTarget,
   options: ExecuteTargetPlansOptions,
 ): Promise<void> {
-  const { cache, clock, counters, diagnostics, progress, usage } = options
+  const { cache, clock, counters, diagnostics, progress, signal, usage } = options
+
+  // Rules run one after another, so this is the point where a cancelled run stops taking on
+  // new work. Anything already in flight is cancelled through the same signal.
+  signal?.throwIfAborted()
+
   const startedAt = clock()
   const cacheKey = createExecutionCacheKey(execution.runtime, target, path, cache)
   const cachedEntry = cacheKey ? cache.store.get(cacheKey) : undefined
@@ -205,6 +211,10 @@ async function executeRule(
   }
 
   if (handlerFailed) {
+    // The handler most likely threw because its model call was cancelled. Blaming the rule
+    // would count a cancelled run as an errored one and pin a failure on innocent rules.
+    signal?.throwIfAborted()
+
     counters.error()
     emitErroredRuleEnd(progress, clock, path, startedAt, 'miss')
     throw new AlintRuleExecutionError(handlerError, path)

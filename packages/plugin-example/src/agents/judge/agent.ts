@@ -59,6 +59,7 @@ interface JudgeSourceOptions {
   operation: string
   outputLanguage?: string
   prompt: string
+  signal?: RuleContext['signal']
   source: string
 }
 
@@ -105,6 +106,7 @@ export async function judgeSource(
     model: options.model,
     operation: options.operation,
     schema: judgeResponseSchema,
+    signal: options.signal,
   })
 
   return findings
