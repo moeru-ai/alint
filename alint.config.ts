@@ -18,6 +18,7 @@ export default defineConfig([
     },
   },
   {
+    extends: ['example/recommended'],
     files: ['**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'],
     plugins: {
       example: examplePlugin,

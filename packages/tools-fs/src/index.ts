@@ -61,15 +61,17 @@ export function createTools(cwd: string, options: CreateToolsOptions = {}): Agen
 }
 
 function fileSearchParameters(requiresQuery: boolean): Record<string, unknown> {
+  const properties = {
+    directory: nullableStringSchema(),
+    ignore: stringOrStringArraySchema(),
+    patterns: stringOrStringArraySchema(),
+    ...(requiresQuery ? { query: { type: 'string' } } : {}),
+  }
+
   return {
     additionalProperties: false,
-    properties: {
-      directory: { type: 'string' },
-      ignore: stringOrStringArraySchema(),
-      patterns: stringOrStringArraySchema(),
-      ...(requiresQuery ? { query: { type: 'string' } } : {}),
-    },
-    required: requiresQuery ? ['query'] : [],
+    properties,
+    required: Object.keys(properties),
     type: 'object',
   }
 }
@@ -118,6 +120,15 @@ function getStringProperty(input: unknown, key: string): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function nullableStringSchema(): Record<string, unknown> {
+  return {
+    anyOf: [
+      { type: 'string' },
+      { type: 'null' },
+    ],
+  }
+}
+
 function stringOrStringArraySchema(): Record<string, unknown> {
   return {
     anyOf: [
@@ -126,6 +137,7 @@ function stringOrStringArraySchema(): Record<string, unknown> {
         items: { type: 'string' },
         type: 'array',
       },
+      { type: 'null' },
     ],
   }
 }

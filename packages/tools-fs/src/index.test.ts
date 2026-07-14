@@ -44,6 +44,23 @@ describe('createTools', () => {
     expect(names).toEqual(['read_file', 'list_files', 'search_files', 'search_in_files'])
   })
 
+  it('uses strict-provider-compatible parameter schemas', () => {
+    for (const tool of createTools('/repo')) {
+      const parameters = tool.parameters as {
+        properties: Record<string, unknown>
+        required?: string[]
+      }
+
+      expect(parameters.required).toEqual(Object.keys(parameters.properties))
+    }
+
+    const listParameters = toolNamed('/repo', 'list_files').parameters as {
+      properties: Record<string, unknown>
+    }
+
+    expect(JSON.stringify(listParameters.properties)).toContain('"type":"null"')
+  })
+
   it('lists files while honoring base ignores and glob patterns', async () => {
     const { cwd } = await createProject()
 
