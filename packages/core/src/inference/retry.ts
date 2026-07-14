@@ -46,6 +46,7 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
       let response: Response
       try {
         response = await fetch(input, init)
+        throwIfAborted(signal)
       }
       catch (error) {
         const transient = isTransientInferenceError(error, { signal })
@@ -63,13 +64,13 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
       if (!replayable || retry >= policy.maxRetries || !isTransientStatus(response.status))
         return response
 
-      // A response being retried is never exposed to the caller, so release its
-      // connection before waiting and issuing the next provider request.
+      // A response being retried is never exposed to the caller, so start
+      // releasing its connection without letting provider cleanup gate retry.
       try {
-        await response.body?.cancel()
+        void response.body?.cancel().catch(() => {})
       }
       catch {
-        // Cancellation is best-effort; the retry result remains authoritative.
+        // Cancellation is best-effort, including implementations that throw synchronously.
       }
 
       const delay = policy.retryDelay(retry + 1, response)

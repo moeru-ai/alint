@@ -121,6 +121,23 @@ describe('createRetryingFetch', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('prefers the caller abort reason when fetch later resolves successfully', async () => {
+    const controller = new AbortController()
+    let resolveFetch: ((response: Response) => void) | undefined
+    const fetch = vi.fn(() => new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    }))
+    const retryingFetch = createRetryingFetch({ fetch })
+    const request = retryingFetch('https://example.com', { signal: controller.signal })
+    const reason = new Error('caller stopped the successful request')
+
+    controller.abort(reason)
+    resolveFetch?.(new Response(undefined, { status: 204 }))
+
+    await expect(request).rejects.toBe(reason)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not replay a ReadableStream request body', async () => {
     const fetch = vi.fn(async () => new Response(undefined, { status: 503 }))
     const retryingFetch = createRetryingFetch({
@@ -172,6 +189,62 @@ describe('createRetryingFetch', () => {
     await retryingFetch('https://example.com')
 
     expect(bodyCancelled).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not wait for response body cancellation before retrying', async () => {
+    let cancelCalled = false
+    const body = new ReadableStream({
+      cancel() {
+        cancelCalled = true
+        return new Promise<void>(() => {})
+      },
+    })
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(body, { status: 503 }))
+      .mockResolvedValueOnce(new Response(undefined, { status: 204 }))
+    const retryingFetch = createRetryingFetch({
+      fetch,
+      policy: { retryDelay: () => 0 },
+    })
+    let timeout: ReturnType<typeof setTimeout> | undefined
+    const didNotSettle = new Promise<Response>((_resolve, reject) => {
+      timeout = setTimeout(() => reject(new Error('retry was blocked by body cancellation')), 100)
+    })
+
+    try {
+      const response = await Promise.race([
+        retryingFetch('https://example.com'),
+        didNotSettle,
+      ])
+
+      expect(response.status).toBe(204)
+      expect(cancelCalled).toBe(true)
+      expect(fetch).toHaveBeenCalledTimes(2)
+    }
+    finally {
+      clearTimeout(timeout)
+    }
+  })
+
+  it('consumes response body cancellation rejection', async () => {
+    const cancellationError = new Error('provider cleanup failed')
+    const body = new ReadableStream({
+      cancel() {
+        return Promise.reject(cancellationError)
+      },
+    })
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(new Response(body, { status: 503 }))
+      .mockResolvedValueOnce(new Response(undefined, { status: 204 }))
+    const retryingFetch = createRetryingFetch({
+      fetch,
+      policy: { retryDelay: () => 0 },
+    })
+
+    const response = await retryingFetch('https://example.com')
+
+    expect(response.status).toBe(204)
     expect(fetch).toHaveBeenCalledTimes(2)
   })
 
