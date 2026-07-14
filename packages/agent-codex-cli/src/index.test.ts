@@ -93,6 +93,29 @@ describe('createCodexCliAdapter', () => {
     await expect(adapter(createRequest())).resolves.toEqual({ answer: 'ok', usage: undefined })
   })
 
+  it('passes retry configuration to Codex and invokes the turn once', async () => {
+    const config = {
+      model_providers: {
+        proxy: {
+          request_max_retries: 4,
+          stream_max_retries: 5,
+        },
+      },
+    }
+    let runCalls = 0
+    const adapter = createCodexCliAdapter({
+      config,
+      run: async (request) => {
+        runCalls += 1
+        expect(request.codexOptions.config).toEqual(config)
+        throw new Error('Codex turn failed after native retries')
+      },
+    })
+
+    await expect(adapter(createRequest())).rejects.toThrow('Codex turn failed after native retries')
+    expect(runCalls).toBe(1)
+  })
+
   it('rejects alint tools because Codex CLI uses its own tool runtime', async () => {
     const adapter = createCodexCliAdapter({
       run: async () => {
