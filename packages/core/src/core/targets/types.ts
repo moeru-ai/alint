@@ -3,7 +3,7 @@ import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
 import type { CacheEntry, CacheStore } from '../cache'
 import type { SourceFile, SourceTarget } from '../source/types'
-import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunUsage } from '../types'
+import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunExecution, RunUsage } from '../types'
 
 export interface CacheRunContext {
   cwd: string
@@ -56,12 +56,8 @@ export interface RuleEndCounters {
   cache: () => void
   complete: () => void
   error: () => void
-  snapshot: (planned: number) => {
-    cached: number
-    completed: number
-    errored: number
-    planned: number
-  }
+  skip: () => void
+  snapshot: (planned: number) => RunExecution
 }
 
 export interface RuleRuntime {

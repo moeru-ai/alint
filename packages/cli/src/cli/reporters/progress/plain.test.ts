@@ -48,6 +48,7 @@ describe('createPlainProgressReporter', () => {
       ],
       errored: 0,
       planned: 24,
+      skipped: 0,
       usage: {
         inputTokens: 10,
         outputTokens: 14,
@@ -80,6 +81,7 @@ describe('createPlainProgressReporter', () => {
       diagnostics: [],
       errored: 1,
       planned: 1,
+      skipped: 0,
       usage: {
         inputTokens: 0,
         outputTokens: 0,
@@ -103,6 +105,7 @@ describe('createPlainProgressReporter', () => {
       diagnostics: [],
       errored: 0,
       planned: 5,
+      skipped: 0,
       usage: {
         inputTokens: 0,
         outputTokens: 0,

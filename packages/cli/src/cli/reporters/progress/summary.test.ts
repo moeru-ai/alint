@@ -132,6 +132,7 @@ describe('createSummaryProgressReporter', () => {
       endedAt: 6000,
       errored: 0,
       planned: 3,
+      skipped: 0,
       startedAt: 0,
       usage: {
         inputTokens: 10,

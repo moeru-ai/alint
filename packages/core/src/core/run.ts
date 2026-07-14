@@ -207,6 +207,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       resolveFileConcurrency(options.runner?.fileConcurrency),
       filePlan => executeTargetPlans({
         cache: cacheContext,
+        cacheOnly: options.cacheOnly,
         clock,
         counters,
         diagnostics,
@@ -222,6 +223,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       resolveFileConcurrency(options.runner?.fileConcurrency),
       directoryPlan => executeTargetPlans({
         cache: cacheContext,
+        cacheOnly: options.cacheOnly,
         clock,
         counters,
         diagnostics,
@@ -235,6 +237,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     if (projectPlan) {
       await executeTargetPlans({
         cache: cacheContext,
+        cacheOnly: options.cacheOnly,
         clock,
         counters,
         diagnostics,
@@ -249,7 +252,20 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     runError = error
   }
   finally {
-    await reconcileCache(filePlans, cacheContext)
+    // cacheOnly runs are strictly read-only.
+    //
+    // `reconcileCache` rewrites the whole cache file from the snapshot loaded at run start,
+    // so any long-lived reader (an editor session doing a pass per file open) would race a
+    // concurrent writer and rename its stale snapshot over results that writer just paid
+    // model tokens for.
+    //
+    // Staying read-only also avoids `markFile` narrowing each file's entry list to only the
+    // keys this run touched: skipped rules never call `rememberCacheEntry`, so reconciling a
+    // cacheOnly run would drop the keys of every rule it declined to execute.
+    if (!options.cacheOnly) {
+      await reconcileCache(filePlans, cacheContext)
+    }
+
     try {
       options.progress?.onRunEnd?.({
         ...counters.snapshot(planned),
@@ -334,6 +350,7 @@ function createRuleEndCounters(): RuleEndCounters {
   let cached = 0
   let completed = 0
   let errored = 0
+  let skipped = 0
 
   return {
     cache() {
@@ -345,12 +362,16 @@ function createRuleEndCounters(): RuleEndCounters {
     error() {
       errored += 1
     },
+    skip() {
+      skipped += 1
+    },
     snapshot(planned: number) {
       return {
         cached,
         completed,
         errored,
         planned,
+        skipped,
       }
     },
   }
