@@ -31,6 +31,7 @@ catalog:
   '@clack/prompts': ^1.6.0
   '@earendil-works/pi-agent-core': ^0.80.2
   '@earendil-works/pi-ai': ^0.80.2
+  '@modelcontextprotocol/sdk': ^1.29.0
   '@moeru/eslint-config': ^0.1.0-beta.18
   '@moeru/std': ^0.1.0-beta.18
   '@openai/codex-sdk': ^0.144.3

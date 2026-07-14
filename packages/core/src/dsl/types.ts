@@ -89,6 +89,11 @@ export interface ProcessorDefinition {
   ) => Awaitable<ProcessedSource[]>
 }
 
+export interface RepositoryTarget {
+  files: SourceFile[]
+  targets: SourceTarget[]
+}
+
 export type RuleCacheConfig = boolean | { level?: 'target' }
 
 export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
@@ -119,6 +124,7 @@ export interface RuleDefinition {
 }
 
 export interface RuleHandlers {
+  onRepository?: (repository: RepositoryTarget) => Awaitable<void>
   onTarget?: (target: SourceTarget) => Awaitable<void>
 }
 
