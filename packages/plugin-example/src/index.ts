@@ -1,6 +1,8 @@
 import { definePlugin } from '@alint-js/core'
 
 import { inlineMiniatureNormalizerRule } from './rules/inline-miniature-normalizer'
+import { privateSchemaToolkitRule } from './rules/no-private-schema-toolkit'
+import { redundantBindingRule } from './rules/no-redundant-binding'
 import { redundantJsdocRule } from './rules/no-redundant-jsdoc'
 import { trivialWrapperStackRule } from './rules/no-trivial-wrapper-stack'
 
@@ -14,6 +16,14 @@ export {
   inlineMiniatureNormalizerPrompt,
   inlineMiniatureNormalizerRule,
 } from './rules/inline-miniature-normalizer'
+export {
+  privateSchemaToolkitPrompt,
+  privateSchemaToolkitRule,
+} from './rules/no-private-schema-toolkit'
+export {
+  redundantBindingPrompt,
+  redundantBindingRule,
+} from './rules/no-redundant-binding'
 export {
   redundantJsdocPrompt,
   redundantJsdocRule,
@@ -29,6 +39,8 @@ export const examplePlugin = definePlugin({
       {
         rules: {
           'example/inline-miniature-normalizer': 'warn',
+          'example/no-private-schema-toolkit': 'warn',
+          'example/no-redundant-binding': 'warn',
           'example/no-redundant-jsdoc': 'warn',
           'example/no-trivial-wrapper-stack': 'warn',
         },
@@ -37,6 +49,8 @@ export const examplePlugin = definePlugin({
   },
   rules: {
     'inline-miniature-normalizer': inlineMiniatureNormalizerRule,
+    'no-private-schema-toolkit': privateSchemaToolkitRule,
+    'no-redundant-binding': redundantBindingRule,
     'no-redundant-jsdoc': redundantJsdocRule,
     'no-trivial-wrapper-stack': trivialWrapperStackRule,
   },
