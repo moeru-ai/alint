@@ -85,7 +85,11 @@ export interface RuleEndPayload {
   endedAt?: number
   path: ProgressPath
   startedAt?: number
-  state: 'completed' | 'errored'
+  /**
+   * `skipped` only occurs under {@link RunOptions.cacheOnly}: the rule missed the cache and was
+   * never executed, so it produced no diagnostics. `cache` is still `'miss'` in that case.
+   */
+  state: 'completed' | 'errored' | 'skipped'
 }
 
 export interface RuleStartPayload {
@@ -100,6 +104,8 @@ export interface RunEndPayload {
   endedAt?: number
   errored: number
   planned: number
+  /** Rules left unexecuted because they missed the cache under {@link RunOptions.cacheOnly}. Always 0 otherwise. */
+  skipped: number
   startedAt?: number
   usage: RunUsage
 }
@@ -109,11 +115,24 @@ export interface RunExecution {
   completed: number
   errored: number
   planned: number
+  /** Rules left unexecuted because they missed the cache under {@link RunOptions.cacheOnly}. Always 0 otherwise. */
+  skipped: number
 }
 
 export type RunnerOptions = RunnerConfig
 
 export interface RunOptions {
+  /**
+   * Return only diagnostics that are already cached, without calling any model.
+   *
+   * Rules that miss the cache are skipped instead of executed, and the run leaves the cache
+   * file untouched. Read {@link RunExecution.skipped} to see how many rules a full run would
+   * still have to execute.
+   *
+   * Intended for callers that want to show known results for free, such as an editor
+   * displaying diagnostics on file open.
+   */
+  cacheOnly?: boolean
   config?: AlintConfig
   cwd?: string
   directories?: string[]

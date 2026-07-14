@@ -51,6 +51,7 @@ function createResult(): RunResult {
       completed: 1,
       errored: 0,
       planned: 215,
+      skipped: 0,
     },
     usage: {
       cached: {
@@ -146,6 +147,7 @@ describe('reporters', () => {
         completed: 0,
         errored: 0,
         planned: 215,
+        skipped: 0,
       },
       usage: {
         cached: {

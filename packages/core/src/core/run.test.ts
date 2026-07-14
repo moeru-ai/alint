@@ -1,7 +1,7 @@
 import type { SetupConfig } from '../config/types'
 import type { PluginDefinition, ProjectTarget, RuleConfigEntry, RuleDefinition } from '../dsl/types'
 
-import { mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -1370,6 +1370,7 @@ describe('runAlint', () => {
         completed: 1,
         errored: 0,
         planned: 2,
+        skipped: 0,
       })
     })
 
@@ -1498,6 +1499,7 @@ describe('runAlint', () => {
         completed: 0,
         errored: 0,
         planned: 1,
+        skipped: 0,
       })
       expect(diagnosticEvents).toEqual([
         'checked load:function',
@@ -2700,5 +2702,279 @@ describe('runAlint', () => {
     expect(events).toEqual([
       'run:0/1/1',
     ])
+  })
+
+  describe('cacheOnly', () => {
+    const reportingRule = () => defineRule({
+      create: ctx => ({
+        onTargetFunction: (target) => {
+          ctx.report({ message: `checked ${target.name}` })
+          ctx.metering.recordUsage({
+            filePath: target.file.path,
+            inputTokens: 7,
+            modelId: 'local:qwen-8b',
+            outputTokens: 3,
+            providerId: 'ollama',
+            totalTokens: 10,
+          })
+        },
+      }),
+    })
+
+    it('skips rules that miss cache instead of executing them', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-miss-'))
+      const filePath = join(root, 'demo.ts')
+      const ruleEndEvents: string[] = []
+      let handlerCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            handlerCalls += 1
+            ctx.report({ message: `checked ${target.name}` })
+          },
+        }),
+      })
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+        },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(0)
+      expect(result.diagnostics).toEqual([])
+      expect(result.execution).toEqual({
+        cached: 0,
+        completed: 0,
+        errored: 0,
+        planned: 1,
+        skipped: 1,
+      })
+      expect(ruleEndEvents).toEqual(['miss:skipped'])
+    })
+
+    it('replays cached diagnostics and usage without running the rule again', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-hit-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const ruleEndEvents: string[] = []
+      let handlerCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            handlerCalls += 1
+            ctx.report({ message: `checked ${target.name}` })
+            ctx.metering.recordUsage({
+              filePath: target.file.path,
+              inputTokens: 7,
+              modelId: 'local:qwen-8b',
+              outputTokens: 3,
+              providerId: 'ollama',
+              totalTokens: 10,
+            })
+          },
+        }),
+      })
+      const config = createConfig({ review: rule }, { 'company/review': 'warn' })
+
+      await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config,
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+        },
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(1)
+      expect(result.diagnostics).toMatchObject([
+        {
+          cached: true,
+          filePath,
+          message: 'checked load',
+          ruleId: 'company/review',
+        },
+      ])
+      expect(result.usage.cached?.totalTokens).toBe(10)
+      expect(result.usage.totalTokens).toBe(0)
+      expect(result.execution).toEqual({
+        cached: 1,
+        completed: 0,
+        errored: 0,
+        planned: 1,
+        skipped: 0,
+      })
+      expect(ruleEndEvents).toEqual(['hit:completed'])
+    })
+
+    it('reports cached findings while counting the rules that still need a paid run', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-mixed-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const ruleEndEvents: string[] = []
+      const calls = { first: 0, second: 0 }
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const firstRule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            calls.first += 1
+            ctx.report({ message: `first checked ${target.name}` })
+          },
+        }),
+      })
+      const secondRule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            calls.second += 1
+            ctx.report({ message: `second checked ${target.name}` })
+          },
+        }),
+      })
+      const rules = { first: firstRule, second: secondRule }
+
+      await runAlint({
+        config: createConfig(rules, { 'company/first': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config: createConfig(rules, { 'company/first': 'warn', 'company/second': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.rule.id}:${payload.cache}:${payload.state}`),
+        },
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(calls).toEqual({ first: 1, second: 0 })
+      expect(result.diagnostics).toMatchObject([
+        { message: 'first checked load', ruleId: 'company/first' },
+      ])
+      expect(result.execution).toEqual({
+        cached: 1,
+        completed: 0,
+        errored: 0,
+        planned: 2,
+        skipped: 1,
+      })
+      expect(ruleEndEvents).toEqual([
+        'company/first:hit:completed',
+        'company/second:miss:skipped',
+      ])
+    })
+
+    it('skips rules that opt out of caching, since they can never be served from cache', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-opt-out-'))
+      const filePath = join(root, 'demo.ts')
+      const ruleEndEvents: string[] = []
+      let handlerCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        cache: false,
+        create: () => ({
+          onTargetFunction: () => {
+            handlerCalls += 1
+          },
+        }),
+      })
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config: createConfig({ uncached: rule }, { 'company/uncached': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+        },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(0)
+      expect(result.execution).toMatchObject({ skipped: 1 })
+      expect(ruleEndEvents).toEqual(['miss:skipped'])
+    })
+
+    it('leaves an existing cache file untouched even when the source changed under it', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-no-write-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const config = createConfig({ review: reportingRule() }, { 'company/review': 'warn' })
+
+      await writeFile(filePath, 'export function load() {}\n')
+      await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      const warmed = await readFile(cachePath, 'utf8')
+
+      // Editing the source makes the target miss, so a reconciling run would rewrite both the
+      // file's content hash and its entry list. A cacheOnly run must not touch either.
+      await writeFile(filePath, 'export function load() {\n  return 1\n}\n')
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config,
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(result.execution).toMatchObject({ cached: 0, skipped: 1 })
+      expect(await readFile(cachePath, 'utf8')).toBe(warmed)
+    })
+
+    it('does not create a cache file when none exists yet', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-no-create-'))
+      const filePath = join(root, 'demo.ts')
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      await runAlint({
+        cacheOnly: true,
+        config: createConfig({ review: reportingRule() }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        setupConfig: createSetupConfig(),
+      })
+
+      await expect(access(join(root, '.alintcache'))).rejects.toThrow()
+    })
   })
 })

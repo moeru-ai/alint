@@ -10,6 +10,7 @@ import { createCacheKey, normalizeCachePath, stableHash } from '../cache'
 
 export interface ExecuteTargetPlansOptions {
   cache: CacheRunContext
+  cacheOnly?: boolean
   clock: () => number
   counters: RuleEndCounters
   diagnostics: Diagnostic[]
@@ -162,6 +163,25 @@ async function executeRule(
       path,
       startedAt,
       state: 'completed',
+    })
+    return
+  }
+
+  // Reaching here means the rule would have to execute, which for a model-backed rule means
+  // spending tokens. cacheOnly callers asked for known findings only, so report the gap via
+  // `skipped` and let them decide whether to pay for a real run.
+  //
+  // Rules that opt out of caching (`cache: false`) have no cache key at all, so they always
+  // land here and are always skipped under cacheOnly — correct, since they can never be
+  // served from cache.
+  if (options.cacheOnly) {
+    counters.skip()
+    progress?.onRuleEnd?.({
+      cache: 'miss',
+      endedAt: clock(),
+      path,
+      startedAt,
+      state: 'skipped',
     })
     return
   }

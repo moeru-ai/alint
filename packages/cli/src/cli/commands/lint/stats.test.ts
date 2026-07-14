@@ -7,7 +7,7 @@ import { createStatsCollector, mergeProgressReporters, resolveStatsWrite } from 
 const EMPTY_USAGE = { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 }
 
 function runEnd(overrides: Partial<RunEndPayload> = {}): RunEndPayload {
-  return { cached: 0, completed: 0, diagnostics: [], errored: 0, planned: 0, usage: EMPTY_USAGE, ...overrides }
+  return { cached: 0, completed: 0, diagnostics: [], errored: 0, planned: 0, skipped: 0, usage: EMPTY_USAGE, ...overrides }
 }
 
 describe('resolveStatsWrite', () => {
