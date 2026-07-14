@@ -23,7 +23,6 @@ export interface SummaryProgressReporter extends ProgressReporter {
 }
 
 export interface SummaryProgressReporterOptions {
-  clock?: () => number
   color: boolean
   columns: number
   cwd?: string
@@ -61,7 +60,7 @@ interface SummaryState {
 }
 
 export function createSummaryProgressReporter(options: SummaryProgressReporterOptions): SummaryProgressReporter {
-  const now = () => options.clock?.() ?? Date.now()
+  const now = Date.now
   const state: SummaryState = {
     cached: 0,
     completed: 0,

@@ -19,19 +19,17 @@ const DEFAULT_RETENTION_MONTHS = 12
 const STATS_FILE_PATTERN = /^stats-(\d{4})-(\d{2})\.jsonl$/u
 
 export interface JsonlStatsStoreOptions {
-  clock?: () => number
   dir: string
   retentionMonths?: number
 }
 
 // JSONL-backed stats store: one line per run in monthly-rotated files under `options.dir`.
 export function createJsonlStatsStore(options: JsonlStatsStoreOptions): StatsStore {
-  const now = options.clock ?? Date.now
   const retentionMonths = options.retentionMonths ?? DEFAULT_RETENTION_MONTHS
 
   return {
-    query: filter => query(options.dir, filter ?? {}, now),
-    record: input => record(options.dir, input, now(), retentionMonths),
+    query: filter => query(options.dir, filter ?? {}, Date.now),
+    record: input => record(options.dir, input, Date.now(), retentionMonths),
   }
 }
 

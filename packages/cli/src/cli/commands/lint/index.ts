@@ -12,7 +12,7 @@ import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
 import { loadMergedSetupConfig } from '../config/setup-config'
-import { findFiles, NoFilesFoundError } from './discovery'
+import { findLintTargets, NoFilesFoundError } from './discovery'
 import { formatRunError } from './errors'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
@@ -72,10 +72,10 @@ async function runLintCommand(
     loadMergedSetupConfig(io),
     loadAlintConfig(io.cwd, options.config),
   ])
-  let lintFiles: string[]
+  let lintTargets: Awaited<ReturnType<typeof findLintTargets>>
 
   try {
-    lintFiles = await findFiles({
+    lintTargets = await findLintTargets({
       config,
       cwd: io.cwd,
       errorOnUnmatchedPattern: true,
@@ -113,7 +113,8 @@ async function runLintCommand(
     result = await runAlint({
       config,
       cwd: io.cwd,
-      files: lintFiles,
+      directories: lintTargets.directories,
+      files: lintTargets.files,
       modelOverride: options.model,
       outputLanguage: options.outputLanguage,
       progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
@@ -143,7 +144,7 @@ async function runLintCommand(
   io.stdout.write(formatDiagnostics(options.format as ReporterName, result, {
     color: io.stdout.isTTY === true,
   }))
-  return result.diagnostics.length > 0 ? 1 : 0
+  return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
 function shouldEnableProgress(options: LintCommandOptions, io: CliIo): boolean {

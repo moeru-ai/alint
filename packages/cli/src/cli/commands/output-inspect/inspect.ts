@@ -90,7 +90,7 @@ async function inspectOutputFile(
     return 2
   }
 
-  return parsed.diagnostics.length > 0 ? 1 : 0
+  return parsed.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
 function isDiagnostic(value: unknown): boolean {

@@ -43,8 +43,22 @@ function createDiagnostics(): Diagnostic[] {
 
 function createResult(): RunResult {
   return {
-    diagnostics: createDiagnostics(),
+    diagnostics: createDiagnostics().map((diagnostic, index) => index === 0
+      ? { ...diagnostic, cached: true }
+      : diagnostic),
+    execution: {
+      cached: 214,
+      completed: 1,
+      errored: 0,
+      planned: 215,
+    },
     usage: {
+      cached: {
+        inputTokens: 30000,
+        outputTokens: 13834,
+        records: [],
+        totalTokens: 43834,
+      },
       inputTokens: 12,
       outputTokens: 5,
       records: [
@@ -96,7 +110,7 @@ describe('reporters', () => {
       '  0:0  warning  Missing location  local/third',
       '',
       '',
-      '2 warn / 1 error | 17 tokens',
+      '2 warn (1 cached) / 1 error | 17 tokens (43,834 cached) | 214/215 cached',
       '',
     ].join('\n'))
   })
@@ -122,6 +136,30 @@ describe('reporters', () => {
 
   it('formatStylish returns empty string when there are no diagnostics', () => {
     expect(formatStylish([])).toBe('')
+  })
+
+  it('formatStylish reports cached work when a run has no diagnostics', () => {
+    expect(formatStylish({
+      diagnostics: [],
+      execution: {
+        cached: 215,
+        completed: 0,
+        errored: 0,
+        planned: 215,
+      },
+      usage: {
+        cached: {
+          inputTokens: 30000,
+          outputTokens: 13834,
+          records: [],
+          totalTokens: 43834,
+        },
+        inputTokens: 0,
+        outputTokens: 0,
+        records: [],
+        totalTokens: 0,
+      },
+    })).toBe('0 warn / 0 error | 0 tokens (43,834 cached) | 215/215 cached\n')
   })
 
   it('formatDiagnostics delegates to json and stylish reporters', () => {

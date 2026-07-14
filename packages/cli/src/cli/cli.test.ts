@@ -124,8 +124,7 @@ export default [
         rules: {
           cached: {
             create: (ctx) => ({
-              onTarget: async (target) => {
-                if (target.kind !== 'function') return
+              onTargetFunction: async (target) => {
                 globalThis[callKey] += 1
                 ctx.report({
                   filePath: target.file.path,
@@ -156,7 +155,7 @@ export default [
         rules: {
           language: {
             create: ctx => ({
-              onTarget: target => {
+              onTargetFile: target => {
                 if (target.kind !== 'file') return
                 ctx.report({
                   filePath: target.file.path,
@@ -193,8 +192,7 @@ export default [
         rules: {
           'prefer-load': {
             create: (ctx) => ({
-              onTarget: async (target) => {
-                if (target.kind !== 'function') return
+              onTargetFunction: async (target) => {
                 ctx.report({
                   filePath: target.file.path,
                   message: 'Problem found',
@@ -227,8 +225,7 @@ export default [
         rules: {
           judge: {
             create: ctx => ({
-              onTarget: (target) => {
-                if (target.kind !== 'function') return
+              onTargetFunction: (target) => {
                 ctx.metering.recordUsage({
                   filePath: target.file.path,
                   inputTokens: 100,
@@ -462,7 +459,11 @@ describe('interactive setup default model helpers', () => {
 })
 
 describe('executeCli', () => {
-  async function writeRunOutputFixture(cwd: string, fileName = 'alint-output.json'): Promise<string> {
+  async function writeRunOutputFixture(
+    cwd: string,
+    fileName = 'alint-output.json',
+    severity: 'error' | 'warn' = 'warn',
+  ): Promise<string> {
     const outputPath = join(cwd, fileName)
 
     await writeFile(outputPath, JSON.stringify({
@@ -472,7 +473,7 @@ describe('executeCli', () => {
           loc: { start: { column: 3, line: 12 } },
           message: 'Problem found',
           ruleId: 'company/problem',
-          severity: 'warn',
+          severity,
         },
       ],
       usage: {
@@ -486,19 +487,31 @@ describe('executeCli', () => {
     return outputPath
   }
 
-  it('renders saved output with the stylish reporter by default', async () => {
+  it('renders warning-only saved output with the stylish reporter and returns 0', async () => {
     const io = await createTestIo()
     const outputPath = await writeRunOutputFixture(io.cwd)
 
     const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('/repo/src/demo.ts')
     expect(io.stdoutText).toContain('12:3')
     expect(io.stdoutText).toContain('warning')
     expect(io.stdoutText).toContain('Problem found')
     expect(io.stdoutText).toContain('company/problem')
     expect(io.stdoutText).toContain('1 warn / 0 error | 15 tokens')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('returns 1 when saved output contains an error diagnostic', async () => {
+    const io = await createTestIo()
+    const outputPath = await writeRunOutputFixture(io.cwd, 'alint-output.json', 'error')
+
+    const exitCode = await executeCli(['node', 'alint', 'output', 'inspect', outputPath], io)
+
+    expect(exitCode).toBe(1)
+    expect(io.stdoutText).toContain('error')
+    expect(io.stdoutText).toContain('Problem found')
     expect(io.stderrText).toBe('')
   })
 
@@ -509,7 +522,7 @@ describe('executeCli', () => {
 
     const exitCode = await executeCli(['node', 'alint', 'demo.ts'], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     const files = await readdir(statsDirOf(io))
     expect(files).toHaveLength(1)
     const lines = (await readFile(join(statsDirOf(io), files[0]), 'utf8')).trim().split('\n')
@@ -562,7 +575,7 @@ describe('executeCli', () => {
       'json',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(JSON.parse(io.stdoutText)).toEqual({
       diagnostics: [
         {
@@ -698,7 +711,7 @@ describe('executeCli', () => {
     expect(io.stdoutText).toContain('alint config models list')
     expect(io.stdoutText).toContain('alint config models probe --endpoint https://openrouter.ai/api/v1')
     expect(io.stdoutText).toContain('Commands:')
-    expect(io.stdoutText).toContain('config inspect <file>')
+    expect(io.stdoutText).toContain('config inspect <path>')
     expect(io.stdoutText).toContain('config models')
     expect(io.stdoutText).toContain('config providers')
     expect(io.stderrText).toBe('')
@@ -712,7 +725,7 @@ describe('executeCli', () => {
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('Inspect resolved config for a file')
     expect(io.stdoutText).toContain('Usage:')
-    expect(io.stdoutText).toContain('$ alint config inspect <file>')
+    expect(io.stdoutText).toContain('$ alint config inspect <path>')
     expect(io.stderrText).toBe('')
   })
 
@@ -767,7 +780,7 @@ local = "./plugins/local-plugin"
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toContain('Inspect resolved config for a file')
     expect(io.stdoutText).toContain('Usage:')
-    expect(io.stdoutText).toContain('$ alint config inspect <file>')
+    expect(io.stdoutText).toContain('$ alint config inspect <path>')
     expect(io.stdoutText).not.toContain('$ alint [...files]')
     expect(io.stderrText).toBe('')
   })
@@ -1320,6 +1333,44 @@ export default [
     expect(io.stderrText).toBe('')
   })
 
+  it('inspects directory config using the directory target matcher', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'crates/auv-cli-invoke'), { recursive: true })
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    name: 'component architecture',
+    directories: ['crates/*'],
+    rules: {
+      'review/component': 'warn',
+    },
+  },
+  {
+    name: 'manifest files',
+    files: ['**/Cargo.toml'],
+    rules: {
+      'review/manifest': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'inspect',
+      'crates/auv-cli-invoke',
+    ], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('directory: crates/auv-cli-invoke')
+    expect(io.stdoutText).toContain('  - component architecture')
+    expect(io.stdoutText).toContain('  review/component: warn')
+    expect(io.stdoutText).not.toContain('manifest files')
+    expect(io.stdoutText).not.toContain('review/manifest')
+  })
+
   it('uses global custom config for config inspect', async () => {
     const io = await createTestIo()
     await writeFile(join(io.cwd, 'alint.config.ts'), `
@@ -1481,7 +1532,7 @@ export default [
     expect(io.stderrText).toBe('interactive setup requires a TTY. Use -N/--no-interactive with --provider-id and --provider-endpoint.\n')
   })
 
-  it('formats diagnostics for the default run command and returns 1 when diagnostics exist', async () => {
+  it('formats warning diagnostics for the default run command and returns 0', async () => {
     const io = await createTestIo()
 
     await writeFile(join(io.cwd, 'demo.ts'), [
@@ -1500,8 +1551,7 @@ export default [
         rules: {
         'prefer-load': {
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'function') return
+            onTargetFunction: async (target) => {
               ctx.report({
                 filePath: target.file.path,
                 message: 'Problem found',
@@ -1525,6 +1575,51 @@ export default [
       'alint',
       'demo.ts',
     ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('Problem found')
+    expect(io.stdoutText).toContain('company/prefer-load')
+  })
+
+  it('returns 1 when the default run command reports an error diagnostic', async () => {
+    const io = await createTestIo()
+
+    await writeFile(join(io.cwd, 'demo.ts'), [
+      'export function load() {',
+      '  return 1',
+      '}',
+      '',
+    ].join('\n'))
+
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: {
+        rules: {
+          'prefer-load': {
+            create: (ctx) => ({
+              onTargetFunction: async (target) => {
+                ctx.report({
+                  filePath: target.file.path,
+                  message: 'Problem found',
+                  loc: target.loc,
+                })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'company/prefer-load': 'error',
+    },
+  },
+]
+`)
+
+    const exitCode = await executeCli(['node', 'alint', 'demo.ts'], io)
 
     expect(exitCode).toBe(1)
     expect(io.stdoutText).toContain('Problem found')
@@ -1593,7 +1688,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'checked ' + target.language,
               }),
@@ -1611,7 +1706,7 @@ export default [
 
     const code = await executeCli(['node', 'alint'], io)
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(io.stdoutText).toContain('checked text/plain')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('README.md')
@@ -1630,7 +1725,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1679,7 +1774,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'checked ' + target.language,
               }),
@@ -1697,10 +1792,45 @@ export default [
 
     const code = await executeCli(['node', 'alint', 'src'], io)
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(io.stdoutText).toContain('checked text/plain')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('src/README.md')
+  })
+
+  it('passes an explicit directory to directory rules without requiring files', async () => {
+    const io = await createTestIo()
+    await mkdir(join(io.cwd, 'crates/auv-cli-invoke'), { recursive: true })
+    await writeFile(join(io.cwd, 'alint.config.ts'), `
+export default [
+  {
+    directories: ['crates/*'],
+    plugins: {
+      review: {
+        rules: {
+          component: {
+            create: ctx => ({
+              onTargetDirectory: target => ctx.report({
+                filePath: target.path,
+                message: 'checked component directory',
+              }),
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'review/component': 'warn',
+    },
+  },
+]
+`)
+
+    const code = await executeCli(['node', 'alint', 'crates/auv-cli-invoke'], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('checked component directory')
+    expect(io.stdoutText).toContain('crates/auv-cli-invoke')
   })
 
   it('expands positional glob patterns using config files patterns', async () => {
@@ -1719,7 +1849,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1741,7 +1871,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json', 'src/**/*.ts'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath).sort()).toEqual([
       join(io.cwd, 'src/main.ts'),
       join(io.cwd, 'src/nested/feature.ts'),
@@ -1762,7 +1892,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1784,7 +1914,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json', join(io.cwd, 'src/**/*.ts')], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/main.ts'),
     ])
@@ -1804,7 +1934,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1823,7 +1953,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json', 'src/*.ts'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src', 'demo.ts'),
     ])
@@ -1869,7 +1999,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1896,7 +2026,7 @@ export default [
     ], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'first.ts'),
       join(io.cwd, 'src/second.ts'),
@@ -1916,7 +2046,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(io.stdoutText).toContain('answer in 日本語')
   })
 
@@ -1932,7 +2062,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(io.stdoutText).toContain('answer in English')
   })
 
@@ -1951,7 +2081,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -1973,7 +2103,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath).sort()).toEqual([
       join(io.cwd, 'src/main.test.ts'),
     ])
@@ -1996,7 +2126,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2015,7 +2145,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'packages/core/src/demo.ts'),
     ])
@@ -2040,7 +2170,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2059,7 +2189,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'generated/demo.txt'),
     ])
@@ -2085,7 +2215,7 @@ const review = {
   rules: {
     file: {
       create: ctx => ({
-        onTarget: target => ctx.report({
+        onTargetFile: target => ctx.report({
           filePath: target.file.path,
           message: 'visited ' + target.file.path,
         }),
@@ -2106,7 +2236,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/main.go'),
     ])
@@ -2126,7 +2256,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2148,7 +2278,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/demo.ts'),
     ])
@@ -2183,7 +2313,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2202,7 +2332,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/demo.txt'),
     ])
@@ -2237,7 +2367,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2264,7 +2394,7 @@ export default [
       const code = await executeCli(['node', 'alint', '--format', 'json', 'src'], io)
       const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-      expect(code).toBe(1)
+      expect(code).toBe(0)
       expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
         join(io.cwd, 'src/demo.txt'),
       ])
@@ -2343,7 +2473,7 @@ export default [
         rules: {
           file: {
             create: ctx => ({
-              onTarget: target => ctx.report({
+              onTargetFile: target => ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
               }),
@@ -2362,7 +2492,7 @@ export default [
     const code = await executeCli(['node', 'alint', '--format', 'json'], io)
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(code).toBe(1)
+    expect(code).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'node_modules/pkg/demo.txt'),
     ])
@@ -2384,8 +2514,7 @@ export default [
         rules: {
         'visit-file': {
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'file') return
+            onTargetFile: async (target) => {
               ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
@@ -2414,7 +2543,7 @@ export default [
 
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath).sort()).toEqual([
       join(io.cwd, 'src/generated.ts'),
       join(io.cwd, 'src/included.ts'),
@@ -2442,8 +2571,7 @@ export default [
         rules: {
         'visit-file': {
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'file') return
+            onTargetFile: async (target) => {
               ctx.report({
                 filePath: target.file.path,
                 message: 'visited ' + target.file.path,
@@ -2472,7 +2600,7 @@ export default [
 
     const diagnostics = JSON.parse(io.stdoutText).diagnostics
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(diagnostics.map((diagnostic: { filePath: string }) => diagnostic.filePath)).toEqual([
       join(io.cwd, 'src/included.ts'),
     ])
@@ -2491,8 +2619,7 @@ export default [
         rules: {
         'noisy': {
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'function') return
+            onTargetFunction: async (target) => {
               console.debug('debug noise')
               console.dir({ dir: 'noise' })
               console.info('info noise')
@@ -2522,7 +2649,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('Problem found')
     expect(io.stdoutText).not.toContain('debug noise')
     expect(io.stdoutText).not.toContain('dir')
@@ -2547,7 +2674,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('Problem found')
     expect(io.stderrText).toBe('')
   })
@@ -2564,7 +2691,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(io.stderrText).toContain('alint started')
     expect(io.stderrText).toContain('scan ')
     expect(io.stderrText).toContain('alint finished')
@@ -2585,7 +2712,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(io.stderrText).toBe('')
     expect(io.stdoutText).toContain('Problem found')
   })
@@ -2617,7 +2744,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     await expect(readFile(join(io.cwd, '.alintcache'), 'utf8')).resolves.toContain('"entries"')
 
@@ -2631,7 +2758,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
   })
 
@@ -2651,7 +2778,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     await expect(readFile(cachePath, 'utf8')).resolves.toContain('"entries"')
 
@@ -2667,7 +2794,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
   })
 
@@ -2684,7 +2811,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
 
     io.stdoutText = ''
@@ -2698,7 +2825,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
   })
 
@@ -2726,7 +2853,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
 
     io.stdoutText = ''
@@ -2739,7 +2866,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
     await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -2768,7 +2895,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
 
     io.stdoutText = ''
@@ -2781,7 +2908,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 2')
     await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
   })
@@ -2814,7 +2941,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(firstExitCode).toBe(1)
+    expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     await expect(readFile(cliCachePath, 'utf8')).resolves.toContain('"entries"')
 
@@ -2830,7 +2957,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(secondExitCode).toBe(1)
+    expect(secondExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     await expect(readFile(setupCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(projectCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
@@ -2849,8 +2976,7 @@ export default [
         rules: {
         'remote-fails': {
           create: () => ({
-            onTarget: (target) => {
-              if (target.kind !== 'function') return
+            onTargetFunction: (target) => {
               throw new Error('Remote sent 403 response: {"error":{"message":"The request is prohibited due to a violation of provider Terms Of Service.","code":403},"user_id":"secret"}')
             },
           }),
@@ -2933,8 +3059,7 @@ export default [
         'prefer-local': {
           model: { capabilities: ['code-review'] },
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'function') return
+            onTargetFunction: async (target) => {
               const model = await ctx.model()
               ctx.report({
                 filePath: target.file.path,
@@ -2961,7 +3086,7 @@ export default [
       'demo.ts',
     ], io)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked with project-model')
   })
 
@@ -3010,8 +3135,7 @@ export default [
         rules: {
         'prefer-load': {
           create: (ctx) => ({
-            onTarget: async (target) => {
-              if (target.kind !== 'function') return
+            onTargetFunction: async (target) => {
               const model = await ctx.model('global-model')
               ctx.report({
                 filePath: target.file.path,
@@ -3045,7 +3169,7 @@ export default [
 
     const output = JSON.parse(io.stdoutText)
 
-    expect(exitCode).toBe(1)
+    expect(exitCode).toBe(0)
     expect(output.diagnostics[0]).toMatchObject({
       message: 'checked with project-model',
       model: {

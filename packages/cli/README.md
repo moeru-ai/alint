@@ -421,11 +421,7 @@ import { defineRule } from '@alint-js/core'
 
 export const checkFunctionRule = defineRule({
   create: ctx => ({
-    async onTarget(target) {
-      if (target.kind !== 'function') {
-        return
-      }
-
+    async onTargetFunction(target) {
       const model = await ctx.model({ capabilities: ['tool-call'], size: 'small' })
 
       ctx.report({
@@ -467,7 +463,7 @@ Rule authors can opt out of caching when a rule depends on external state:
 defineRule({
   cache: false,
   create: ctx => ({
-    onTarget(target) {
+    onTargetFile(target) {
       // Always reruns.
     },
   }),

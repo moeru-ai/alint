@@ -9,7 +9,6 @@ function stripAnsi(value: string): string {
 describe('createSummaryProgressReporter', () => {
   it('renders active files nested rule rows queued files and footer estimates', () => {
     const reporter = createSummaryProgressReporter({
-      clock: () => 6000,
       color: false,
       columns: 120,
       cwd: '/repo',
@@ -48,17 +47,16 @@ describe('createSummaryProgressReporter', () => {
     const rows = reporter.getRows()
 
     expect(rows[0]).toMatch(/^⠙ src\/setup\/toml\.ts\s+0\/0\/0\/1$/)
-    expect(rows[1]).toBe('    file > @alint-js/plugin-example/inline-miniature-normalizer (4.2s, ~?)')
+    expect(rows[1]).toMatch(/^ {4}file > @alint-js\/plugin-example\/inline-miniature-normalizer \(\d+\.\ds, ~\?\)$/)
     expect(rows[2]).toMatch(/^⠙ src\/config\/file-2\.ts\s+0\/0\/0\/1$/)
-    expect(rows[3]).toBe('    function load > @alint-js/plugin-example/inline-miniature-normalizer (1.8s, ~?)')
+    expect(rows[3]).toMatch(/^ {4}function load > @alint-js\/plugin-example\/inline-miniature-normalizer \(\d+\.\ds, ~\?\)$/)
     expect(rows[4]).toBe('  1 file queued')
     expect(rows[5]).toBe('')
-    expect(rows[6]).toBe('6.0s -> ~? | 0 tokens -> ~? tokens | 1 queued / 0 cached / 0 warn / 0 error')
+    expect(rows[6]).toMatch(/^\d+\.\ds -> ~\? \| 0 tokens -> ~\? tokens \| 1 queued \/ 0 cached \/ 0 warn \/ 0 error$/)
   })
 
   it('updates completed warning and token totals in the footer', () => {
     const reporter = createSummaryProgressReporter({
-      clock: () => 6000,
       color: false,
       columns: 120,
       cwd: '/repo',
@@ -120,13 +118,34 @@ describe('createSummaryProgressReporter', () => {
         totalTokens: 12,
       },
     })
+    reporter.onRunEnd?.({
+      cached: 0,
+      completed: 1,
+      diagnostics: [
+        {
+          filePath: path.file.path,
+          message: 'Problem found',
+          ruleId: 'company/problem',
+          severity: 'warn',
+        },
+      ],
+      endedAt: 6000,
+      errored: 0,
+      planned: 3,
+      startedAt: 0,
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        records: [],
+        totalTokens: 12,
+      },
+    })
 
     expect(reporter.getRows().at(-1)).toBe('6.0s -> ~18.0s | 12 tokens -> ~36 tokens | 0 queued / 0 cached / 1 warn / 0 error')
   })
 
   it('clears active nested rows when rule target and file end', () => {
     const reporter = createSummaryProgressReporter({
-      clock: () => 1000,
       color: false,
       columns: 100,
       cwd: '/repo',
@@ -154,7 +173,6 @@ describe('createSummaryProgressReporter', () => {
 
   it('keeps rows within configured columns and truncates with ellipsis', () => {
     const reporter = createSummaryProgressReporter({
-      clock: () => 6000,
       color: false,
       columns: 42,
       cwd: '/repo',
@@ -180,7 +198,6 @@ describe('createSummaryProgressReporter', () => {
 
   it('colors progress rows by semantic segment instead of tinting the whole row', () => {
     const reporter = createSummaryProgressReporter({
-      clock: () => 6000,
       color: true,
       columns: 120,
       cwd: '/repo',

@@ -18,6 +18,11 @@ export interface FindFilesOptions {
   inputs: string[]
 }
 
+export interface LintTargets {
+  directories: string[]
+  files: string[]
+}
+
 interface ResolveInputFilesOptions {
   config: AlintConfig
   cwd: string
@@ -57,6 +62,10 @@ export class NoFilesFoundError extends Error {
 }
 
 export async function findFiles(options: FindFilesOptions): Promise<string[]> {
+  return (await findLintTargets(options)).files
+}
+
+export async function findLintTargets(options: FindFilesOptions): Promise<LintTargets> {
   const {
     config,
     cwd,
@@ -65,7 +74,7 @@ export async function findFiles(options: FindFilesOptions): Promise<string[]> {
     inputs,
   } = options
   const gitignore = shouldFilterGitignoredFiles(config) ? new Gitignore() : undefined
-  const candidates = await resolveInputFiles({
+  const targets = await resolveInputFiles({
     config,
     cwd,
     errorOnUnmatchedPattern,
@@ -74,13 +83,13 @@ export async function findFiles(options: FindFilesOptions): Promise<string[]> {
     inputs: inputs.length > 0 ? inputs : ['.'],
   })
 
-  if (!gitignore || candidates.length === 0) {
-    return candidates
+  if (!gitignore || targets.files.length === 0) {
+    return targets
   }
 
   const lintFiles: string[] = []
 
-  for (const file of candidates) {
+  for (const file of targets.files) {
     if (await gitignore.ignores(resolve(cwd, file))) {
       continue
     }
@@ -88,7 +97,10 @@ export async function findFiles(options: FindFilesOptions): Promise<string[]> {
     lintFiles.push(file)
   }
 
-  return lintFiles
+  return {
+    directories: targets.directories,
+    files: lintFiles,
+  }
 }
 
 function collectGlobalIgnorePatterns(config: AlintConfig): string[] {
@@ -150,10 +162,11 @@ function normalizeRelativePath(cwd: string, filePath: string): string {
   return relative(cwd, filePath).replaceAll('\\', '/')
 }
 
-async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<string[]> {
+async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<LintTargets> {
   const hasFilePatterns = hasDiscoveryFilePatterns(options.config)
   const ignoredPatterns = collectGlobalIgnorePatterns(options.config)
   const candidates: string[] = []
+  const directories: string[] = []
 
   for (const input of options.inputs) {
     const path = resolve(options.cwd, input)
@@ -165,15 +178,17 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
     }
 
     if (stats?.isDirectory()) {
-      if (!hasFilePatterns) {
-        continue
-      }
-
       if (await shouldPruneDirectory(path, {
         cwd: options.cwd,
         gitignore: options.gitignore,
         ignoredPatterns,
       })) {
+        continue
+      }
+
+      directories.push(input)
+
+      if (!hasFilePatterns) {
         continue
       }
 
@@ -217,7 +232,10 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<str
     }
   }
 
-  return [...new Set(candidates)]
+  return {
+    directories: [...new Set(directories)],
+    files: [...new Set(candidates)],
+  }
 }
 
 async function searchGlob(options: SearchGlobOptions): Promise<string[]> {

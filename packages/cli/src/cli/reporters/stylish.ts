@@ -10,10 +10,14 @@ export interface StylishReporterOptions {
 
 export function formatStylish(input: Diagnostic[] | RunResult, options: StylishReporterOptions = {}): string {
   const diagnostics = Array.isArray(input) ? input : input.diagnostics
-  const totalTokens = Array.isArray(input) ? undefined : input.usage.totalTokens
+  const result = Array.isArray(input) ? undefined : input
+  const style = createStyle(options.color === true)
 
-  if (diagnostics.length === 0)
-    return ''
+  if (diagnostics.length === 0) {
+    return result?.execution?.cached
+      ? `${formatSummary(diagnostics, result, style)}\n`
+      : ''
+  }
 
   const diagnosticsByFile = new Map<string, Diagnostic[]>()
 
@@ -29,7 +33,6 @@ export function formatStylish(input: Diagnostic[] | RunResult, options: StylishR
   }
 
   const lines: string[] = []
-  const style = createStyle(options.color === true)
 
   for (const [filePath, fileDiagnostics] of diagnosticsByFile) {
     lines.push(style.file(filePath))
@@ -47,9 +50,13 @@ export function formatStylish(input: Diagnostic[] | RunResult, options: StylishR
     lines.push('')
   }
 
-  lines.push('', formatSummary(diagnostics, totalTokens, style))
+  lines.push('', formatSummary(diagnostics, result, style))
 
   return `${lines.join('\n')}\n`
+}
+
+function countCachedDiagnostics(diagnostics: Diagnostic[], severity: Diagnostic['severity']): number {
+  return diagnostics.filter(diagnostic => diagnostic.severity === severity && diagnostic.cached === true).length
 }
 
 function countDiagnostics(diagnostics: Diagnostic[], severity: Diagnostic['severity']): number {
@@ -78,26 +85,51 @@ function createStyle(color: boolean) {
   }
 }
 
+function formatDiagnosticCount(total: number, cached: number, label: string): string {
+  return `${total} ${label}${cached > 0 ? ` (${cached} cached)` : ''}`
+}
+
+function formatExecutionSummary(execution: RunResult['execution']): string | undefined {
+  if (!execution || execution.cached === 0) {
+    return undefined
+  }
+
+  return `${execution.cached}/${execution.planned} cached`
+}
+
 function formatSummary(
   diagnostics: Diagnostic[],
-  totalTokens: number | undefined,
+  result: RunResult | undefined,
   style: ReturnType<typeof createStyle>,
 ): string {
   const warnCount = countDiagnostics(diagnostics, 'warn')
   const errorCount = countDiagnostics(diagnostics, 'error')
-  const tokens = totalTokens === undefined
+  const cachedWarnCount = countCachedDiagnostics(diagnostics, 'warn')
+  const cachedErrorCount = countCachedDiagnostics(diagnostics, 'error')
+  const tokens = result === undefined
     ? undefined
-    : `${totalTokens.toLocaleString('en-US')} tokens`
+    : formatTokenSummary(result)
   const problemSummary = [
-    style.warning(`${warnCount} warn`),
-    style.error(`${errorCount} error`),
+    style.warning(formatDiagnosticCount(warnCount, cachedWarnCount, 'warn')),
+    style.error(formatDiagnosticCount(errorCount, cachedErrorCount, 'error')),
   ].join(' / ')
 
   if (tokens === undefined) {
     return problemSummary
   }
 
-  return `${problemSummary} | ${style.summaryToken(tokens)}`
+  const execution = formatExecutionSummary(result?.execution)
+
+  return [problemSummary, style.summaryToken(tokens), execution]
+    .filter((segment): segment is string => segment !== undefined)
+    .join(' | ')
+}
+
+function formatTokenSummary(result: RunResult): string {
+  const liveTokens = result.usage.totalTokens.toLocaleString('en-US')
+  const cachedTokens = result.usage.cached?.totalTokens ?? 0
+
+  return `${liveTokens} tokens${cachedTokens > 0 ? ` (${cachedTokens.toLocaleString('en-US')} cached)` : ''}`
 }
 
 function identity(value: string): string {
