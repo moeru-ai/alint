@@ -22,7 +22,6 @@
     "@alint-js/tools-fs": "workspace:*",
     "@moeru/std": "catalog:",
     "@package-json/types": "catalog:",
-    "@xsai/tool": "catalog:",
     "apeira": "catalog:",
     "c12": "catalog:",
     "es-toolkit": "catalog:",
