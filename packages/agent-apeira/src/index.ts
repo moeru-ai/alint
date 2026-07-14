@@ -6,17 +6,23 @@ import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } fro
 
 import { chat, rawTool, stepCountAtLeast, user } from 'apeira'
 
-const maxSteps = 8
+const defaultMaxSteps = 8
 
 export interface ApeiraAdapterOptions {
-  createRunner: (model: ResolvedModel) => Runner
+  createRunner: (model: ResolvedModel, maxSteps: number) => Runner
+  maxSteps: number
 }
 
 export function createApeiraAdapter(options: Partial<ApeiraAdapterOptions> = {}): AgentAdapter {
   const createRunner = options.createRunner ?? createApeiraRunner
+  const maxSteps = options.maxSteps ?? defaultMaxSteps
+
+  if (!Number.isInteger(maxSteps) || maxSteps < 1) {
+    throw new TypeError('Apeira adapter maxSteps must be a positive integer')
+  }
 
   return async (request: AgentRequest): Promise<AgentResult> => {
-    const runner = createRunner(request.model)
+    const runner = createRunner(request.model, maxSteps)
     const result = await runner(buildRunnerContext(request))
 
     return {
@@ -26,7 +32,7 @@ export function createApeiraAdapter(options: Partial<ApeiraAdapterOptions> = {})
   }
 }
 
-export function createApeiraRunner(model: ResolvedModel): Runner {
+export function createApeiraRunner(model: ResolvedModel, maxSteps = defaultMaxSteps): Runner {
   return chat({
     baseURL: model.provider.endpoint,
     headers: model.provider.headers,

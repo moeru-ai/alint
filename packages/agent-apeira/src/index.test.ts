@@ -23,6 +23,34 @@ function fakeModel(): ResolvedModel {
 }
 
 describe('apeira adapter', () => {
+  it.each([0, -1, 1.5])('rejects an invalid maximum step count: %s', (maxSteps) => {
+    expect(() => createApeiraAdapter({ maxSteps })).toThrow(TypeError)
+  })
+
+  it('passes the configured maximum step count to the runner factory', async () => {
+    let capturedMaxSteps: number | undefined
+    const adapter = createApeiraAdapter({
+      createRunner: (_model, maxSteps) => {
+        capturedMaxSteps = maxSteps
+
+        return async () => ({
+          output: [{ content: 'done', role: 'assistant', type: 'message' }],
+          usage: undefined,
+        })
+      },
+      maxSteps: 24,
+    })
+
+    await adapter({
+      instructions: 'inspect the component',
+      model: fakeModel(),
+      prompt: 'review architectural boundaries',
+      tools: [],
+    })
+
+    expect(capturedMaxSteps).toBe(24)
+  })
+
   it('returns the final assistant message as the answer', async () => {
     const adapter = createApeiraAdapter({
       createRunner: () => async () => ({
