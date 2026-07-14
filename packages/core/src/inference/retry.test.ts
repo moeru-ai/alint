@@ -101,6 +101,26 @@ describe('createRetryingFetch', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('prefers the caller abort reason when fetch later rejects with a transport error', async () => {
+    const controller = new AbortController()
+    let rejectFetch: ((error: unknown) => void) | undefined
+    const fetch = vi.fn(() => new Promise<Response>((_resolve, reject) => {
+      rejectFetch = reject
+    }))
+    const retryingFetch = createRetryingFetch({
+      fetch,
+      policy: { retryDelay: () => 0 },
+    })
+    const request = retryingFetch('https://example.com', { signal: controller.signal })
+    const reason = new Error('caller stopped the request')
+
+    controller.abort(reason)
+    rejectFetch?.(Object.assign(new TypeError('fetch failed'), { code: 'ECONNRESET' }))
+
+    await expect(request).rejects.toBe(reason)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not replay a ReadableStream request body', async () => {
     const fetch = vi.fn(async () => new Response(undefined, { status: 503 }))
     const retryingFetch = createRetryingFetch({
@@ -222,5 +242,23 @@ describe('isTransientInferenceError', () => {
 
   it('does not treat a caller-requested AbortError as transient', () => {
     expect(isTransientInferenceError(new DOMException('aborted', 'AbortError'))).toBe(false)
+  })
+
+  it('does not classify an error as transient when the caller signal is aborted', () => {
+    const controller = new AbortController()
+    controller.abort(new Error('caller stopped'))
+
+    expect(isTransientInferenceError(
+      Object.assign(new Error('transport failure'), { code: 'ECONNRESET' }),
+      { signal: controller.signal },
+    )).toBe(false)
+  })
+
+  it.each([
+    [599, true],
+    [600, false],
+    [Number.POSITIVE_INFINITY, false],
+  ])('classifies statusCode %s as transient: %s', (statusCode, expected) => {
+    expect(isTransientInferenceError({ statusCode })).toBe(expected)
   })
 })

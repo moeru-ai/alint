@@ -48,7 +48,10 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
         response = await fetch(input, init)
       }
       catch (error) {
-        if (!replayable || retry >= policy.maxRetries || signal?.aborted || !isTransientInferenceError(error))
+        const transient = isTransientInferenceError(error, { signal })
+        if (signal?.aborted)
+          throw signal.reason
+        if (!replayable || retry >= policy.maxRetries || !transient)
           throw error
 
         const delay = policy.retryDelay(retry + 1)
@@ -76,7 +79,13 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
   }
 }
 
-export function isTransientInferenceError(error: unknown): boolean {
+export function isTransientInferenceError(
+  error: unknown,
+  options: { signal?: AbortSignal } = {},
+): boolean {
+  if (options.signal?.aborted)
+    return false
+
   const seen = new Set<object>()
   let candidate: unknown = error
   let transient = false
@@ -125,7 +134,7 @@ function isRequest(input: RequestInfo | URL): input is Request {
 }
 
 function isTransientStatus(status: number): boolean {
-  return status === 408 || status === 429 || status >= 500
+  return status === 408 || status === 429 || (Number.isInteger(status) && status >= 500 && status <= 599)
 }
 
 function property(value: object, key: string): unknown {
