@@ -51,6 +51,47 @@ describe('apeira adapter', () => {
     expect(capturedMaxSteps).toBe(24)
   })
 
+  it('retries a transient provider request without replaying the runner', async () => {
+    const controller = new AbortController()
+    let captured: RunnerContext | undefined
+    let providerCalls = 0
+    let runnerCalls = 0
+
+    const adapter = createApeiraAdapter({
+      createRunner: (_model, _maxSteps, fetch) => async (context) => {
+        runnerCalls += 1
+        captured = context
+
+        const response = await fetch('https://example.com/v1/chat/completions', {
+          signal: context.abortSignal,
+        })
+        expect(response.status).toBe(200)
+
+        return {
+          output: [{ content: 'done', role: 'assistant', type: 'message' }],
+          usage: undefined,
+        }
+      },
+      fetch: async () => {
+        providerCalls += 1
+        return new Response(undefined, { status: providerCalls === 1 ? 500 : 200 })
+      },
+      retryPolicy: { maxRetries: 2, retryDelay: () => 0 },
+    })
+
+    await adapter({
+      instructions: 'inspect the component',
+      model: fakeModel(),
+      prompt: 'review architectural boundaries',
+      signal: controller.signal,
+      tools: [],
+    })
+
+    expect(providerCalls).toBe(2)
+    expect(runnerCalls).toBe(1)
+    expect(captured?.abortSignal).toBe(controller.signal)
+  })
+
   it('returns the final assistant message as the answer', async () => {
     const adapter = createApeiraAdapter({
       createRunner: () => async () => ({
