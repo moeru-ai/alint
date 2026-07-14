@@ -317,12 +317,9 @@ importers:
 
   packages/agent-apeira:
     dependencies:
-      '@xsai/tool':
-        specifier: 'catalog:'
-        version: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
       apeira:
         specifier: 'catalog:'
-        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
     devDependencies:
       '@alint-js/core':
         specifier: workspace:*
@@ -420,12 +417,9 @@ importers:
       '@package-json/types':
         specifier: 'catalog:'
         version: 0.0.13
-      '@xsai/tool':
-        specifier: 'catalog:'
-        version: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
       apeira:
         specifier: 'catalog:'
-        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
       c12:
         specifier: 'catalog:'
         version: 3.3.4(magicast@0.5.3)
@@ -510,7 +504,7 @@ importers:
         version: 1.7.1(valibot@1.4.1(typescript@6.0.3))
       apeira:
         specifier: 'catalog:'
-        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
@@ -5353,9 +5347,9 @@ snapshots:
     optionalDependencies:
       zod: 4.4.3
 
-  '@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
+  '@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))':
     dependencies:
-      '@xsai-ext/responses': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      '@xsai-ext/responses': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
       '@xsai/shared': 0.5.0-beta.7
       '@xsai/shared-chat': 0.5.0-beta.7
       '@xsai/stream-text': 0.5.0-beta.7
@@ -5369,13 +5363,13 @@ snapshots:
       - zod
       - zod-to-json-schema
 
-  '@apeira/session@0.0.7(@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3))))':
+  '@apeira/session@0.0.7(@apeira/core@0.0.7)':
     dependencies:
-      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
 
-  '@apeira/storage@0.0.7(@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3))))':
+  '@apeira/storage@0.0.7(@apeira/core@0.0.7)':
     dependencies:
-      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
 
   '@arethetypeswrong/core@0.18.4':
     dependencies:
@@ -7244,7 +7238,7 @@ snapshots:
 
   '@vue/shared@3.5.38': {}
 
-  '@xsai-ext/responses@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
+  '@xsai-ext/responses@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))':
     dependencies:
       '@xsai/shared': 0.5.0-beta.7
       '@xsai/shared-chat': 0.5.0-beta.7
@@ -7338,11 +7332,11 @@ snapshots:
 
   ansis@4.3.1: {}
 
-  apeira@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3):
+  apeira@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3))):
     dependencies:
-      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
-      '@apeira/session': 0.0.7(@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3))))
-      '@apeira/storage': 0.0.7(@apeira/core@0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3))))
+      '@apeira/core': 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))
+      '@apeira/session': 0.0.7(@apeira/core@0.0.7)
+      '@apeira/storage': 0.0.7(@apeira/core@0.0.7)
     transitivePeerDependencies:
       - '@valibot/to-json-schema'
       - arktype
