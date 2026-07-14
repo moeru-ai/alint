@@ -138,6 +138,30 @@ describe('createRetryingFetch', () => {
     expect(fetch).toHaveBeenCalledTimes(1)
   })
 
+  it('cancels a discarded response body when fetch resolves after caller abort', async () => {
+    const controller = new AbortController()
+    let resolveFetch: ((response: Response) => void) | undefined
+    let bodyCancelled = false
+    const fetch = vi.fn(() => new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    }))
+    const retryingFetch = createRetryingFetch({ fetch })
+    const request = retryingFetch('https://example.com', { signal: controller.signal })
+    const reason = new Error('caller stopped before response arrived')
+    const body = new ReadableStream({
+      cancel() {
+        bodyCancelled = true
+      },
+    })
+
+    controller.abort(reason)
+    resolveFetch?.(new Response(body, { status: 200 }))
+
+    await expect(request).rejects.toBe(reason)
+    expect(bodyCancelled).toBe(true)
+    expect(fetch).toHaveBeenCalledTimes(1)
+  })
+
   it('does not replay a ReadableStream request body', async () => {
     const fetch = vi.fn(async () => new Response(undefined, { status: 503 }))
     const retryingFetch = createRetryingFetch({

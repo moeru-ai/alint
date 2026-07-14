@@ -46,6 +46,8 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
       let response: Response
       try {
         response = await fetch(input, init)
+        if (signal?.aborted)
+          cancelResponseBody(response)
         throwIfAborted(signal)
       }
       catch (error) {
@@ -66,12 +68,7 @@ export function createRetryingFetch(options: RetryingFetchOptions = {}): typeof 
 
       // A response being retried is never exposed to the caller, so start
       // releasing its connection without letting provider cleanup gate retry.
-      try {
-        void response.body?.cancel().catch(() => {})
-      }
-      catch {
-        // Cancellation is best-effort, including implementations that throw synchronously.
-      }
+      cancelResponseBody(response)
 
       const delay = policy.retryDelay(retry + 1, response)
       validateRetryDelay(delay)
@@ -112,6 +109,15 @@ export function isTransientInferenceError(
   }
 
   return transient
+}
+
+function cancelResponseBody(response: Response): void {
+  try {
+    void response.body?.cancel().catch(() => {})
+  }
+  catch {
+    // Cancellation is best-effort, including implementations that throw synchronously.
+  }
 }
 
 function effectiveSignal(input: RequestInfo | URL, init: RequestInit | undefined): AbortSignal | undefined {
