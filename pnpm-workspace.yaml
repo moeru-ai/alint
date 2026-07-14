@@ -41,10 +41,10 @@ catalog:
   '@types/node': ^26.0.1
   '@types/tar-stream': ^3.1.4
   '@valibot/to-json-schema': ^1.7.1
-  '@xsai/generate-text': ^0.5.0-beta.6
-  '@xsai/shared-chat': ^0.5.0-beta.6
-  '@xsai/tool': ^0.5.0-beta.6
-  apeira: ^0.0.6
+  '@xsai/generate-text': ^0.5.0-beta.7
+  '@xsai/shared-chat': ^0.5.0-beta.7
+  '@xsai/tool': ^0.5.0-beta.7
+  apeira: ^0.0.7
   bumpp: ^11.1.0
   c12: ^3.3.4
   cac: ^7.0.0

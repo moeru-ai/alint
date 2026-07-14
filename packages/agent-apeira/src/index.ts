@@ -4,8 +4,7 @@ import type { ResolvedModel } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from '@alint-js/core/agent'
 import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
-import { rawTool } from '@xsai/tool'
-import { chat, stepCountAtLeast, user } from 'apeira'
+import { chat, rawTool, stepCountAtLeast, user } from 'apeira'
 
 const maxSteps = 8
 

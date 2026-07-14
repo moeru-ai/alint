@@ -6,8 +6,7 @@ import type { DeclarativeFindingResponse, DeclarativeRuleDefinition } from '../.
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, toolParametersFromSchema } from '@alint-js/core/structured-output'
 import { createTools } from '@alint-js/tools-fs'
-import { rawTool } from '@xsai/tool'
-import { chat, hasToolCall, or, stepCountAtLeast, user } from 'apeira'
+import { chat, hasToolCall, or, rawTool, stepCountAtLeast, user } from 'apeira'
 import { parse } from 'valibot'
 
 import { declarativeFindingResponseSchema } from '../../plugins/declarative/types'
