@@ -1,5 +1,11 @@
+import type { AddressInfo } from 'node:net'
+
 import type { ResolvedModel } from '@alint-js/core'
 import type { AgentTool } from '@alint-js/core/agent'
+
+import type { PiAdapterOptions } from './index'
+
+import { createServer } from 'node:http'
 
 import { describe, expect, it } from 'vitest'
 
@@ -105,5 +111,84 @@ describe('pi adapter retry policy', () => {
 
   it.each([-1, 1.5])('rejects invalid maxRetries: %s', (maxRetries) => {
     expect(() => createPiAdapter({ maxRetries })).toThrow(TypeError)
+  })
+
+  it('keeps maxRetries optional for typed custom runners', () => {
+    const options: PiAdapterOptions = {
+      run: async () => [],
+    }
+
+    expect(createPiAdapter(options)).toBeTypeOf('function')
+  })
+})
+
+describe('pi adapter cancellation', () => {
+  it('rejects with the signal reason when aborted during a provider request', async () => {
+    let requestStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      requestStarted = resolve
+    })
+    const server = createServer(() => requestStarted())
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+
+    try {
+      const controller = new AbortController()
+      const reason = new Error('caller stopped the review')
+      const model = fakeModel({})
+      model.provider.endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
+      const result = createPiAdapter({ maxRetries: 0 })({
+        instructions: 'review',
+        model,
+        prompt: 'inspect this component',
+        signal: controller.signal,
+        tools: [],
+      })
+      const rejected = expect(result).rejects.toBe(reason)
+
+      await started
+      controller.abort(reason)
+
+      await rejected
+    }
+    finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    }
+  })
+
+  it('rejects a synchronous setup abort before starting a provider request', async () => {
+    let requests = 0
+    const server = createServer((_request, response) => {
+      requests += 1
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.end('data: [DONE]\n\n')
+    })
+    await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+
+    try {
+      const controller = new AbortController()
+      const reason = new Error('aborted during setup')
+      const model = fakeModel({})
+      model.provider.endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}/v1`
+      Object.defineProperty(model, 'contextWindow', {
+        get: () => {
+          controller.abort(reason)
+          return 32768
+        },
+      })
+
+      await expect(createPiAdapter({ maxRetries: 0 })({
+        instructions: 'review',
+        model,
+        prompt: 'inspect this component',
+        signal: controller.signal,
+        tools: [],
+      })).rejects.toBe(reason)
+      expect(requests).toBe(0)
+    }
+    finally {
+      server.closeAllConnections()
+      await new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve()))
+    }
   })
 })

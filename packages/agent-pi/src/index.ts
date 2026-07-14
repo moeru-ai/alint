@@ -9,7 +9,7 @@ import { Type } from '@earendil-works/pi-ai'
 import { streamSimple } from '@earendil-works/pi-ai/compat'
 
 export interface PiAdapterOptions {
-  maxRetries: number
+  maxRetries?: number
   run: (request: AgentRequest, maxRetries: number) => Promise<PiMessage[]>
 }
 
@@ -99,6 +99,7 @@ function isTextPart(part: unknown): part is { text: string, type: 'text' } {
 
 async function runPiAgent(request: AgentRequest, maxRetries: number): Promise<PiMessage[]> {
   request.signal?.throwIfAborted()
+  const prompt = request.prompt
 
   const streamFn: StreamFn = (model, context, options) => streamSimple(model, context, {
     ...options,
@@ -118,8 +119,10 @@ async function runPiAgent(request: AgentRequest, maxRetries: number): Promise<Pi
   request.signal?.addEventListener('abort', abort, { once: true })
 
   try {
-    await agent.prompt(request.prompt)
+    request.signal?.throwIfAborted()
+    await agent.prompt(prompt)
     await agent.waitForIdle()
+    request.signal?.throwIfAborted()
     return agent.state.messages as PiMessage[]
   }
   finally {
