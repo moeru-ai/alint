@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     'agent': 'src/agent/index.ts',
     'index': 'src/index.ts',
+    'inference': 'src/inference/index.ts',
     'structured-output': 'src/structuredOutput/index.ts',
   },
   format: 'esm',
