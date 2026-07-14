@@ -75,11 +75,12 @@ const { findings } = await generateStructured({
 })
 ```
 
-First-party model adapters use `@alint-js/core/inference` for bounded request-level
-retry. `createRetryingFetch()` retries HTTP 408, 429, 5xx, and typed transient
-transport failures without replaying an entire agent invocation. Adapter authors
-should apply it at the provider request boundary; rules and plugins should not add
-their own provider retry loops.
+First-party model adapters that directly own fetch use `@alint-js/core/inference`
+for bounded request-level retry. `createRetryingFetch()` retries HTTP 408, 429,
+5xx, and typed transient transport failures without replaying an entire agent
+invocation. Adapters whose runtime owns transport may use the provider's native
+request retry while sharing the same bounded retry budget. Rules and plugins
+should not add their own provider retry loops.
 
 The reporting tool is named `reportFindings` by default (`toolName` overrides it) and its
 description defaults to the schema's valibot `description(...)`. `toolParametersFromSchema`,

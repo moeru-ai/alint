@@ -278,6 +278,16 @@ describe('generateStructured', () => {
     expect(requests[1].body.messages).toEqual(requests[0].body.messages)
   })
 
+  it('keeps transport retries when semantic attempts are limited to one', async () => {
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+    responses.push({ body: toolCallCompletion(validPayload) })
+
+    const result = await generateStructured({ ...createOptions(), maxAttempts: 1 })
+
+    expect(result).toEqual(validPayload)
+    expect(requests).toHaveLength(2)
+  })
+
   it('retries a disconnected request without restarting semantic validation', async () => {
     responses.push({ disconnect: true })
     responses.push({ body: toolCallCompletion(validPayload) })
@@ -343,6 +353,17 @@ describe('generateStructured', () => {
     responses.push({ body: { error: 'retry me' }, status: 500 })
 
     await expect(generateStructured(createOptions()))
+      .rejects
+      .toThrow('Remote sent 500 response')
+    expect(requests).toHaveLength(3)
+  })
+
+  it('keeps transport exhaustion bounded when semantic attempts are increased', async () => {
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+    responses.push({ body: { error: 'retry me' }, status: 500 })
+
+    await expect(generateStructured({ ...createOptions(), maxAttempts: 5 }))
       .rejects
       .toThrow('Remote sent 500 response')
     expect(requests).toHaveLength(3)

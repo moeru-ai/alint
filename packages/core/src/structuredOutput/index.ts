@@ -89,7 +89,6 @@ export async function generateStructured<Schema extends GenericSchema>(
   const configuredRetryDelay = options.retryDelay
   const fetch = createRetryingFetch({
     policy: {
-      maxRetries: Math.max(0, maxAttempts - 1),
       ...(configuredRetryDelay
         ? { retryDelay: attempt => configuredRetryDelay(attempt) }
         : {}),
