@@ -6,7 +6,7 @@ import type { ResolvedModel } from '../models/types'
 import { createServer } from 'node:http'
 
 import { array, description, number, object, optional, picklist, pipe, string } from 'valibot'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured, InvalidStructuredOutputError, toolParametersFromSchema } from './index'
 
@@ -299,6 +299,42 @@ describe('generateStructured', () => {
       signal: controller.signal,
     })).rejects.toBe(reason)
     expect(requests).toHaveLength(0)
+  })
+
+  it('cancels a pending semantic retry delay', async () => {
+    responses.push({ body: toolCallCompletion({ findings: [{ line: 'three' }] }) })
+    const controller = new AbortController()
+    const reason = new Error('rule timed out')
+    const backoff = Promise.withResolvers<void>()
+    let settled = false
+    const pending = generateStructured({
+      ...createOptions(),
+      retryDelay: () => {
+        vi.useFakeTimers()
+        backoff.resolve()
+        return 60_000
+      },
+      signal: controller.signal,
+    })
+    void pending.finally(() => {
+      settled = true
+    }).catch(() => {})
+
+    await backoff.promise
+    try {
+      controller.abort(reason)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(settled).toBe(true)
+      await expect(pending).rejects.toBe(reason)
+      expect(requests).toHaveLength(1)
+    }
+    finally {
+      await vi.runAllTimersAsync()
+      vi.useRealTimers()
+      await pending.catch(() => {})
+    }
   })
 
   it('does not multiply exhausted transport retries through semantic attempts', async () => {

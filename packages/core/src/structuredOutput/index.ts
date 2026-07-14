@@ -7,7 +7,6 @@ import type { RuleContext } from '../dsl/types'
 import type { ResolvedModel } from '../models/types'
 
 import { errorMessageFrom } from '@moeru/std/error'
-import { sleep } from '@moeru/std/sleep'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
@@ -32,10 +31,13 @@ export interface GenerateStructuredOptions<Schema extends GenericSchema> {
   model: ResolvedModel
   /** Label recorded in metering metadata and debug logs, e.g. `go-responsibility-boundary-judge`. */
   operation: string
-  /** Milliseconds to wait before the given (1-based) attempt is retried. */
+  /**
+   * Supplies milliseconds for semantic and request-level transport retries.
+   * Numbers are 1-based independently within each retry layer.
+   */
   retryDelay?: (attempt: number) => number
   schema: Schema
-  /** Cancels the active model request or a pending transport retry. */
+  /** Cancels the active model request or any pending retry. */
   signal?: AbortSignal
   temperature?: number
   /** Shown to the model as the tool description. Defaults to the schema's valibot description. */
@@ -138,7 +140,7 @@ export async function generateStructured<Schema extends GenericSchema>(
         throw error
       }
 
-      await sleep(retryDelay(attempt))
+      await waitForSemanticRetry(retryDelay(attempt), options.signal)
       continue
     }
 
@@ -157,7 +159,7 @@ export async function generateStructured<Schema extends GenericSchema>(
       throw new InvalidStructuredOutputError(`Invalid structured model response: ${previousError}`)
     }
 
-    await sleep(retryDelay(attempt))
+    await waitForSemanticRetry(retryDelay(attempt), options.signal)
   }
 
   throw new InvalidStructuredOutputError('Model did not return a valid structured result')
@@ -365,4 +367,30 @@ function retryFeedbackFrom(toolName: string, error: string): string {
     `Validation error: ${error}`,
     `Call ${toolName} again with arguments that exactly match the tool schema.`,
   ].join('\n')
+}
+
+function waitForSemanticRetry(delay: number, signal: AbortSignal | undefined): Promise<void> {
+  if (signal?.aborted)
+    throw signal.reason
+
+  if (delay === 0)
+    return Promise.resolve()
+
+  return new Promise((resolve, reject) => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const onAbort = () => {
+      if (timer)
+        clearTimeout(timer)
+      signal?.removeEventListener('abort', onAbort)
+      reject(signal?.reason)
+    }
+
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort)
+      resolve()
+    }, delay)
+    signal?.addEventListener('abort', onAbort, { once: true })
+    if (signal?.aborted)
+      onAbort()
+  })
 }
