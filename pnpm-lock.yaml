@@ -81,6 +81,9 @@ catalogs:
     doctoc:
       specifier: ^2.5.0
       version: 2.5.0
+    effect:
+      specifier: ^3.22.0
+      version: 3.22.0
     es-toolkit:
       specifier: ^1.49.0
       version: 1.49.0
@@ -144,6 +147,9 @@ catalogs:
     smol-toml:
       specifier: ^1.7.0
       version: 1.7.0
+    sury:
+      specifier: ^10.0.4
+      version: 10.0.4
     table:
       specifier: ^6.9.0
       version: 6.9.0
@@ -477,7 +483,7 @@ importers:
         version: 0.5.0-beta.7
       '@xsai/tool':
         specifier: 'catalog:'
-        version: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+        version: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
       es-toolkit:
         specifier: 'catalog:'
         version: 1.49.0
@@ -493,6 +499,13 @@ importers:
       valibot:
         specifier: 'catalog:'
         version: 1.4.1(typescript@6.0.3)
+    devDependencies:
+      effect:
+        specifier: 'catalog:'
+        version: 3.22.0
+      sury:
+        specifier: 'catalog:'
+        version: 10.0.4
 
   packages/plugin-example:
     dependencies:
@@ -3246,6 +3259,9 @@ packages:
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
 
+  effect@3.22.0:
+    resolution: {integrity: sha512-jhYFe0zTlIRqYFrKTS+6luhmS/Tm0f+JLo0K9KUxvtFab1SUGEszQi2ehOP6QzAZvy831lDmTwwzvVDZSPNz3g==}
+
   electron-to-chromium@1.5.376:
     resolution: {integrity: sha512-cUVA7/RvbFTEuw/i3obUwDTRIXojaxkResf+ibByPFxjc6XK3VNtcQXV0NSbAlJ0FMjcJGgftVVB4Qo184EXvA==}
 
@@ -3581,6 +3597,10 @@ packages:
 
   extend@3.0.2:
     resolution: {integrity: sha512-fjquC59cD7CyW6urNXK0FBufkZcoiGG80wTuPujX590cB5Ttln20E2UB4S/WARVqhXffZl2LNgS+gQdPIIim/g==}
+
+  fast-check@3.23.2:
+    resolution: {integrity: sha512-h5+1OzzfCC3Ef7VbtKdcv7zsstUQwUDlYpUTvjeUsJAssPgLn7QzbboPtL5ro04Mq0rPOsMzl7q5hIbRs2wD1A==}
+    engines: {node: '>=8.0.0'}
 
   fast-deep-equal@3.1.3:
     resolution: {integrity: sha512-f3qQ9oQy9j2AhBe/H9VC91wLmKBCCU/gDOnKNAYG5hswO7BLKj09Hc5HYNz9cGI++xlpDCIgDaitVs03ATR84Q==}
@@ -4579,6 +4599,9 @@ packages:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
 
+  pure-rand@6.1.0:
+    resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
+
   qs@6.15.3:
     resolution: {integrity: sha512-O9gl3zCl5h5blw1KGUzQKhA5oUXSl8rwUIM5o0S3nCXMliSvy5Dzx7/DJcI+SwgICv+IneSZwhBh1oSyEHA71A==}
     engines: {node: '>=0.6'}
@@ -4818,6 +4841,14 @@ packages:
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
+
+  sury@10.0.4:
+    resolution: {integrity: sha512-dWKqOv+6D4AwGCjeKyaWr157RVBtvnPUp1I6RxReYD1dYuBl4k6oUd/t5INh1mBhUuAEC9SP+rZmIunCyNjXzQ==}
+    peerDependencies:
+      rescript: 11.x
+    peerDependenciesMeta:
+      rescript:
+        optional: true
 
   synckit@0.11.13:
     resolution: {integrity: sha512-eNRKgb3z66Yp3D2CixVujOUvXLFUTij/zVnV8KRyvFdQwpz7I5DS8UfRkTeLzb64u+dkzDSdelE24izu+zSSUg==}
@@ -5353,7 +5384,7 @@ snapshots:
       '@xsai/shared': 0.5.0-beta.7
       '@xsai/shared-chat': 0.5.0-beta.7
       '@xsai/stream-text': 0.5.0-beta.7
-      '@xsai/tool': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      '@xsai/tool': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
       yocto-queue: 1.2.2
     transitivePeerDependencies:
       - '@valibot/to-json-schema'
@@ -7243,7 +7274,7 @@ snapshots:
       '@xsai/shared': 0.5.0-beta.7
       '@xsai/shared-chat': 0.5.0-beta.7
       '@xsai/shared-stream': 0.5.0-beta.7
-      '@xsai/tool': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      '@xsai/tool': 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - '@valibot/to-json-schema'
       - arktype
@@ -7273,11 +7304,11 @@ snapshots:
       '@xsai/shared-chat': 0.5.0-beta.7
       '@xsai/shared-stream': 0.5.0-beta.7
 
-  '@xsai/tool@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
+  '@xsai/tool@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)':
     dependencies:
       '@xsai/shared': 0.5.0-beta.7
       '@xsai/shared-chat': 0.5.0-beta.7
-      xsschema: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
+      xsschema: 0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3)
     transitivePeerDependencies:
       - '@valibot/to-json-schema'
       - arktype
@@ -7737,6 +7768,11 @@ snapshots:
 
   ee-first@1.1.1: {}
 
+  effect@3.22.0:
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+      fast-check: 3.23.2
+
   electron-to-chromium@1.5.376: {}
 
   emoji-regex@10.6.0: {}
@@ -8178,6 +8214,10 @@ snapshots:
   exsolve@1.1.0: {}
 
   extend@3.0.2: {}
+
+  fast-check@3.23.2:
+    dependencies:
+      pure-rand: 6.1.0
 
   fast-deep-equal@3.1.3: {}
 
@@ -9422,6 +9462,8 @@ snapshots:
 
   punycode@2.3.1: {}
 
+  pure-rand@6.1.0: {}
+
   qs@6.15.3:
     dependencies:
       es-define-property: 1.0.1
@@ -9727,6 +9769,8 @@ snapshots:
   supports-color@7.2.0:
     dependencies:
       has-flag: 4.0.0
+
+  sury@10.0.4: {}
 
   synckit@0.11.13:
     dependencies:
@@ -10099,9 +10143,11 @@ snapshots:
 
   xml-name-validator@4.0.0: {}
 
-  xsschema@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3):
+  xsschema@0.5.0-beta.7(@valibot/to-json-schema@1.7.1(valibot@1.4.1(typescript@6.0.3)))(effect@3.22.0)(sury@10.0.4)(zod-to-json-schema@3.25.2(zod@4.4.3))(zod@4.4.3):
     optionalDependencies:
       '@valibot/to-json-schema': 1.7.1(valibot@1.4.1(typescript@6.0.3))
+      effect: 3.22.0
+      sury: 10.0.4
       zod: 4.4.3
       zod-to-json-schema: 3.25.2(zod@4.4.3)
 
