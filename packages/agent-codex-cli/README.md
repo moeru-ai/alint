@@ -34,15 +34,16 @@ const adapter = createCodexCliAdapter({
 })
 ```
 
-To customize Codex's native retry budgets for a model provider:
+For example, if a provider named `proxy` is already defined and selected in the
+user's Codex configuration, this overlay customizes its native retry budgets:
 
 ```ts
 const adapter = createCodexCliAdapter({
   config: {
     model_providers: {
       proxy: {
-        request_max_retries: 4,
-        stream_max_retries: 5,
+        request_max_retries: 2,
+        stream_max_retries: 3,
       },
     },
   },
