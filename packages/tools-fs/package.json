@@ -17,7 +17,9 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@alint-js/core": "workspace:*",
     "tinyglobby": "catalog:"
+  },
+  "devDependencies": {
+    "@alint-js/core": "workspace:*"
   }
 }

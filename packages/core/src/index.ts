@@ -22,7 +22,6 @@ export {
   resolveLanguage,
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
-export { extractJsSourceTargets } from './core/languages/js/extract'
 export { AlintRunError, runAlint } from './core/run'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
 export type {

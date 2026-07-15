@@ -1,4 +1,4 @@
-import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/core'
+import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
 
 import { getDescription } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'

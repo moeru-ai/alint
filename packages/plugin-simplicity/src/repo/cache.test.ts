@@ -1,4 +1,4 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 
 import { mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

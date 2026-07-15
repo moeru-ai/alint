@@ -1,4 +1,4 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 import type { InferOutput } from 'valibot'
 
 import { array, boolean, getDotPath, integer, minValue, number, object, optional, pipe, safeParse, string } from 'valibot'

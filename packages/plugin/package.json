@@ -1,7 +1,7 @@
 {
-  "name": "@alint-js/plugin-example-agent",
+  "name": "@alint-js/plugin",
   "type": "module",
-  "private": true,
+  "version": "0.0.28",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
@@ -17,10 +17,6 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "devDependencies": {
-    "@alint-js/agent-apeira": "workspace:*",
-    "@alint-js/agent-pi": "workspace:*",
-    "@alint-js/core": "workspace:*",
-    "@alint-js/plugin": "workspace:*",
-    "@moeru/std": "catalog:"
+    "@alint-js/core": "workspace:*"
   }
 }

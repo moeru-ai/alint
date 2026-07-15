@@ -1,11 +1,11 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 
 import type { IndexedHelper, JudgedHelper } from '../../repo'
 
 import { createHash } from 'node:crypto'
 
-import { defineRule } from '@alint-js/core'
 import { formatOutputLanguageInstruction, generateStructured } from '@alint-js/core/structured-output'
+import { defineRule } from '@alint-js/plugin'
 import { errorMessageFrom } from '@moeru/std/error'
 import { minimatch } from 'minimatch'
 import { relative } from 'pathe'

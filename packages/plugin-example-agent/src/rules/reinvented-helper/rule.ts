@@ -1,7 +1,7 @@
 import type { ReinventedHelperFinding } from './tools'
 
-import { defineRule } from '@alint-js/core'
 import { requireAgent } from '@alint-js/core/agent'
+import { defineRule } from '@alint-js/plugin'
 
 import { buildReinventedHelperPrompt, reinventedHelperInstructions } from './prompt'
 import { createReinventedHelperTools } from './tools'

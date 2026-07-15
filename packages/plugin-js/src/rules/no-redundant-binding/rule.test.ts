@@ -1,4 +1,4 @@
-import type { FileTarget, RuleContext } from '@alint-js/core'
+import type { FileTarget, RuleContext } from '@alint-js/plugin'
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 

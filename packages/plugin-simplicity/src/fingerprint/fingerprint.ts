@@ -1,4 +1,4 @@
-import type { SourceRange } from '@alint-js/core'
+import type { SourceRange } from '@alint-js/plugin'
 
 import { createHash } from 'node:crypto'
 

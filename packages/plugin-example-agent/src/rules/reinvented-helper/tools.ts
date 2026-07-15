@@ -1,5 +1,5 @@
-import type { SourceRuntime } from '@alint-js/core'
 import type { AgentTool } from '@alint-js/core/agent'
+import type { SourceRuntime } from '@alint-js/plugin'
 
 import { resolve } from 'node:path'
 

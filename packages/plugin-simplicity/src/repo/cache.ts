@@ -1,4 +1,4 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 
 import type { AgentFinding } from '../rules/no-duplicated-helper/tools'
 

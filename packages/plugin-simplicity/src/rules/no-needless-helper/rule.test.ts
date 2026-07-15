@@ -1,7 +1,7 @@
 import type { Buffer } from 'node:buffer'
 import type { AddressInfo } from 'node:net'
 
-import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/core'
+import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/plugin'
 
 import type { IndexedHelper } from '../../repo'
 

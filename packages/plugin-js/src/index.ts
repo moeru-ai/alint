@@ -1,4 +1,4 @@
-import { definePlugin } from '@alint-js/core'
+import { definePlugin } from '@alint-js/plugin'
 
 import { inlineMiniatureNormalizerRule } from './rules/inline-miniature-normalizer'
 import { privateSchemaToolkitRule } from './rules/no-private-schema-toolkit'

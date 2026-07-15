@@ -1,4 +1,4 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 
 import { readdir } from 'node:fs/promises'
 import { basename, dirname, relative, resolve } from 'node:path'

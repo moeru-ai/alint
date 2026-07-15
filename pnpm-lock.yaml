@@ -231,12 +231,15 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:packages/core
-      '@alint-js/plugin-example':
+      '@alint-js/plugin':
         specifier: workspace:*
-        version: link:packages/plugin-js
+        version: link:packages/plugin
       '@alint-js/plugin-example-python':
         specifier: workspace:*
         version: link:packages/plugin-example-python
+      '@alint-js/plugin-js':
+        specifier: workspace:*
+        version: link:packages/plugin-js
       '@antfu/eslint-config':
         specifier: 'catalog:'
         version: 9.1.0(@typescript-eslint/typescript-estree@8.64.0(typescript@6.0.3))(@typescript-eslint/utils@8.64.0(eslint@10.5.0(jiti@2.7.0))(typescript@6.0.3))(@vue/compiler-sfc@3.5.39)(eslint@10.5.0(jiti@2.7.0))(oxlint@1.74.0)(typescript@6.0.3)(vitest@4.1.10)
@@ -505,14 +508,13 @@ importers:
         specifier: 'catalog:'
         version: 11.0.0-alpha.10
 
-  packages/plugin-example-agent:
-    dependencies:
+  packages/plugin:
+    devDependencies:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
-      '@moeru/std':
-        specifier: 'catalog:'
-        version: 0.1.0-beta.20
+
+  packages/plugin-example-agent:
     devDependencies:
       '@alint-js/agent-apeira':
         specifier: workspace:*
@@ -520,15 +522,27 @@ importers:
       '@alint-js/agent-pi':
         specifier: workspace:*
         version: link:../agent-pi
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.20
 
   packages/plugin-example-go:
-    dependencies:
+    devDependencies:
       '@alint-js/agent-apeira':
         specifier: workspace:*
         version: link:../agent-apeira
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@alint-js/tools-fs':
         specifier: workspace:*
         version: link:../tools-fs
@@ -543,10 +557,13 @@ importers:
         version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-example-python:
-    dependencies:
+    devDependencies:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@alint-js/tools-fs':
         specifier: workspace:*
         version: link:../tools-fs
@@ -558,13 +575,16 @@ importers:
         version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-example-rust:
-    dependencies:
+    devDependencies:
       '@alint-js/agent-apeira':
         specifier: workspace:*
         version: link:../agent-apeira
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@alint-js/tools-fs':
         specifier: workspace:*
         version: link:../tools-fs
@@ -579,10 +599,13 @@ importers:
         version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-js:
-    dependencies:
+    devDependencies:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@valibot/to-json-schema':
         specifier: 'catalog:'
         version: 1.7.1(valibot@1.4.2(typescript@6.0.3))
@@ -594,10 +617,16 @@ importers:
         version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-simplicity:
-    dependencies:
+    devDependencies:
+      '@alint-js/agent-apeira':
+        specifier: workspace:*
+        version: link:../agent-apeira
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
       '@alint-js/tools-fs':
         specifier: workspace:*
         version: link:../tools-fs
@@ -613,31 +642,28 @@ importers:
       tree-sitter-wasms:
         specifier: 'catalog:'
         version: 0.1.13
-      valibot:
-        specifier: 'catalog:'
-        version: 1.4.2(typescript@6.0.3)
-      web-tree-sitter:
-        specifier: 'catalog:'
-        version: 0.24.7
-    devDependencies:
-      '@alint-js/agent-apeira':
-        specifier: workspace:*
-        version: link:../agent-apeira
       tsdown:
         specifier: 'catalog:'
         version: 0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.2(typescript@6.0.3)
+      web-tree-sitter:
+        specifier: 'catalog:'
+        version: 0.24.7
 
   packages/tools-fs:
     dependencies:
-      '@alint-js/core':
-        specifier: workspace:*
-        version: link:../core
       tinyglobby:
         specifier: 'catalog:'
         version: 0.2.17
+    devDependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
 
 packages:
 

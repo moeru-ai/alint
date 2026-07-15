@@ -1,4 +1,4 @@
-import { definePlugin } from '@alint-js/core'
+import { definePlugin } from '@alint-js/plugin'
 
 import { responsibilityBoundaryRule } from './rules/responsibility-boundary'
 

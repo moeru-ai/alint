@@ -1,4 +1,4 @@
-import { definePlugin } from '@alint-js/core'
+import { definePlugin } from '@alint-js/plugin'
 
 import { duplicatedHelperRule } from './rules/no-duplicated-helper'
 import { needlessHelperRule } from './rules/no-needless-helper'

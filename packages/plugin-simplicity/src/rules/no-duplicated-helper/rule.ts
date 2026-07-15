@@ -1,12 +1,12 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 
 import type { IndexedHelper, RepoIndex } from '../../repo'
 import type { AgentFinding } from './tools'
 
 import { createHash } from 'node:crypto'
 
-import { defineRule } from '@alint-js/core'
 import { requireAgent } from '@alint-js/core/agent'
+import { defineRule } from '@alint-js/plugin'
 import { errorMessageFrom } from '@moeru/std/error'
 import { minimatch } from 'minimatch'
 import { relative } from 'pathe'

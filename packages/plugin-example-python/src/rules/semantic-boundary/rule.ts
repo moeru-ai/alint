@@ -1,9 +1,9 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 import type { JsonSchema } from '@valibot/to-json-schema'
 import type { InferOutput } from 'valibot'
 
-import { defineRule } from '@alint-js/core'
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured, toolParametersFromSchema } from '@alint-js/core/structured-output'
+import { defineRule } from '@alint-js/plugin'
 import { array, description, number, object, optional, picklist, pipe, string } from 'valibot'
 
 import { collectPythonSemanticBoundaryContext } from './context'

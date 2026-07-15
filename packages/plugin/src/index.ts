@@ -1,0 +1,71 @@
+import type {
+  AlintConfig,
+  AlintConfigInput,
+  PluginDefinition,
+  RuleDefinition,
+} from '@alint-js/core'
+
+export type {
+  AlintConfig,
+  AlintConfigExtends,
+  AlintConfigInput,
+  AlintConfigItem,
+  AlintLinterOptions,
+  Awaitable,
+  ClassTarget,
+  DiagnosticDescriptor,
+  DiagnosticLocation,
+  DirectoryTarget,
+  EnabledRule,
+  FileTarget,
+  FunctionTarget,
+  IgnoreConfig,
+  LanguageContext,
+  LanguageDefinition,
+  LineRange,
+  PluginDefinition,
+  ProcessedSource,
+  ProcessedSourceOrigin,
+  ProcessorContext,
+  ProcessorDefinition,
+  ProcessorPostprocessContext,
+  ProjectTarget,
+  RuleCacheConfig,
+  RuleConfigEntry,
+  RuleContext,
+  RuleDefinition,
+  RuleHandlers,
+  RuleInferenceUsageRecord,
+  RuleRegistry,
+  RuleSeverity,
+  RuleSpecializedHandlers,
+  RuleWithHandler,
+  SourceFile,
+  SourceLocation,
+  SourcePosition,
+  SourceRange,
+  SourceRuntime,
+  SourceTarget,
+  SourceTargetKind,
+  SourceTargetOfKind,
+  SourceTargetOrigin,
+  SourceText,
+  Target,
+} from '@alint-js/core'
+export type {
+  ModelRequirement,
+  ResolvedModel,
+  ResolvedProvider,
+} from '@alint-js/core'
+
+export function defineConfig(config: readonly AlintConfigInput[]): AlintConfig {
+  return config
+}
+
+export function definePlugin(plugin: PluginDefinition): PluginDefinition {
+  return plugin
+}
+
+export function defineRule(rule: RuleDefinition): RuleDefinition {
+  return rule
+}

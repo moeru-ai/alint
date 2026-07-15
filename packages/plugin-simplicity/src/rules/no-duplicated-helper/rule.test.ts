@@ -1,5 +1,5 @@
-import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest, AgentTool } from '@alint-js/core/agent'
+import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/plugin'
 
 import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

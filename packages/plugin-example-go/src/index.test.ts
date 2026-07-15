@@ -1,4 +1,4 @@
-import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/core'
+import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
 
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'

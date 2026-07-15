@@ -16,19 +16,18 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
+    "@alint-js/plugin": "workspace:*",
     "@alint-js/tools-fs": "workspace:*",
     "@moeru/std": "catalog:",
     "minimatch": "catalog:",
     "pathe": "catalog:",
     "tree-sitter-wasms": "catalog:",
+    "tsdown": "catalog:",
+    "typescript": "catalog:",
     "valibot": "catalog:",
     "web-tree-sitter": "catalog:"
-  },
-  "devDependencies": {
-    "@alint-js/agent-apeira": "workspace:*",
-    "tsdown": "catalog:",
-    "typescript": "catalog:"
   }
 }

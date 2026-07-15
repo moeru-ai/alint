@@ -16,8 +16,9 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
     "@alint-js/core": "workspace:*",
+    "@alint-js/plugin": "workspace:*",
     "@alint-js/tools-fs": "workspace:*",
     "@valibot/to-json-schema": "catalog:",
     "valibot": "catalog:"

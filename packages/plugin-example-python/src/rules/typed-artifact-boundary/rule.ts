@@ -1,8 +1,8 @@
-import type { RuleContext } from '@alint-js/core'
+import type { RuleContext } from '@alint-js/plugin'
 import type { InferOutput } from 'valibot'
 
-import { defineRule } from '@alint-js/core'
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured } from '@alint-js/core/structured-output'
+import { defineRule } from '@alint-js/plugin'
 import { array, description, number, object, picklist, pipe, string } from 'valibot'
 
 import { pythonTypedArtifactBoundaryPrompt } from './prompt'

@@ -1,5 +1,5 @@
 import { createApeiraAdapter } from '@alint-js/agent-apeira'
-import { defineConfig } from '@alint-js/core'
+import { defineConfig } from '@alint-js/plugin'
 
 import { simplicityPlugin } from '../src/index'
 

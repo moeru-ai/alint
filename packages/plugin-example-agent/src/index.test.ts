@@ -1,5 +1,5 @@
-import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest } from '@alint-js/core/agent'
+import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
 
 import type { ReinventedHelperFinding } from './index'
 

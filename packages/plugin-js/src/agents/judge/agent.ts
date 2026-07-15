@@ -1,4 +1,4 @@
-import type { ResolvedModel, RuleContext } from '@alint-js/core'
+import type { ResolvedModel, RuleContext } from '@alint-js/plugin'
 import type { JsonSchema } from '@valibot/to-json-schema'
 import type { InferOutput } from 'valibot'
 

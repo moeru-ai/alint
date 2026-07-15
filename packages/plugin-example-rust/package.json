@@ -16,9 +16,10 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
     "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
+    "@alint-js/plugin": "workspace:*",
     "@alint-js/tools-fs": "workspace:*",
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",

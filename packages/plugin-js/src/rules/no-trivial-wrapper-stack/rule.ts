@@ -1,4 +1,4 @@
-import { defineRule } from '@alint-js/core'
+import { defineRule } from '@alint-js/plugin'
 
 import { judgeSource } from '../../agents/judge/agent'
 import { trivialWrapperStackPrompt } from './prompt'

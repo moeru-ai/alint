@@ -1,4 +1,4 @@
-import type { SourceLocation, SourceRange } from '@alint-js/core'
+import type { SourceLocation, SourceRange } from '@alint-js/plugin'
 
 export interface CallSite {
   /** The last segment only: `a.b.helper()` and `helper()` both yield `helper`. */

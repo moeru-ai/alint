@@ -15,6 +15,10 @@
       "types": "./dist/structured-output.d.mts",
       "default": "./dist/structured-output.mjs"
     },
+    "./languages/js": {
+      "types": "./dist/languages-js.d.mts",
+      "default": "./dist/languages-js.mjs"
+    },
     "./package.json": "./package.json"
   },
   "files": [
