@@ -12,6 +12,7 @@ import { cwd as processCwd } from 'node:process'
 import { errorCauseFrom, errorMessageFrom } from '@moeru/std/error'
 import { resolve } from 'pathe'
 
+import { resolveAgentRetries, withAgentRetry } from '../agent/retry'
 import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
@@ -39,6 +40,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? processCwd()
   const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
+  const agentRetries = resolveAgentRetries(options.runner?.agentRetries)
   const clock = Date.now
   const diagnostics: Diagnostic[] = []
 
@@ -88,6 +90,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     const registry = buildRuleRegistry(effectiveConfig)
 
     const ruleRuntimes = createRuleRuntimes({
+      agentRetries,
       cwd,
       diagnostics,
       effectiveAgent: effectiveConfig.agent,
@@ -132,6 +135,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         settings: effectiveConfig.settings,
       }),
       ruleRuntimes: createRuleRuntimes({
+        agentRetries,
         cwd,
         diagnostics,
         effectiveAgent: effectiveConfig.agent,
@@ -151,6 +155,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const projectRuleRuntimes = resolvedProjectConfig.ignored
     ? []
     : createRuleRuntimes({
+        agentRetries,
         cwd,
         diagnostics,
         effectiveAgent: projectConfig.agent,
@@ -378,6 +383,7 @@ function createRuleEndCounters(): RuleEndCounters {
 }
 
 function createRuleRuntimes(options: {
+  agentRetries: number
   cwd: string
   diagnostics: Diagnostic[]
   effectiveAgent: AgentAdapter | undefined
@@ -388,10 +394,14 @@ function createRuleRuntimes(options: {
   src: ReturnType<typeof createSourceRuntime>
   usage: UsageAccumulator
 }): RuleRuntime[] {
+  const agent = options.effectiveAgent
+    ? withAgentRetry(options.effectiveAgent, options.agentRetries)
+    : undefined
+
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const context: RuleContext = {
-      agent: options.effectiveAgent,
+      agent,
       cwd: options.cwd,
       id: enabledRule.id,
       localId: enabledRule.localId,

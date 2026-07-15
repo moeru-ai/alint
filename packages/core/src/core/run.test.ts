@@ -1,13 +1,14 @@
-import type { SetupConfig } from '../config/types'
+import type { AgentAdapter } from '../agent/types'
+import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { PluginDefinition, ProjectTarget, RuleConfigEntry, RuleDefinition } from '../dsl/types'
 
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { requireAgent } from '../agent'
+import { requireAgent, RetryableAgentError } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
 import { AlintRunError, runAlint } from './run'
 
@@ -59,6 +60,45 @@ describe('runAlint', () => {
         rules: enabledRules,
       },
     ])
+  }
+
+  async function runSingleAgentRule(options: {
+    adapter: AgentAdapter
+    runner?: RunnerConfig
+  }) {
+    const root = await mkdtemp(join(tmpdir(), 'alint-agent-retry-'))
+    const filePath = join(root, 'demo.txt')
+
+    await writeFile(filePath, 'hello\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFile: async (target) => {
+          const agent = requireAgent(ctx)
+          const { answer } = await agent({
+            instructions: 'review',
+            model: await ctx.model('default'),
+            prompt: target.text,
+            tools: [],
+          })
+
+          ctx.report({ message: answer })
+        },
+      }),
+    })
+
+    return runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+        {},
+        { agent: options.adapter, files: ['**/*.txt'], language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      runner: options.runner,
+      setupConfig: createSetupConfig(),
+    })
   }
 
   it('does not expose runner clock overrides', () => {
@@ -1047,6 +1087,73 @@ describe('runAlint', () => {
 
     expect(called).toBe(1)
     expect(result.diagnostics[0]?.message).toBe('from the adapter')
+  })
+
+  it('retries a retryable configured agent with the default agent retries', async () => {
+    vi.useFakeTimers()
+    let calls = 0
+
+    try {
+      const run = runSingleAgentRule({
+        adapter: async () => {
+          calls += 1
+          if (calls < 3)
+            throw new RetryableAgentError('temporary failure')
+          return { answer: 'recovered' }
+        },
+      })
+
+      await vi.waitFor(() => expect(calls).toBe(1))
+      await vi.advanceTimersByTimeAsync(500)
+      await vi.waitFor(() => expect(calls).toBe(2))
+      await vi.advanceTimersByTimeAsync(1_000)
+      const result = await run
+
+      expect(calls).toBe(3)
+      expect(result.diagnostics[0]?.message).toBe('recovered')
+    }
+    finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not retry an ordinary configured agent error', async () => {
+    const failure = new Error('ordinary configured agent failure')
+    let calls = 0
+
+    await expect(runSingleAgentRule({
+      adapter: async () => {
+        calls += 1
+        throw failure
+      },
+    })).rejects.toMatchObject({
+      cause: failure,
+      message: 'ordinary configured agent failure',
+    })
+
+    expect(calls).toBe(1)
+  })
+
+  it('does not retry a retryable configured agent when agent retries are zero', async () => {
+    let calls = 0
+
+    await expect(runSingleAgentRule({
+      adapter: async () => {
+        calls += 1
+        throw new RetryableAgentError('retry disabled')
+      },
+      runner: { agentRetries: 0 },
+    })).rejects.toThrow('retry disabled')
+
+    expect(calls).toBe(1)
+  })
+
+  it('rejects invalid agent retries at the run entry point', async () => {
+    await expect(runAlint({
+      config: [],
+      runner: { agentRetries: -1 },
+      setupConfig: createSetupConfig(),
+    })).rejects.toThrow('Agent retries must be a non-negative integer.')
   })
 
   it('ctx.agent throws a clear error when no agent is configured', async () => {
