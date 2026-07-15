@@ -5,6 +5,7 @@ import { privateSchemaToolkitRule } from './rules/no-private-schema-toolkit'
 import { redundantBindingRule } from './rules/no-redundant-binding'
 import { redundantJsdocRule } from './rules/no-redundant-jsdoc'
 import { trivialWrapperStackRule } from './rules/no-trivial-wrapper-stack'
+import { vacuousFunctionRule } from './rules/no-vacuous-function'
 
 export {
   createJudgeMessages,
@@ -32,6 +33,10 @@ export {
   trivialWrapperStackPrompt,
   trivialWrapperStackRule,
 } from './rules/no-trivial-wrapper-stack'
+export {
+  vacuousFunctionPrompt,
+  vacuousFunctionRule,
+} from './rules/no-vacuous-function'
 
 export const examplePlugin = definePlugin({
   configs: {
@@ -43,6 +48,7 @@ export const examplePlugin = definePlugin({
           'example/no-redundant-binding': 'warn',
           'example/no-redundant-jsdoc': 'warn',
           'example/no-trivial-wrapper-stack': 'warn',
+          'example/no-vacuous-function': 'warn',
         },
       },
     ],
@@ -53,6 +59,7 @@ export const examplePlugin = definePlugin({
     'no-redundant-binding': redundantBindingRule,
     'no-redundant-jsdoc': redundantJsdocRule,
     'no-trivial-wrapper-stack': trivialWrapperStackRule,
+    'no-vacuous-function': vacuousFunctionRule,
   },
 })
 
