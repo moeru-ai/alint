@@ -146,6 +146,17 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   if (state.reporterFailed)
     throw state.reporterCause
 
+  if (!timedOut && !handlerFailed && cacheKey) {
+    try {
+      options.cache.store.set(cacheKey, createCacheEntry(job, options.cache, bucket))
+      rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
+    }
+    catch {
+      // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
+      // a write failure cannot invalidate successful rule work.
+    }
+  }
+
   if (options.runSignal?.aborted)
     return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
 
@@ -165,17 +176,6 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
       failure: failure(handlerCause, job, 'handler'),
       state: 'failed',
     })
-  }
-
-  if (cacheKey) {
-    try {
-      options.cache.store.set(cacheKey, createCacheEntry(job, options.cache, bucket))
-      rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
-    }
-    catch {
-      // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
-      // a write failure cannot invalidate successful rule work.
-    }
   }
 
   return finish(job, options, bucket, { cache: 'miss', state: 'completed' })

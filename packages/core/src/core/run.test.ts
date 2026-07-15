@@ -3376,6 +3376,7 @@ describe('runAlint', () => {
       const filePath = join(root, 'demo.ts')
       const cachePath = join(root, '.alintcache')
       const controller = new AbortController()
+      const handlerCalls: string[] = []
 
       await writeFile(filePath, [
         'export function first() {}',
@@ -3385,6 +3386,7 @@ describe('runAlint', () => {
       const rule = defineRule({
         create: ctx => ({
           onTargetFunction: (target) => {
+            handlerCalls.push(target.name ?? 'anonymous')
             ctx.report({ message: `checked ${target.name}` })
 
             if (target.name === 'first') {
@@ -3416,7 +3418,19 @@ describe('runAlint', () => {
         { message: 'checked first' },
       ])
 
-      await access(cachePath)
+      const replayed = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toEqual(['first', 'second'])
+      expect(replayed.diagnostics).toMatchObject([
+        { cached: true, message: 'checked first' },
+        { message: 'checked second' },
+      ])
     })
 
     it('does not reach a rule when the signal is already aborted', async () => {
