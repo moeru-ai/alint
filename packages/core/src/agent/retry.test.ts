@@ -140,6 +140,27 @@ describe('withAgentRetry', () => {
     expect(adapter).not.toHaveBeenCalled()
   })
 
+  it('preserves a null abort reason when the active adapter rejects', async () => {
+    const controller = new AbortController()
+    const adapterError = new Error('adapter failed after abort')
+    let calls = 0
+    let rejectAdapter!: (reason?: unknown) => void
+    const adapter: AgentAdapter = async () => {
+      calls += 1
+      return new Promise((_, reject) => {
+        rejectAdapter = reject
+      })
+    }
+
+    const result = withAgentRetry(adapter, 2)({ ...request, signal: controller.signal })
+    const rejection = expect(result).rejects.toBeNull()
+    controller.abort(null)
+    rejectAdapter(adapterError)
+
+    await rejection
+    expect(calls).toBe(1)
+  })
+
   it('stops before another adapter call when aborted during backoff', async () => {
     vi.useFakeTimers()
     const controller = new AbortController()

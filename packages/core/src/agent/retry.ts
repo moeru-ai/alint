@@ -40,7 +40,7 @@ export function withAgentRetry(adapter: AgentAdapter, retries: number): AgentAda
     }
     catch (error) {
       if (request.signal?.aborted)
-        return { error: request.signal.reason ?? error, ok: false }
+        return { error: request.signal.reason, ok: false }
       if (isRetryableAgentError(error))
         throw error
       return { error, ok: false }
