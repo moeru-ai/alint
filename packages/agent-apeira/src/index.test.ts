@@ -167,6 +167,22 @@ describe('apeira adapter', () => {
     }
   })
 
+  it.each([
+    ['HTTP failure', { statusCode: 500 }],
+    ['transport failure', { code: 'ECONNRESET' }],
+  ])('preserves an outer %s when its cause is an AbortError', async (_label, marker) => {
+    const abortError = new Error('aborted')
+    abortError.name = 'AbortError'
+    const providerError = Object.assign(new Error('provider failed', { cause: abortError }), marker)
+    const adapter = createApeiraAdapter({
+      createRunner: () => async () => {
+        throw providerError
+      },
+    })
+
+    await expect(adapter(createRequest())).rejects.toBe(providerError)
+  })
+
   it.each([400, 401, 403])('preserves a non-retryable HTTP %s failure', async (statusCode) => {
     const providerError = Object.assign(new Error('request rejected'), { statusCode })
     const adapter = createApeiraAdapter({

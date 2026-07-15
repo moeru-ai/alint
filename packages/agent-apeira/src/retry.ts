@@ -10,6 +10,7 @@ const retryableTransportCodes = new Set([
 export function isRetryableApeiraFailure(error: unknown): boolean {
   const seen = new Set<object>()
   let candidate = error
+  let retryable = false
 
   while (isObject(candidate) && !seen.has(candidate)) {
     seen.add(candidate)
@@ -23,18 +24,18 @@ export function isRetryableApeiraFailure(error: unknown): boolean {
       typeof statusCode === 'number'
       && (statusCode === 408 || statusCode === 429 || (Number.isInteger(statusCode) && statusCode >= 500 && statusCode <= 599))
     ) {
-      return true
+      retryable = true
     }
 
     const code = readProperty(candidate, 'code')
     if (typeof code === 'string' && retryableTransportCodes.has(code)) {
-      return true
+      retryable = true
     }
 
     candidate = readProperty(candidate, 'cause')
   }
 
-  return false
+  return retryable
 }
 
 function isObject(value: unknown): value is object {
