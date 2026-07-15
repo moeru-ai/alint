@@ -6,8 +6,10 @@ type AgentAttempt
   = | { error: unknown, ok: false }
     | { ok: true, result: AgentResult }
 
-const defaultAgentRetries = 2
-
+/**
+ * Declares that the complete adapter invocation can be safely replayed.
+ * Adapters must not throw this after a tool or another externally visible side effect starts.
+ */
 export class RetryableAgentError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options)
@@ -19,16 +21,7 @@ export function isRetryableAgentError(error: unknown): error is RetryableAgentEr
   return error instanceof RetryableAgentError
 }
 
-export function resolveAgentRetries(value: number | undefined): number {
-  const retries = value ?? defaultAgentRetries
-  if (!Number.isInteger(retries) || retries < 0)
-    throw new TypeError('Agent retries must be a non-negative integer.')
-  return retries
-}
-
-export function withAgentRetry(adapter: AgentAdapter, retries: number): AgentAdapter {
-  const retry = resolveAgentRetries(retries)
-
+export function withAgentRetry(adapter: AgentAdapter, retries = 2): AgentAdapter {
   // TODO(agent-retry-abort): make retry backoff immediately abortable once
   // @moeru/std/with-retry supports AbortSignal.
   const invoke = withRetry(async (request: AgentRequest): Promise<AgentAttempt> => {
@@ -46,7 +39,7 @@ export function withAgentRetry(adapter: AgentAdapter, retries: number): AgentAda
       return { error, ok: false }
     }
   }, {
-    retry,
+    retry: retries,
     retryDelay: 500,
     retryDelayFactor: 2,
     retryDelayMax: 30_000,

@@ -47,21 +47,6 @@ import { requireAgent } from '@alint-js/core/agent'
 const agent = requireAgent(ctx)
 ```
 
-### Agent adapter retry
-
-Set `runner.agentRetries` to control how many times Alint may replay an agent
-invocation after its initial attempt. The default is two retries; set it to `0`
-to disable retries.
-
-Alint retries only `RetryableAgentError` from `@alint-js/core/agent`. Throwing
-this error is an adapter-level guarantee that replaying the complete invocation
-cannot duplicate a started tool or another externally visible side effect.
-Ordinary errors fail immediately. Third-party adapters may opt in by throwing
-the error with their provider failure attached as `cause`.
-
-Retry count, backoff, and exhaustion belong to the Alint runner. Adapters decide
-only whether a particular failed invocation is safe to replay.
-
 Ask a model for one validated, typed result with `@alint-js/core/structured-output`. It forces
 the model to call a single reporting tool whose arguments match a valibot schema, validates
 them, and retries with the validation error fed back to the model:

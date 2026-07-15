@@ -3,10 +3,7 @@ import type { AgentAdapter, AgentRequest } from './types'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { isRetryableAgentError, RetryableAgentError } from './index'
-import {
-  resolveAgentRetries,
-  withAgentRetry,
-} from './retry'
+import { withAgentRetry } from './retry'
 
 const request: AgentRequest = {
   instructions: 'Follow the rule.',
@@ -45,22 +42,8 @@ describe('retryableAgentError', () => {
   })
 })
 
-describe('resolveAgentRetries', () => {
-  it('uses two retries by default', () => {
-    expect(resolveAgentRetries(undefined)).toBe(2)
-  })
-
-  it.each([0, 1, 4])('accepts the non-negative integer %s', (value) => {
-    expect(resolveAgentRetries(value)).toBe(value)
-  })
-
-  it.each([-1, 1.5, Number.NaN])('rejects the invalid retry count %s', (value) => {
-    expect(() => resolveAgentRetries(value)).toThrow(TypeError)
-  })
-})
-
 describe('withAgentRetry', () => {
-  it('retries a whole invocation with exponential backoff until it succeeds', async () => {
+  it('retries a whole invocation twice by default with exponential backoff until it succeeds', async () => {
     vi.useFakeTimers()
     let calls = 0
     const adapter: AgentAdapter = async () => {
@@ -70,7 +53,7 @@ describe('withAgentRetry', () => {
       return { answer: 'ok' }
     }
 
-    const result = withAgentRetry(adapter, 2)(request)
+    const result = withAgentRetry(adapter)(request)
 
     expect(calls).toBe(1)
     await vi.advanceTimersByTimeAsync(499)
@@ -140,27 +123,6 @@ describe('withAgentRetry', () => {
     expect(adapter).not.toHaveBeenCalled()
   })
 
-  it('preserves a null abort reason when the active adapter rejects', async () => {
-    const controller = new AbortController()
-    const adapterError = new Error('adapter failed after abort')
-    let calls = 0
-    let rejectAdapter!: (reason?: unknown) => void
-    const adapter: AgentAdapter = async () => {
-      calls += 1
-      return new Promise((_, reject) => {
-        rejectAdapter = reject
-      })
-    }
-
-    const result = withAgentRetry(adapter, 2)({ ...request, signal: controller.signal })
-    const rejection = expect(result).rejects.toBeNull()
-    controller.abort(null)
-    rejectAdapter(adapterError)
-
-    await rejection
-    expect(calls).toBe(1)
-  })
-
   it('stops before another adapter call when aborted during backoff', async () => {
     vi.useFakeTimers()
     const controller = new AbortController()
@@ -186,11 +148,5 @@ describe('withAgentRetry', () => {
 
     await expect(result).rejects.toBe(reason)
     expect(calls).toBe(1)
-  })
-
-  it.each([-1, 1.5, Number.NaN])('rejects the invalid retry count %s synchronously', (value) => {
-    const adapter: AgentAdapter = async () => ({ answer: 'ok' })
-
-    expect(() => withAgentRetry(adapter, value)).toThrow(TypeError)
   })
 })

@@ -16,7 +16,7 @@ export interface RunnerCacheConfig {
 }
 
 export interface RunnerConfig {
-  /** Number of retries after an adapter explicitly declares an invocation safe to replay. Defaults to 2. */
+  /** Retries after the initial attempt for replay-safe agent failures. @default 2 */
   agentRetries?: number
   cache?: boolean | RunnerCacheConfig
   fileConcurrency?: number

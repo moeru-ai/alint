@@ -1156,12 +1156,12 @@ describe('runAlint', () => {
     expect(calls).toBe(1)
   })
 
-  it('rejects invalid agent retries at the run entry point', async () => {
+  it('ignores unused agent retry values when no adapter is configured', async () => {
     await expect(runAlint({
       config: [],
       runner: { agentRetries: -1 },
       setupConfig: createSetupConfig(),
-    })).rejects.toThrow('Agent retries must be a non-negative integer.')
+    })).resolves.toMatchObject({ diagnostics: [] })
   })
 
   it('ctx.agent throws a clear error when no agent is configured', async () => {
