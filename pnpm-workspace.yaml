@@ -15,14 +15,6 @@ allowBuilds:
   simple-git-hooks: true
 
 overrides:
-  # TODO:
-  # Oops! Something went wrong! :(
-  #
-  # eslint: 10.5.0
-  #
-  # TypeError: Cannot read properties of undefined (reading 'FunctionType')
-  #     at ./node_modules/.pnpm/eslint-plugin-sonarjs@4.1.0_eslint@10.5.0_jiti@2.7.0_/node_modules/eslint-plugin-sonarjs/cjs/S2201/rule.js:244:62
-  typescript: '^6.0.3'
   array-flatten: npm:@nolyfill/array-flatten@^1.0.44
   axios: npm:feaxios@^0.0.23
   is-core-module: npm:@nolyfill/is-core-module@^1.0.39
@@ -32,6 +24,14 @@ overrides:
   safer-buffer: npm:@nolyfill/safer-buffer@^1.0.44
   side-channel: npm:@nolyfill/side-channel@^1.0.44
   string.prototype.matchall: npm:@nolyfill/string.prototype.matchall@^1.0.44
+  # TODO:
+  # Oops! Something went wrong! :(
+  #
+  # eslint: 10.5.0
+  #
+  # TypeError: Cannot read properties of undefined (reading 'FunctionType')
+  #     at ./node_modules/.pnpm/eslint-plugin-sonarjs@4.1.0_eslint@10.5.0_jiti@2.7.0_/node_modules/eslint-plugin-sonarjs/cjs/S2201/rule.js:244:62
+  typescript: '^6.0.3'
 
 catalog:
   '@antfu/eslint-config': ^9.1.0
