@@ -1,12 +1,3 @@
-const retryableTransportCodes = new Set([
-  'ECONNRESET',
-  'EPIPE',
-  'ETIMEDOUT',
-  'UND_ERR_CONNECT_TIMEOUT',
-  'UND_ERR_HEADERS_TIMEOUT',
-  'UND_ERR_SOCKET',
-])
-
 export function isRetryableApeiraFailure(error: unknown): boolean {
   const seen = new Set<object>()
   let candidate = error
@@ -19,16 +10,13 @@ export function isRetryableApeiraFailure(error: unknown): boolean {
       return false
     }
 
+    // NOTICE: xsAI's APICallError exposes response statuses as `statusCode`. Revisit this read if its upstream contract changes:
+    // `https://github.com/moeru-ai/xsai/blob/642bb49212083aca2e1d23df5e65a00116c1f4d0/packages/shared/src/error/index.ts`
     const statusCode = readProperty(candidate, 'statusCode')
     if (
       typeof statusCode === 'number'
       && (statusCode === 408 || statusCode === 429 || (Number.isInteger(statusCode) && statusCode >= 500 && statusCode <= 599))
     ) {
-      retryable = true
-    }
-
-    const code = readProperty(candidate, 'code')
-    if (typeof code === 'string' && retryableTransportCodes.has(code)) {
       retryable = true
     }
 

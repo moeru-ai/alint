@@ -11,12 +11,6 @@ An [Apeira](https://github.com/moeru-ai/apeira)-backed `AgentAdapter` for alint.
 Apeira's `chat` runner: it translates the framework-agnostic `AgentTool`s to xsai tools,
 runs the tool loop (capped at 8 steps), and reads back the final answer and usage.
 
-Before any adapter tool starts, Apeira classifies its own transient provider and
-connection failures and may throw `RetryableAgentError`. Alint's runner can then
-replay the invocation according to `runner.agentRetries`. Once a tool starts,
-the adapter preserves the original failure instead of opting into whole-run
-retry, preventing duplicated tool effects.
-
 ## How to use
 
 ```ts

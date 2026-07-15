@@ -148,7 +148,7 @@ describe('apeira adapter', () => {
     },
   )
 
-  it('marks a wrapped pre-tool transport failure as safe to replay', async () => {
+  it('preserves an unsupported wrapped transport failure', async () => {
     const transportError = Object.assign(new Error('socket reset'), { code: 'ECONNRESET' })
     const providerError = new TypeError('fetch failed', { cause: transportError })
     const adapter = createApeiraAdapter({
@@ -157,23 +157,13 @@ describe('apeira adapter', () => {
       },
     })
 
-    try {
-      await adapter(createRequest())
-      expect.fail('expected the adapter to reject')
-    }
-    catch (error) {
-      expect(error).toBeInstanceOf(RetryableAgentError)
-      expect((error as RetryableAgentError).cause).toBe(providerError)
-    }
+    await expect(adapter(createRequest())).rejects.toBe(providerError)
   })
 
-  it.each([
-    ['HTTP failure', { statusCode: 500 }],
-    ['transport failure', { code: 'ECONNRESET' }],
-  ])('preserves an outer %s when its cause is an AbortError', async (_label, marker) => {
+  it('preserves an outer HTTP failure when its cause is an AbortError', async () => {
     const abortError = new Error('aborted')
     abortError.name = 'AbortError'
-    const providerError = Object.assign(new Error('provider failed', { cause: abortError }), marker)
+    const providerError = Object.assign(new Error('provider failed', { cause: abortError }), { statusCode: 500 })
     const adapter = createApeiraAdapter({
       createRunner: () => async () => {
         throw providerError
