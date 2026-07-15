@@ -4,7 +4,10 @@ import type { ResolvedModel } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from '@alint-js/core/agent'
 import type { AgentChannel, AgentInput, Runner, RunnerContext, Tool, Usage } from 'apeira'
 
+import { RetryableAgentError } from '@alint-js/core/agent'
 import { chat, rawTool, stepCountAtLeast, user } from 'apeira'
+
+import { isRetryableApeiraFailure } from './retry'
 
 const defaultMaxSteps = 8
 
@@ -22,12 +25,25 @@ export function createApeiraAdapter(options: Partial<ApeiraAdapterOptions> = {})
   }
 
   return async (request: AgentRequest): Promise<AgentResult> => {
+    let toolStarted = false
     const runner = createRunner(request.model, maxSteps)
-    const result = await runner(buildRunnerContext(request))
 
-    return {
-      answer: extractAnswer(result.output),
-      usage: mapUsage(result.usage),
+    try {
+      const result = await runner(buildRunnerContext(request, () => {
+        toolStarted = true
+      }))
+
+      return {
+        answer: extractAnswer(result.output),
+        usage: mapUsage(result.usage),
+      }
+    }
+    catch (error) {
+      if (!toolStarted && !request.signal?.aborted && isRetryableApeiraFailure(error)) {
+        throw new RetryableAgentError('Apeira agent invocation can be safely replayed', { cause: error })
+      }
+
+      throw error
     }
   }
 }
@@ -42,10 +58,11 @@ export function createApeiraRunner(model: ResolvedModel, maxSteps = defaultMaxSt
   })
 }
 
-export function toRunnerTools(tools: AgentTool[]): Tool[] {
+export function toRunnerTools(tools: AgentTool[], onToolStart: () => void = () => {}): Tool[] {
   return tools.map(agentTool => rawTool({
     description: agentTool.description,
     execute: async (input) => {
+      onToolStart()
       const result = await agentTool.execute(input)
       return (result ?? '') as object | string | unknown[]
     },
@@ -54,12 +71,13 @@ export function toRunnerTools(tools: AgentTool[]): Tool[] {
   }))
 }
 
-function buildRunnerContext(request: AgentRequest): RunnerContext {
+function buildRunnerContext(request: AgentRequest, onToolStart: () => void): RunnerContext {
   return {
+    abortSignal: request.signal,
     channel: noopChannel(),
     input: [user(request.prompt)],
     instructions: request.instructions,
-    tools: toRunnerTools(request.tools),
+    tools: toRunnerTools(request.tools, onToolStart),
     turnId: 'alint',
   }
 }

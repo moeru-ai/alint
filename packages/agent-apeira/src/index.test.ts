@@ -1,10 +1,21 @@
 import type { ResolvedModel } from '@alint-js/core'
-import type { AgentTool } from '@alint-js/core/agent'
+import type { AgentRequest, AgentTool } from '@alint-js/core/agent'
 import type { RunnerContext } from 'apeira'
 
+import { RetryableAgentError } from '@alint-js/core/agent'
 import { describe, expect, it } from 'vitest'
 
 import { createApeiraAdapter, toRunnerTools } from './index'
+
+function createRequest(overrides: Partial<AgentRequest> = {}): AgentRequest {
+  return {
+    instructions: 'system prompt',
+    model: fakeModel(),
+    prompt: 'find duplicate helpers',
+    tools: [],
+    ...overrides,
+  }
+}
 
 function fakeModel(): ResolvedModel {
   return {
@@ -114,6 +125,130 @@ describe('apeira adapter', () => {
     expect(captured?.instructions).toBe('be careful')
     expect(JSON.stringify(captured?.input)).toContain('find duplicates')
     expect(captured?.tools.map(tool => tool.function.name)).toEqual(['grep'])
+  })
+
+  it.each([408, 429, 500, 503, 599])(
+    'marks a pre-tool HTTP %s failure as safe to replay',
+    async (statusCode) => {
+      const providerError = Object.assign(new Error('provider failed'), { statusCode })
+      const adapter = createApeiraAdapter({
+        createRunner: () => async () => {
+          throw providerError
+        },
+      })
+
+      try {
+        await adapter(createRequest())
+        expect.fail('expected the adapter to reject')
+      }
+      catch (error) {
+        expect(error).toBeInstanceOf(RetryableAgentError)
+        expect((error as RetryableAgentError).cause).toBe(providerError)
+      }
+    },
+  )
+
+  it('marks a wrapped pre-tool transport failure as safe to replay', async () => {
+    const transportError = Object.assign(new Error('socket reset'), { code: 'ECONNRESET' })
+    const providerError = new TypeError('fetch failed', { cause: transportError })
+    const adapter = createApeiraAdapter({
+      createRunner: () => async () => {
+        throw providerError
+      },
+    })
+
+    try {
+      await adapter(createRequest())
+      expect.fail('expected the adapter to reject')
+    }
+    catch (error) {
+      expect(error).toBeInstanceOf(RetryableAgentError)
+      expect((error as RetryableAgentError).cause).toBe(providerError)
+    }
+  })
+
+  it.each([400, 401, 403])('preserves a non-retryable HTTP %s failure', async (statusCode) => {
+    const providerError = Object.assign(new Error('request rejected'), { statusCode })
+    const adapter = createApeiraAdapter({
+      createRunner: () => async () => {
+        throw providerError
+      },
+    })
+
+    await expect(adapter(createRequest())).rejects.toBe(providerError)
+  })
+
+  it('preserves a retry-shaped failure after a tool starts', async () => {
+    const providerError = Object.assign(new Error('provider failed'), { statusCode: 500 })
+    let toolCalls = 0
+    const adapter = createApeiraAdapter({
+      createRunner: () => async (context) => {
+        await context.tools[0].execute({}, { messages: [], toolCallId: 'call-1' })
+        throw providerError
+      },
+    })
+
+    await expect(adapter(createRequest({
+      tools: [{
+        description: 'record a finding',
+        execute: () => {
+          toolCalls += 1
+          return 'recorded'
+        },
+        name: 'report_finding',
+        parameters: { properties: {}, type: 'object' },
+      }],
+    }))).rejects.toBe(providerError)
+    expect(toolCalls).toBe(1)
+  })
+
+  it('preserves a retry-shaped failure thrown by tool execution', async () => {
+    const toolError = Object.assign(new Error('tool transport failed'), { statusCode: 500 })
+    const adapter = createApeiraAdapter({
+      createRunner: () => async (context) => {
+        await context.tools[0].execute({}, { messages: [], toolCallId: 'call-1' })
+        throw new Error('unreachable')
+      },
+    })
+
+    await expect(adapter(createRequest({
+      tools: [{
+        description: 'query a service',
+        execute: () => {
+          throw toolError
+        },
+        name: 'query_service',
+        parameters: { properties: {}, type: 'object' },
+      }],
+    }))).rejects.toBe(toolError)
+  })
+
+  it('forwards the caller signal to the runner context', async () => {
+    const controller = new AbortController()
+    let capturedSignal: AbortSignal | undefined
+    const adapter = createApeiraAdapter({
+      createRunner: () => async (context) => {
+        capturedSignal = context.abortSignal
+        return { output: [{ content: 'ok', role: 'assistant', type: 'message' }], usage: undefined }
+      },
+    })
+
+    await adapter(createRequest({ signal: controller.signal }))
+
+    expect(capturedSignal).toBe(controller.signal)
+  })
+
+  it('preserves a retry-shaped failure when the caller signal is already aborted', async () => {
+    const controller = new AbortController()
+    const providerError = Object.assign(new Error('provider failed'), { statusCode: 500 })
+    controller.abort(new Error('stop'))
+    const adapter = createApeiraAdapter({
+      createRunner: () => async () => {
+        throw providerError
+      },
+    })
+
+    await expect(adapter(createRequest({ signal: controller.signal }))).rejects.toBe(providerError)
   })
 })
 
