@@ -61,6 +61,11 @@ export async function loadStaticConfig(
   cwd: string,
   configFile?: string,
 ): Promise<ParsedStaticConfig> {
+  const jiti = createJiti(resolve(cwd, configFile ?? 'alint.config'), {
+    interopDefault: true,
+    moduleCache: false,
+  })
+
   const result = await loadConfig({
     configFile,
     cwd,
@@ -71,10 +76,7 @@ export async function loadStaticConfig(
     // Babel's transform bundle in the static module graph.
     //
     // Source: `https://github.com/unjs/jiti/blob/fd3bb289b75ed207edfb686d671ed50144f7e90f/lib/jiti-static.mjs#L3-L4`
-    jiti: createJiti(resolve(cwd, configFile ?? 'alint.config'), {
-      interopDefault: true,
-      moduleCache: false,
-    }),
+    import: id => jiti.import(id),
     name: 'alint',
   })
 
