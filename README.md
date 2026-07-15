@@ -1,3 +1,17 @@
+<picture>
+  <source
+    width="200"
+    srcset="./docs/assets/alint-logo.svg"
+    media="(prefers-color-scheme: dark)"
+  />
+  <source
+    width="200"
+    srcset="./docs/assets/alint-logo.svg"
+    media="(prefers-color-scheme: light), (prefers-color-scheme: no-preference)"
+  />
+  <img width="200" src="./docs/assets/alint-logo.svg" alt="Alint Logo" />
+</picture>
+
 # `alint`
 
 [![npm version][npm-version-src]][npm-version-href]
@@ -6,7 +20,7 @@
 [![JSDocs][jsdocs-src]][jsdocs-href]
 [![License][license-src]][license-href]
 
-![Demo](https://raw.githubusercontent.com/moeru-ai/alint/main/docs/assets/demo.gif)
+![Demo](./docs/assets/demo.gif)
 
 `alint` is an [`eslint`](https://eslint.org/) inspired agentic code analysis tool for vibe-coded code that needs another look. It runs model-backed rules against source files, reports diagnostics in a familiar lint format, and lets rule authors use plain model calls or swappable tool-using agents when a rule needs deeper context.
 
