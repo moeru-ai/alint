@@ -1,7 +1,7 @@
 import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { PluginDefinition, ProjectTarget, RuleConfigEntry, RuleContext, RuleDefinition } from '../dsl/types'
-import type { ExecutionCounts, ProgressPath } from '../index'
+import type { ProgressJob } from '../index'
 
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -11,7 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { requireAgent, RetryableAgentError } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
-import { AlintAbortError, AlintProgressError, AlintRunCancelledError, AlintRunError, runAlint } from './run'
+import { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './run'
 
 describe('runAlint', () => {
   function createSetupConfig(): SetupConfig {
@@ -134,15 +134,20 @@ describe('runAlint', () => {
     expect(options).toBeDefined()
   })
 
-  it('reports the public plan and job progress contract for a single file rule', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-plan-progress-'))
+  it('queues every job before starting jobs and emits each job lifecycle', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-job-progress-'))
     const filePath = join(root, 'demo.txt')
-    const executions: ExecutionCounts[] = []
-    const paths: ProgressPath[] = []
+    const events: string[] = []
+    const jobs: ProgressJob[] = []
 
     await writeFile(filePath, 'hello\n')
 
-    const rule = defineRule({
+    const firstRule = defineRule({
+      create: () => ({
+        onTargetFile: () => {},
+      }),
+    })
+    const secondRule = defineRule({
       create: () => ({
         onTargetFile: () => {},
       }),
@@ -150,48 +155,57 @@ describe('runAlint', () => {
 
     await runAlint({
       config: createConfig(
-        { review: rule },
-        { 'company/review': 'warn' },
+        { first: firstRule, second: secondRule },
+        { 'company/first': 'warn', 'company/second': 'warn' },
         {},
         { language: 'text/plain' },
       ),
       cwd: root,
       files: [filePath],
       progress: {
-        onRuleStart: payload => paths.push(payload.path),
-        onRunEnd: payload => executions.push(payload.execution),
+        onJobEnd: ({ job, state }) => events.push(`end:${job.index}:${state}`),
+        onJobQueued: ({ job }) => {
+          jobs.push(job)
+          events.push(`queued:${job.index}`)
+        },
+        onJobStart: ({ job }) => events.push(`start:${job.index}`),
       },
       setupConfig: createSetupConfig(),
     })
 
-    expect(paths).toEqual([{
-      job: { index: 1, total: 1 },
-      plan: {
-        id: `source:${filePath}`,
+    expect(jobs).toEqual([
+      {
+        id: expect.any(String),
         index: 1,
-        kind: 'source',
-        path: filePath,
-        planned: 1,
-        total: 1,
+        inputPath: filePath,
+        ruleId: 'company/first',
+        target: {
+          identity: 'file:demo.txt',
+          kind: 'file',
+        },
+        total: 2,
       },
-      rule: { id: 'company/review', index: 1, total: 1 },
-      target: {
-        identity: 'file:demo.txt',
-        index: 1,
-        kind: 'file',
-        total: 1,
+      {
+        id: expect.any(String),
+        index: 2,
+        inputPath: filePath,
+        ruleId: 'company/second',
+        target: {
+          identity: 'file:demo.txt',
+          kind: 'file',
+        },
+        total: 2,
       },
-    }])
-    expect(executions).toEqual([{
-      cached: 0,
-      cancelled: 0,
-      completed: 1,
-      failed: 0,
-      planned: 1,
-      queued: 0,
-      running: 0,
-      skipped: 0,
-    }])
+    ])
+    expect(events.slice(0, 2)).toEqual(['queued:1', 'queued:2'])
+    expect(events).toEqual([
+      'queued:1',
+      'queued:2',
+      'start:1',
+      'start:2',
+      'end:1:completed',
+      'end:2:completed',
+    ])
   })
 
   it('exposes the run signal only through the active rule execution context', async () => {
@@ -471,62 +485,6 @@ describe('runAlint', () => {
     ])
   })
 
-  it('preserves stable progress slots when inactive directory plans are filtered', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-directory-progress-'))
-    const filePath = join(root, 'notes.txt')
-    const inactiveDirectory = join(root, 'examples', 'c')
-    const activeDirectory = join(root, 'crates', 'a')
-    const runPlans: string[] = []
-    const startedPlans: string[] = []
-
-    await writeFile(filePath, 'notes\n')
-
-    const fileRule = defineRule({
-      create: () => ({
-        onTargetWith: () => {},
-      }),
-    })
-    const directoryRule = defineRule({
-      create: () => ({
-        onTargetDirectory: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: defineConfig([
-        {
-          files: ['**/*.txt'],
-          language: 'text/plain',
-          plugins: {
-            source: definePlugin({ rules: { check: fileRule } }),
-          },
-          rules: { 'source/check': 'warn' },
-        },
-        {
-          directories: ['crates/*'],
-          plugins: {
-            review: definePlugin({ rules: { check: directoryRule } }),
-          },
-          rules: { 'review/check': 'warn' },
-        },
-      ]),
-      cwd: root,
-      directories: [inactiveDirectory, activeDirectory],
-      files: [filePath],
-      progress: {
-        onPlanStart: ({ plan }) => startedPlans.push(`${plan.index}/${plan.total}:${plan.path}`),
-        onRunStart: ({ plans }) => runPlans.push(...plans.map(plan => `${plan.index}/${plan.total}:${plan.path}`)),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    expect(runPlans).toEqual([
-      `1/3:${filePath}`,
-      `3/3:${activeDirectory}`,
-    ])
-    expect(startedPlans).toEqual(runPlans)
-  })
-
   it('does not replay directory targets from cache', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-directory-cache-'))
     const directoryPath = join(root, 'crates', 'a')
@@ -554,7 +512,7 @@ describe('runAlint', () => {
         cwd: root,
         directories: [directoryPath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.kind}:${payload.cache}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.kind}:${payload.cache}`),
         },
         runner: {
           cache: { location: cachePath },
@@ -611,13 +569,13 @@ describe('runAlint', () => {
     expect(runError).toBeInstanceOf(AlintRunError)
     expect(runError).toMatchObject({
       failures: [{
-        kind: 'handler',
-        message: 'directory exploded',
-        path: {
-          plan: { path: directoryPath },
-          rule: { id: 'company/review' },
+        job: {
+          inputPath: directoryPath,
+          ruleId: 'company/review',
           target: { kind: 'directory' },
         },
+        kind: 'handler',
+        message: 'directory exploded',
       }],
       result: {
         diagnostics: [{
@@ -821,7 +779,7 @@ describe('runAlint', () => {
       cwd: root,
       files: [filePath],
       progress: {
-        onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.kind}:${payload.cache}`),
+        onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.kind}:${payload.cache}`),
       },
       runner: { cache: { location: cachePath } },
       setupConfig: createSetupConfig(),
@@ -888,7 +846,7 @@ describe('runAlint', () => {
       cwd: root,
       files: [filePath],
       progress: {
-        onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.kind}:${payload.cache}`),
+        onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.kind}:${payload.cache}`),
       },
       runner: { cache: { location: cachePath } },
       setupConfig: createSetupConfig(),
@@ -1025,13 +983,13 @@ describe('runAlint', () => {
     expect(runError).toBeInstanceOf(AlintRunError)
     expect(runError).toMatchObject({
       failures: [{
-        kind: 'handler',
-        message: 'project exploded',
-        path: {
-          plan: { path: root },
-          rule: { id: 'company/review' },
+        job: {
+          inputPath: root,
+          ruleId: 'company/review',
           target: { kind: 'project' },
         },
+        kind: 'handler',
+        message: 'project exploded',
       }],
       result: {
         diagnostics: [{
@@ -1662,7 +1620,7 @@ describe('runAlint', () => {
         ),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.rule.id}:${payload.cache}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.ruleId}:${payload.cache}`),
         },
         runner: { cache: { location: cachePath } },
         setupConfig: createSetupConfig(),
@@ -1716,7 +1674,7 @@ describe('runAlint', () => {
         config: createVersionedConfig('prompt-v2'),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+          onJobEnd: payload => ruleEndEvents.push(payload.cache),
         },
         runner: { cache: { location: cachePath } },
         setupConfig: createSetupConfig(),
@@ -1771,9 +1729,9 @@ describe('runAlint', () => {
         config,
         files: [filePath],
         progress: {
-          onDiagnostic: payload => diagnosticEvents.push(`${payload.diagnostic.message}:${payload.path?.target.kind}`),
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.kind}:${payload.cache}:${payload.state}`),
-          onUsage: payload => usageEvents.push(`${payload.record.totalTokens}:${payload.path?.target.kind}:${payload.total.totalTokens}`),
+          onDiagnostic: payload => diagnosticEvents.push(`${payload.diagnostic.message}:${payload.job.target.kind}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.kind}:${payload.cache}:${payload.state}`),
+          onUsage: payload => usageEvents.push(`${payload.record.totalTokens}:${payload.job.target.kind}`),
         },
         runner: {
           cache: { location: cachePath },
@@ -1819,7 +1777,7 @@ describe('runAlint', () => {
         'checked load:function',
       ])
       expect(usageEvents).toEqual([
-        '10:function:0',
+        '10:function',
       ])
       expect(ruleEndEvents).toEqual([
         'function:hit:cached',
@@ -1869,8 +1827,8 @@ describe('runAlint', () => {
           config,
           files: [filePath],
           progress: {
-            onRuleEnd: payload => ruleEnds.push(`${payload.cache}:${payload.state}`),
-            onRuleStart: () => controller.abort(reason),
+            onJobEnd: payload => ruleEnds.push(`${payload.cache}:${payload.state}`),
+            onJobStart: () => controller.abort(reason),
           },
           runner: { cache: { location: cachePath } },
           setupConfig: createSetupConfig(),
@@ -1957,7 +1915,7 @@ describe('runAlint', () => {
         config,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.name ?? payload.path.target.kind}:${payload.cache}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.name ?? payload.job.target.kind}:${payload.cache}`),
         },
         runner: {
           cache: { location: cachePath },
@@ -2013,7 +1971,7 @@ describe('runAlint', () => {
         config,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.target.kind}:${payload.cache}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.target.kind}:${payload.cache}`),
         },
         runner: {
           cache: { location: cachePath },
@@ -2072,7 +2030,7 @@ describe('runAlint', () => {
         config: createSettingsConfig('second'),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+          onJobEnd: payload => ruleEndEvents.push(payload.cache),
         },
         runner: {
           cache: { location: cachePath },
@@ -2124,7 +2082,7 @@ describe('runAlint', () => {
         files: [filePath],
         outputLanguage: '日本語',
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+          onJobEnd: payload => ruleEndEvents.push(payload.cache),
         },
         runner: {
           cache: { location: cachePath },
@@ -2190,7 +2148,7 @@ describe('runAlint', () => {
         config: createLanguageConfig('custom/second'),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+          onJobEnd: payload => ruleEndEvents.push(payload.cache),
         },
         runner: {
           cache: { location: cachePath },
@@ -2256,7 +2214,7 @@ describe('runAlint', () => {
         config: createMetadataConfig(2),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(payload.cache),
+          onJobEnd: payload => ruleEndEvents.push(payload.cache),
         },
         runner: {
           cache: { location: cachePath },
@@ -2388,290 +2346,6 @@ describe('runAlint', () => {
     })).rejects.toThrow('Cannot record usage outside an active rule job.')
   })
 
-  it('surrounds directory and project rule progress with target progress', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-target-kind-progress-'))
-    const directoryPath = join(root, 'crates', 'a')
-    const events: string[] = []
-    const rule = defineRule({
-      create: () => ({
-        onTargetDirectory: () => {},
-        onTargetProject: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: createConfig(
-        { review: rule },
-        { 'company/review': 'warn' },
-      ),
-      cwd: root,
-      directories: [directoryPath],
-      progress: {
-        onRuleEnd: payload => events.push(`rule:end:${payload.path.target.kind}`),
-        onRuleStart: payload => events.push(`rule:start:${payload.path.target.kind}`),
-        onTargetEnd: payload => events.push(`target:end:${payload.path.target.kind}`),
-        onTargetStart: payload => events.push(`target:start:${payload.path.target.kind}`),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    for (const kind of ['directory', 'project']) {
-      expect(events.indexOf(`target:start:${kind}`)).toBeLessThan(events.indexOf(`rule:start:${kind}`))
-      expect(events.indexOf(`rule:start:${kind}`)).toBeLessThan(events.indexOf(`rule:end:${kind}`))
-      expect(events.indexOf(`rule:end:${kind}`)).toBeLessThan(events.indexOf(`target:end:${kind}`))
-    }
-    expect(events.indexOf('rule:start:project')).toBeLessThan(events.indexOf('rule:end:directory'))
-  })
-
-  it('emits nested progress events in language target order', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-'))
-    const filePath = join(root, 'demo.ts')
-    const events: string[] = []
-
-    await writeFile(filePath, [
-      'export class Loader {}',
-      'export function load() {',
-      '  return 2',
-      '}',
-    ].join('\n'))
-
-    const rule = defineRule({
-      create: () => ({
-        onTargetClass: () => {},
-        onTargetFile: () => {},
-        onTargetFunction: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: createConfig({ 'visit-all': rule }, { 'company/visit-all': 'warn' }),
-      files: [filePath],
-      progress: {
-        onPlanEnd: payload => events.push(`plan:end:${payload.plan.path}`),
-        onPlanStart: payload => events.push(`plan:start:${payload.plan.path}:${payload.plan.total}`),
-        onRuleEnd: payload => events.push(`rule:end:${payload.path.target.kind}:${payload.path.rule.id}`),
-        onRuleStart: payload => events.push(`rule:start:${payload.path.target.kind}:${payload.path.rule.id}`),
-        onRunEnd: payload => events.push(`run:end:${payload.execution.completed}/${payload.execution.cached}/${payload.execution.failed}/${payload.execution.planned}`),
-        onRunStart: payload => events.push(`run:start:${payload.plans.length}:${payload.rulesTotal}:${payload.execution.planned}`),
-        onTargetEnd: payload => events.push(`target:end:${payload.path.target.kind}`),
-        onTargetStart: payload => events.push(`target:start:${payload.path.target.kind}:${payload.path.target.total}`),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    expect(events[0]).toBe('run:start:1:1:3')
-    expect(events[1]).toBe(`plan:start:${filePath}:1`)
-    expect(events.at(-2)).toBe(`plan:end:${filePath}`)
-    expect(events.at(-1)).toBe('run:end:3/0/0/3')
-    for (const kind of ['file', 'class', 'function']) {
-      expect(events).toContain(`target:start:${kind}:3`)
-      expect(events).toContain(`rule:start:${kind}:company/visit-all`)
-      expect(events).toContain(`rule:end:${kind}:company/visit-all`)
-      expect(events).toContain(`target:end:${kind}`)
-    }
-  })
-
-  it('emits progress in target rule order for multiple rules', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-file-first-'))
-    const firstFilePath = join(root, 'a.ts')
-    const secondFilePath = join(root, 'b.ts')
-    const events: string[] = []
-
-    await writeFile(firstFilePath, 'export function first() {}\n')
-    await writeFile(secondFilePath, 'export function second() {}\n')
-
-    const firstRule = defineRule({
-      create: () => ({
-        onTargetFile: () => {},
-        onTargetFunction: () => {},
-      }),
-    })
-    const secondRule = defineRule({
-      create: () => ({
-        onTargetFile: () => {},
-        onTargetFunction: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: createConfig(
-        {
-          first: firstRule,
-          second: secondRule,
-        },
-        {
-          'company/first': 'warn',
-          'company/second': 'warn',
-        },
-      ),
-      files: [firstFilePath, secondFilePath],
-      progress: {
-        onPlanEnd: payload => events.push(`plan:end:${payload.plan.path}`),
-        onPlanStart: payload => events.push(`plan:start:${payload.plan.path}`),
-        onRuleStart: payload => events.push([
-          payload.path.plan.path,
-          payload.path.target.kind,
-          payload.path.rule.id,
-          `${payload.path.rule.index}/${payload.path.rule.total}`,
-        ].join('|')),
-        onRunEnd: payload => events.push(`run:end:${payload.execution.completed}/${payload.execution.planned}`),
-        onRunStart: payload => events.push(`run:start:${payload.execution.planned}`),
-        onTargetEnd: payload => events.push(`${payload.path.plan.path}|target:end:${payload.path.target.kind}`),
-        onTargetStart: payload => events.push(`${payload.path.plan.path}|target:start:${payload.path.target.kind}`),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    expect(events[0]).toBe('run:start:8')
-    expect(events.at(-1)).toBe('run:end:8/8')
-    for (const path of [firstFilePath, secondFilePath]) {
-      expect(events).toContain(`plan:start:${path}`)
-      expect(events).toContain(`plan:end:${path}`)
-      for (const kind of ['file', 'function']) {
-        const first = `${path}|${kind}|company/first|1/2`
-        const second = `${path}|${kind}|company/second|2/2`
-        expect(events).toContain(`${path}|target:start:${kind}`)
-        expect(events).toContain(first)
-        expect(events).toContain(second)
-        expect(events).toContain(`${path}|target:end:${kind}`)
-        expect(events.indexOf(first)).toBeLessThan(events.indexOf(second))
-      }
-    }
-  })
-
-  it('reports run start rulesTotal as enabled rule id union across files', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-rules-total-'))
-    const firstFilePath = join(root, 'a.go')
-    const secondFilePath = join(root, 'b.txt')
-    const events: string[] = []
-
-    await writeFile(firstFilePath, 'package main\n')
-    await writeFile(secondFilePath, 'hello\n')
-
-    const firstRule = defineRule({
-      create: () => ({
-        onTargetWith: () => {},
-      }),
-    })
-    const secondRule = defineRule({
-      create: () => ({
-        onTargetWith: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: defineConfig([
-        {
-          files: ['**/*.go'],
-          language: 'text/plain',
-          plugins: {
-            first: definePlugin({
-              rules: { check: firstRule },
-            }),
-          },
-          rules: { 'first/check': 'warn' },
-        },
-        {
-          files: ['**/*.txt'],
-          language: 'text/plain',
-          plugins: {
-            second: definePlugin({
-              rules: { check: secondRule },
-            }),
-          },
-          rules: { 'second/check': 'warn' },
-        },
-      ]),
-      cwd: root,
-      files: [firstFilePath, secondFilePath],
-      progress: {
-        onRunStart: payload => events.push(`rules:${payload.rulesTotal}`),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    expect(events).toEqual([
-      'rules:2',
-    ])
-  })
-
-  it('emits timing and per-file planned metadata in progress events', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-timing-'))
-    const filePath = join(root, 'demo.txt')
-    const events: Array<{
-      endedAt?: number
-      name: string
-      planned?: number
-      startedAt?: number
-    }> = []
-
-    await writeFile(filePath, 'hello\n')
-
-    const rule = defineRule({
-      create: () => ({
-        onTargetFile: () => {},
-      }),
-    })
-
-    await runAlint({
-      config: createConfig(
-        { timing: rule },
-        { 'company/timing': 'warn' },
-        {},
-        { language: 'text/plain' },
-      ),
-      files: [filePath],
-      progress: {
-        onPlanEnd: payload => events.push({
-          endedAt: payload.endedAt,
-          name: 'plan:end',
-          planned: payload.plan.planned,
-          startedAt: payload.startedAt,
-        }),
-        onPlanStart: payload => events.push({
-          name: 'plan:start',
-          planned: payload.plan.planned,
-          startedAt: payload.startedAt,
-        }),
-        onRuleEnd: payload => events.push({
-          endedAt: payload.endedAt,
-          name: 'rule:end',
-          startedAt: payload.startedAt,
-        }),
-        onRuleStart: payload => events.push({
-          name: 'rule:start',
-          startedAt: payload.startedAt,
-        }),
-        onRunEnd: payload => events.push({
-          endedAt: payload.endedAt,
-          name: 'run:end',
-          startedAt: payload.startedAt,
-        }),
-        onRunStart: payload => events.push({
-          name: 'run:start',
-          planned: payload.plans[0]?.planned,
-          startedAt: payload.startedAt,
-        }),
-      },
-      setupConfig: createSetupConfig(),
-    })
-
-    expect(events.map(event => event.name)).toEqual([
-      'run:start',
-      'plan:start',
-      'rule:start',
-      'rule:end',
-      'plan:end',
-      'run:end',
-    ])
-    expect(events[0]).toMatchObject({ planned: 1, startedAt: expect.any(Number) })
-    expect(events[1]).toMatchObject({ planned: 1, startedAt: expect.any(Number) })
-    expect(events[2]).toMatchObject({ startedAt: expect.any(Number) })
-    expect(events[3]).toMatchObject({ endedAt: expect.any(Number), startedAt: events[2]?.startedAt })
-    expect(events[4]).toMatchObject({ endedAt: expect.any(Number), planned: 1, startedAt: events[1]?.startedAt })
-    expect(events[5]).toMatchObject({ endedAt: expect.any(Number), startedAt: events[0]?.startedAt })
-  })
-
   it('uses four rule permits by default', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-default-rule-concurrency-'))
     const files = Array.from({ length: 8 }, (_, index) => join(root, `${index}.txt`))
@@ -2705,7 +2379,7 @@ describe('runAlint', () => {
     expect(maximum).toBe(4)
   })
 
-  it('overlaps file, class, function, directory, and project callbacks in one run', async () => {
+  it('shares one rule concurrency cap across source, directory, and project jobs', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-cross-target-concurrency-'))
     const filePath = join(root, 'demo.ts')
     const directoryPath = join(root, 'workspace')
@@ -2721,7 +2395,7 @@ describe('runAlint', () => {
       started.push(kind)
       active += 1
       maximum = Math.max(maximum, active)
-      if (active === 5)
+      if (active === 2)
         release()
       await gate
       active -= 1
@@ -2745,12 +2419,12 @@ describe('runAlint', () => {
       cwd: root,
       directories: [directoryPath],
       files: [filePath],
-      runner: { ruleConcurrency: 5 },
+      runner: { ruleConcurrency: 2 },
       setupConfig: createSetupConfig(),
     })
 
     expect(new Set(started)).toEqual(new Set(['class', 'directory', 'file', 'function', 'project']))
-    expect(maximum).toBe(5)
+    expect(maximum).toBe(2)
   })
 
   it('allows one RuleRuntime to overlap while keeping job context isolated', async () => {
@@ -2793,7 +2467,7 @@ describe('runAlint', () => {
     expect(maximum).toBe(3)
   })
 
-  it('projects diagnostics, usage, and failures identically across opposite completion orders', async () => {
+  it('keeps diagnostics and usage input ordered when jobs finish out of order', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-opposite-completion-'))
     const filePath = join(root, 'demo.txt')
     await writeFile(filePath, 'hello\n')
@@ -2816,14 +2490,15 @@ describe('runAlint', () => {
       const rules = Object.fromEntries(names.map((name, index) => [name, defineRule({
         create: ctx => ({
           onTargetFile: async () => {
+            started += 1
+            if (started === names.length)
+              allStarted()
             await releases[index]!.promise
             observationOrder.push(name)
             ctx.report({ message: `${name}:diagnostic:1` })
             ctx.report({ message: `${name}:diagnostic:2` })
             ctx.metering.recordUsage({ inputTokens: index + 1, modelId: `${name}:model:1`, providerId: 'test' })
             ctx.metering.recordUsage({ modelId: `${name}:model:2`, outputTokens: index + 1, providerId: 'test' })
-            if (index !== 1)
-              throw new Error(`${name}:failure`)
           },
         }),
       })]))
@@ -2834,32 +2509,21 @@ describe('runAlint', () => {
           'company/third': 'warn',
         }, {}, { language: 'text/plain' }),
         files: [filePath],
-        progress: {
-          onRuleStart: () => {
-            started += 1
-            if (started === names.length)
-              allStarted()
-          },
-        },
         runner: { cache: false, ruleConcurrency: 3 },
         setupConfig: createSetupConfig(),
-      }).catch(error => error as AlintRunError)
+      })
 
       await startedPromise
       for (const index of completionOrder) {
         releases[index]!.release()
         await Promise.resolve()
       }
-      const error = await run
-      expect(error).toBeInstanceOf(AlintRunError)
-      if (!(error instanceof AlintRunError))
-        throw new Error('Expected run to fail with AlintRunError.')
+      const result = await run
       return {
         observationOrder,
         projected: {
-          diagnostics: error.result.diagnostics,
-          failures: error.failures,
-          usage: error.result.usage.records,
+          diagnostics: result.diagnostics,
+          usage: result.usage.records,
         },
       }
     }
@@ -2886,7 +2550,6 @@ describe('runAlint', () => {
       'third:model:1',
       'third:model:2',
     ])
-    expect(forward.projected.failures.map(failure => failure.message)).toEqual(['first:failure', 'third:failure'])
   })
 
   it('drains later jobs and orders aggregate failures by planned job index', async () => {
@@ -2951,9 +2614,9 @@ describe('runAlint', () => {
         config: createConfig({ cancel: rule }, { 'company/cancel': 'warn' }),
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ends.push(payload.path.job.index),
-          onRuleStart: (payload) => {
-            starts.push(payload.path.job.index)
+          onJobEnd: payload => ends.push(payload.job.index),
+          onJobStart: (payload) => {
+            starts.push(payload.job.index)
             controller.abort('stop')
           },
         },
@@ -3019,7 +2682,7 @@ describe('runAlint', () => {
     expect(observedSignals[0]?.aborted).toBe(true)
   })
 
-  it('cancels every job without parent or rule events when pre-aborted', async () => {
+  it('cancels every job without invoking handlers when pre-aborted', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-pre-aborted-'))
     const filePath = join(root, 'demo.txt')
     const controller = new AbortController()
@@ -3040,11 +2703,6 @@ describe('runAlint', () => {
       await runAlint({
         config: createConfig({ cancel: rule }, { 'company/cancel': 'warn' }, {}, { language: 'text/plain' }),
         files: [filePath],
-        progress: {
-          onPlanStart: () => events.push('plan'),
-          onRuleStart: () => events.push('rule'),
-          onTargetStart: () => events.push('target'),
-        },
         setupConfig: createSetupConfig(),
         signal: controller.signal,
       })
@@ -3162,13 +2820,13 @@ describe('runAlint', () => {
       ),
       files: [filePath],
       progress: {
-        onDiagnostic: payload => events.push(`${payload.diagnostic.message}:${payload.diagnostics.length}:${payload.path?.target.kind}`),
+        onDiagnostic: payload => events.push(`${payload.diagnostic.message}:${payload.job.target.kind}`),
       },
       setupConfig: createSetupConfig(),
     })
 
     expect(events).toEqual([
-      'Problem found:1:file',
+      'Problem found:file',
     ])
   })
 
@@ -3199,10 +2857,10 @@ describe('runAlint', () => {
       files: [filePath],
       progress: {
         onUsage: payload => usageEvents.push([
-          payload.path?.plan.path,
-          payload.path?.target.kind,
-          payload.path?.rule.id,
-          payload.total.totalTokens,
+          payload.job.inputPath,
+          payload.job.target.kind,
+          payload.job.ruleId,
+          payload.record.totalTokens,
         ].join(':')),
       },
       setupConfig: createSetupConfig(),
@@ -3237,7 +2895,7 @@ describe('runAlint', () => {
       ),
       files: [filePath],
       progress: {
-        onRuleEnd: payload => events.push(`${payload.state}:${payload.path.rule.id}`),
+        onJobEnd: payload => events.push(`${payload.state}:${payload.job.ruleId}`),
         onRunEnd: payload => events.push(`run:${payload.execution.completed}/${payload.execution.failed}/${payload.execution.planned}`),
       },
       setupConfig: createSetupConfig(),
@@ -3252,14 +2910,16 @@ describe('runAlint', () => {
     ])
   })
 
-  it('classifies a live diagnostic reporter rejection as infrastructure', async () => {
+  it.each(['diagnostic', 'usage'] as const)('propagates a %s reporter exception raised during a handler', async (kind) => {
     const root = await mkdtemp(join(tmpdir(), 'alint-live-diagnostic-progress-'))
     const filePath = join(root, 'demo.txt')
     const sentinel = new Error('live diagnostic reporter failed')
     await writeFile(filePath, 'hello\n')
     const rule = defineRule({
       create: ctx => ({
-        onTargetFile: () => ctx.report({ message: 'finding' }),
+        onTargetFile: () => kind === 'diagnostic'
+          ? ctx.report({ message: 'finding' })
+          : ctx.metering.recordUsage({ modelId: 'test', providerId: 'test' }),
       }),
     })
 
@@ -3268,49 +2928,9 @@ describe('runAlint', () => {
       await runAlint({
         config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'text/plain' }),
         files: [filePath],
-        progress: { onDiagnostic: () => { throw sentinel } },
-        setupConfig: createSetupConfig(),
-      })
-    }
-    catch (error) {
-      runError = error
-    }
-
-    expect(runError).toBeInstanceOf(AlintProgressError)
-    expect((runError as AlintProgressError).cause).toBe(sentinel)
-    expect(runError).toMatchObject({
-      failures: [],
-      result: { execution: { completed: 1, failed: 0, planned: 1, queued: 0, running: 0 } },
-    })
-  })
-
-  it('does not leave a rule running when its start progress callback throws', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-callback-start-'))
-    const filePath = join(root, 'demo.txt')
-
-    await writeFile(filePath, 'hello\n')
-
-    const rule = defineRule({
-      create: () => ({
-        onTargetFile: () => {},
-      }),
-    })
-
-    let runError: unknown
-
-    try {
-      await runAlint({
-        config: createConfig(
-          { 'callback-start': rule },
-          { 'company/callback-start': 'warn' },
-          {},
-          { language: 'text/plain' },
-        ),
-        files: [filePath],
         progress: {
-          onRuleStart: () => {
-            throw new Error('progress exploded')
-          },
+          onDiagnostic: kind === 'diagnostic' ? () => { throw sentinel } : undefined,
+          onUsage: kind === 'usage' ? () => { throw sentinel } : undefined,
         },
         setupConfig: createSetupConfig(),
       })
@@ -3319,100 +2939,7 @@ describe('runAlint', () => {
       runError = error
     }
 
-    expect(runError).toBeInstanceOf(AlintProgressError)
-    expect(runError).toMatchObject({
-      message: 'Progress reporting failed.',
-      result: {
-        execution: {
-          cached: 0,
-          cancelled: 0,
-          completed: 1,
-          failed: 0,
-          planned: 1,
-          queued: 0,
-          running: 0,
-        },
-      },
-    })
-  })
-
-  it('preserves rule failures when failed progress callbacks throw', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-callback-error-'))
-    const filePath = join(root, 'demo.txt')
-    const events: string[] = []
-
-    await writeFile(filePath, 'hello\n')
-
-    const rule = defineRule({
-      create: () => ({
-        onTargetFile: () => {
-          throw new Error('rule exploded')
-        },
-      }),
-    })
-
-    await expect(runAlint({
-      config: createConfig(
-        { 'callback-error': rule },
-        { 'company/callback-error': 'warn' },
-        {},
-        { language: 'text/plain' },
-      ),
-      files: [filePath],
-      progress: {
-        onRuleEnd: () => {
-          throw new Error('progress exploded')
-        },
-        onRunEnd: payload => events.push(`run:${payload.execution.completed}/${payload.execution.failed}/${payload.execution.planned}`),
-      },
-      setupConfig: createSetupConfig(),
-    })).rejects.toMatchObject({
-      failures: [{ message: 'rule exploded' }],
-      message: 'Progress reporting failed.',
-    })
-
-    expect(events).toEqual([])
-  })
-
-  it('preserves rule failures when cleanup progress callbacks throw', async () => {
-    const root = await mkdtemp(join(tmpdir(), 'alint-progress-cleanup-error-'))
-    const filePath = join(root, 'demo.txt')
-    const events: string[] = []
-
-    await writeFile(filePath, 'hello\n')
-
-    const rule = defineRule({
-      create: () => ({
-        onTargetFile: () => {
-          throw new Error('rule exploded')
-        },
-      }),
-    })
-
-    await expect(runAlint({
-      config: createConfig(
-        { cleanup: rule },
-        { 'company/cleanup': 'warn' },
-        {},
-        { language: 'text/plain' },
-      ),
-      files: [filePath],
-      progress: {
-        onPlanEnd: () => {
-          throw new Error('plan progress exploded')
-        },
-        onRunEnd: (payload) => {
-          events.push(`run:${payload.execution.completed}/${payload.execution.failed}/${payload.execution.planned}`)
-          throw new Error('run progress exploded')
-        },
-      },
-      setupConfig: createSetupConfig(),
-    })).rejects.toMatchObject({
-      failures: [{ message: 'rule exploded' }],
-      message: 'Progress reporting failed.',
-    })
-
-    expect(events).toEqual([])
+    expect(runError).toBe(sentinel)
   })
 
   describe('cacheOnly', () => {
@@ -3455,7 +2982,7 @@ describe('runAlint', () => {
         cwd: root,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
         },
         setupConfig: createSetupConfig(),
       })
@@ -3516,7 +3043,7 @@ describe('runAlint', () => {
         cwd: root,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
         },
         runner: { cache: { location: cachePath } },
         setupConfig: createSetupConfig(),
@@ -3587,7 +3114,7 @@ describe('runAlint', () => {
         cwd: root,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.path.rule.id}:${payload.cache}:${payload.state}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.job.ruleId}:${payload.cache}:${payload.state}`),
         },
         runner: { cache: { location: cachePath } },
         setupConfig: createSetupConfig(),
@@ -3636,7 +3163,7 @@ describe('runAlint', () => {
         cwd: root,
         files: [filePath],
         progress: {
-          onRuleEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
+          onJobEnd: payload => ruleEndEvents.push(`${payload.cache}:${payload.state}`),
         },
         setupConfig: createSetupConfig(),
       })
@@ -3766,7 +3293,7 @@ describe('runAlint', () => {
           cwd: root,
           files: [filePath],
           progress: {
-            onRuleEnd: payload => ruleEndEvents.push(payload.state),
+            onJobEnd: payload => ruleEndEvents.push(payload.state),
           },
           setupConfig: createSetupConfig(),
           signal: controller.signal,

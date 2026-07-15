@@ -3,7 +3,7 @@ import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
 import type { CacheEntry, CacheStore } from '../cache'
 import type { SourceFile, SourceTarget } from '../source/types'
-import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressPlanKind, ProgressTargetKind } from '../types'
+import type { Diagnostic, InferenceUsageRecord, ProgressJob, ProgressTargetKind } from '../types'
 
 export interface CacheRunContext {
   cwd: string
@@ -57,7 +57,9 @@ export interface RuleRuntimeState {
   activeFilePath?: string
   bucket: RuleExecutionBucket
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  progressPath: ProgressPath
+  job: ProgressJob
+  reporterCause?: unknown
+  reporterFailed: boolean
   signal: AbortSignal
 }
 
@@ -69,7 +71,7 @@ export interface RuleTargetExecution {
 export interface TargetExecutionPlan {
   id: string
   index: number
-  kind: ProgressPlanKind
+  kind: 'directory' | 'project' | 'source'
   path: string
   planned: number
   targets: ExecutionTarget[]

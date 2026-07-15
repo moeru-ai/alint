@@ -2,16 +2,14 @@ import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
 import type { DirectoryTarget, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
-import type { ExecutionProjection } from './execution/projection'
-import type { RuleExecutionOutcome } from './execution/types'
+import type { RuleJobOutcome } from './execution/job'
 import type { PreparedDirectory } from './targets/directory'
-import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from './targets/types'
-import type { AlintRunFailure, Diagnostic, ProgressPlanRef, RunOptions, RunResult } from './types'
+import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState } from './targets/types'
+import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressReporter, RunOptions, RunResult, RunUsage, RunUsageTotals } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { cwd as processCwd } from 'node:process'
 
-import { errorMessageFrom } from '@moeru/std/error'
 import { resolve } from 'pathe'
 
 import { combineAbortSignals } from '../agent'
@@ -20,12 +18,7 @@ import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProjec
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
 import { createCacheStore, hashText, normalizeCachePath, normalizeRunnerCacheConfig, stableHash } from './cache'
-import { executeRuleExecutionJob, resolveRuleExecutionTimeout } from './execution/envelope'
-import { selectTerminalFailure } from './execution/failure'
-import { createRuleExecutionJobs } from './execution/jobs'
-import { RunProgress } from './execution/progress'
-import { createExecutionProjection } from './execution/projection'
-import { runWithConcurrency } from './execution/scheduler'
+import { createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
 import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
 import { createSourceRuntime } from './source/runtime'
 import { createDirectoryExecutionPlans } from './targets/directory'
@@ -50,18 +43,6 @@ export class AlintAbortError extends AlintRunCancelledError {
   }
 }
 
-export class AlintProgressError extends Error {
-  readonly failures: AlintRunFailure[]
-  readonly result: RunResult
-
-  constructor(message: string, result: RunResult, failures: AlintRunFailure[], cause?: unknown) {
-    super(message, { cause })
-    this.name = 'AlintProgressError'
-    this.failures = failures
-    this.result = result
-  }
-}
-
 export class AlintRunError extends Error {
   readonly failures: AlintRunFailure[]
   readonly result: RunResult
@@ -81,13 +62,6 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
   const clock = Date.now
-  const projection = createExecutionProjection()
-  let progress: RunProgress | undefined
-  const currentProgress = (): RunProgress => {
-    if (!progress)
-      throw new Error('Rule progress is unavailable before execution planning completes.')
-    return progress
-  }
   const src = createSourceRuntime()
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
@@ -137,8 +111,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       effectiveAgent: effectiveConfig.agent,
       effectiveSettings: effectiveConfig.settings,
       options,
-      progress: currentProgress,
-      projection,
+      progress: options.progress,
       registry,
       setupConfig,
       src,
@@ -181,8 +154,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         effectiveAgent: effectiveConfig.agent,
         effectiveSettings: effectiveConfig.settings,
         options,
-        progress: currentProgress,
-        projection,
+        progress: options.progress,
         registry,
         setupConfig,
         src,
@@ -200,8 +172,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         effectiveAgent: projectConfig.agent,
         effectiveSettings: projectConfig.settings,
         options,
-        progress: currentProgress,
-        projection,
+        progress: options.progress,
         registry: buildRuleRegistry(projectConfig),
         setupConfig,
         src,
@@ -218,59 +189,57 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         ruleRuntimes: projectRuleRuntimes,
       })
   const allPlans = [...filePlans, ...directoryPlans, ...(projectPlan ? [projectPlan] : [])]
-  const activePlans = allPlans.filter(plan => plan.targets.length > 0)
-  const jobs = createRuleExecutionJobs(allPlans)
-  progress = new RunProgress(options.progress, jobs, clock)
+  const jobs = createRuleJobs(allPlans)
   const runStartedAt = clock()
-  let outcomes: RuleExecutionOutcome[] = []
-  const settledOutcomes = new Array<RuleExecutionOutcome | undefined>(jobs.length)
-  let infrastructureFailed = false
+  const settledOutcomes = new Array<RuleJobOutcome | undefined>(jobs.length)
   let infrastructureError: unknown
+  let infrastructureFailed = false
 
-  progress.emit('onRunStart', {
-    execution: progress.execution,
-    plans: activePlans.map(plan => toProgressPlanRef(plan, allPlans.length)),
-    rulesTotal: countEnabledRuleIds(files, directories, projectRuleRuntimes),
+  options.progress?.onRunStart?.({
+    jobsTotal: jobs.length,
     startedAt: runStartedAt,
   })
+  for (const job of jobs)
+    options.progress?.onJobQueued?.({ job: job.job })
 
   try {
-    const tasks = jobs.map((job, index) => async (): Promise<RuleExecutionOutcome> => {
-      const observation = projection.register(job)
-      if (options.signal?.aborted) {
-        progress.cancelJob(job)
-        const outcome: RuleExecutionOutcome = { bucket: observation.bucket, cache: 'miss', job, state: 'cancelled' }
-        settledOutcomes[index] = outcome
-        return outcome
+    let cursor = 0
+    const worker = async (): Promise<void> => {
+      while (cursor < jobs.length) {
+        const index = cursor
+        cursor += 1
+        const job = jobs[index]!
+        if (options.signal?.aborted) {
+          settledOutcomes[index] = {
+            bucket: { diagnostics: [], usage: [] },
+            cache: 'miss',
+            job,
+            state: 'cancelled',
+          }
+          continue
+        }
+        try {
+          const startedAt = clock()
+          options.progress?.onJobStart?.({ job: job.job, startedAt })
+          settledOutcomes[index] = await executeRuleJob(job, {
+            cache: cacheContext,
+            cacheOnly: options.cacheOnly,
+            clock,
+            progress: options.progress,
+            runSignal: options.signal,
+            startedAt,
+            timeoutMs,
+          })
+        }
+        catch (error) {
+          if (!infrastructureFailed) {
+            infrastructureError = error
+            infrastructureFailed = true
+          }
+        }
       }
-
-      progress.startJob(job)
-      try {
-        const outcome = await executeRuleExecutionJob(job, {
-          cache: cacheContext,
-          cacheOnly: options.cacheOnly,
-          clock,
-          observation,
-          progress,
-          runSignal: options.signal,
-          timeoutMs,
-        })
-        progress.endJob(outcome)
-        settledOutcomes[index] = outcome
-        return outcome
-      }
-      catch (error) {
-        progress.interruptJob(job)
-        throw error
-      }
-    })
-    outcomes = await runWithConcurrency(tasks, concurrency)
-  }
-  catch (error) {
-    infrastructureFailed = true
-    infrastructureError = error
-    progress.cancelQueuedJobs()
-    outcomes = settledOutcomes.filter((outcome): outcome is RuleExecutionOutcome => outcome != null)
+    }
+    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
   }
   finally {
     // cacheOnly runs are strictly read-only: reconciling a partial cache snapshot could
@@ -279,18 +248,23 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       await reconcileCache(filePlans, cacheContext)
   }
 
-  outcomes.sort((left, right) => left.job.path.job.index - right.job.path.job.index)
+  const outcomes = Array.from({ length: jobs.length }, (_, index): RuleJobOutcome => settledOutcomes[index] ?? {
+    bucket: { diagnostics: [], usage: [] },
+    cache: 'miss',
+    job: jobs[index]!,
+    state: 'cancelled',
+  })
   const failedOutcomes = outcomes.filter(
-    (outcome): outcome is Extract<RuleExecutionOutcome, { state: 'failed' }> => outcome.state === 'failed',
+    (outcome): outcome is Extract<RuleJobOutcome, { state: 'failed' }> => outcome.state === 'failed',
   )
   const failures = failedOutcomes.map(outcome => outcome.failure)
   const result: RunResult = {
-    diagnostics: projection.diagnostics(),
-    execution: progress.execution,
-    usage: projection.usage(),
+    diagnostics: outcomes.flatMap(outcome => outcome.bucket.diagnostics),
+    execution: executionCounts(outcomes),
+    usage: runUsage(outcomes),
   }
 
-  progress.emit('onRunEnd', {
+  options.progress?.onRunEnd?.({
     diagnostics: result.diagnostics,
     endedAt: clock(),
     execution: result.execution,
@@ -298,60 +272,18 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     usage: result.usage,
   })
 
-  const terminalFailure = selectTerminalFailure({
-    cancellationCause: options.signal?.reason,
-    cancelled: options.signal?.aborted ?? false,
-    failedOutcomeCauses: failedOutcomes.map(outcome => outcome.cause),
-    failures,
-    infrastructureCause: infrastructureError,
-    infrastructureFailed,
-    progressCause: progress.error,
-    progressFailed: progress.failed,
-  })
-  if (terminalFailure?.kind === 'progress')
-    throw new AlintProgressError('Progress reporting failed.', result, terminalFailure.failures, terminalFailure.cause)
-  if (terminalFailure?.kind === 'cancelled')
-    throw new AlintAbortError(result, { cause: terminalFailure.cause })
-  if (terminalFailure?.kind === 'infrastructure') {
-    throw new AlintRunError(errorMessageFrom(terminalFailure.cause) ?? String(terminalFailure.cause), result, {
-      cause: terminalFailure.cause,
-      failures: terminalFailure.failures,
-    })
-  }
-  if (terminalFailure?.kind === 'rules') {
-    throw new AlintRunError(`${terminalFailure.failures.length} rule execution${terminalFailure.failures.length === 1 ? '' : 's'} failed.`, result, {
-      cause: new AggregateError(terminalFailure.causes, 'Rule execution failures.'),
-      failures: terminalFailure.failures,
+  if (infrastructureFailed)
+    throw infrastructureError
+  if (options.signal?.aborted)
+    throw new AlintAbortError(result, { cause: options.signal.reason })
+  if (failures.length > 0) {
+    throw new AlintRunError(`${failures.length} rule execution${failures.length === 1 ? '' : 's'} failed.`, result, {
+      cause: new AggregateError(failedOutcomes.map(outcome => outcome.cause), 'Rule execution failures.'),
+      failures,
     })
   }
 
   return result
-}
-
-function countEnabledRuleIds(
-  files: PreparedFile[],
-  directories: PreparedDirectory[],
-  projectRuleRuntimes: RuleRuntime[],
-): number {
-  const ids = new Set<string>()
-
-  for (const file of files) {
-    for (const runtime of file.ruleRuntimes) {
-      ids.add(runtime.enabledRule.id)
-    }
-  }
-
-  for (const directory of directories) {
-    for (const runtime of directory.ruleRuntimes) {
-      ids.add(runtime.enabledRule.id)
-    }
-  }
-
-  for (const runtime of projectRuleRuntimes) {
-    ids.add(runtime.enabledRule.id)
-  }
-
-  return ids.size
 }
 
 function createRuleRuntimes(options: {
@@ -359,8 +291,7 @@ function createRuleRuntimes(options: {
   effectiveAgent: AgentAdapter | undefined
   effectiveSettings: Record<string, unknown>
   options: RunOptions
-  progress: () => Pick<RunProgress, 'emit'>
-  projection: ExecutionProjection
+  progress?: ProgressReporter
   registry: ReturnType<typeof buildRuleRegistry>
   setupConfig: SetupConfig
   src: ReturnType<typeof createSourceRuntime>
@@ -394,13 +325,14 @@ function createRuleRuntimes(options: {
           }
 
           state.bucket.usage.push(usageRecord)
-
-          const payload = {
-            path: state.progressPath,
-            record: usageRecord,
-            total: options.projection.usage(),
+          try {
+            options.progress?.onUsage?.({ job: state.job, record: usageRecord })
           }
-          options.progress().emit('onUsage', payload)
+          catch (cause) {
+            state.reporterCause = cause
+            state.reporterFailed = true
+            throw cause
+          }
         },
       },
       model: async (selector) => {
@@ -451,12 +383,14 @@ function createRuleRuntimes(options: {
         } satisfies Diagnostic
 
         state.bucket.diagnostics.push(diagnostic)
-        const payload = {
-          diagnostic,
-          diagnostics: options.projection.diagnostics(),
-          path: state.progressPath,
+        try {
+          options.progress?.onDiagnostic?.({ diagnostic, job: state.job })
         }
-        options.progress().emit('onDiagnostic', payload)
+        catch (cause) {
+          state.reporterCause = cause
+          state.reporterFailed = true
+          throw cause
+        }
       },
       settings: options.effectiveSettings,
       get signal() {
@@ -481,6 +415,22 @@ function createRuleRuntimes(options: {
       }),
     }
   })
+}
+
+function executionCounts(outcomes: RuleJobOutcome[]): RunResult['execution'] {
+  const counts: RunResult['execution'] = {
+    cached: 0,
+    cancelled: 0,
+    completed: 0,
+    failed: 0,
+    planned: outcomes.length,
+    queued: 0,
+    running: 0,
+    skipped: 0,
+  }
+  for (const outcome of outcomes)
+    counts[outcome.state] += 1
+  return counts
 }
 
 function mergeCapabilities(
@@ -562,6 +512,19 @@ function resolveRuleConcurrency(ruleConcurrency: number | undefined): number {
   return ruleConcurrency
 }
 
+function runUsage(outcomes: RuleJobOutcome[]): RunUsage {
+  const live: InferenceUsageRecord[] = []
+  const cached: InferenceUsageRecord[] = []
+  for (const outcome of outcomes) {
+    (outcome.state === 'cached' ? cached : live).push(...outcome.bucket.usage)
+  }
+
+  return {
+    ...usageTotals(live),
+    ...(cached.length > 0 ? { cached: usageTotals(cached) } : {}),
+  }
+}
+
 function toDiagnosticModel(
   model: ResolvedModel,
   request: string | undefined,
@@ -573,13 +536,17 @@ function toDiagnosticModel(
   }
 }
 
-function toProgressPlanRef(plan: TargetExecutionPlan, total: number): ProgressPlanRef {
-  return {
-    id: plan.id,
-    index: plan.index,
-    kind: plan.kind,
-    path: plan.path,
-    planned: plan.planned,
-    total,
+function usageTotals(records: InferenceUsageRecord[]): RunUsageTotals {
+  let inputTokens = 0
+  let outputTokens = 0
+  let totalTokens = 0
+  for (const record of records) {
+    if (record.inputTokens != null && Number.isFinite(record.inputTokens))
+      inputTokens += record.inputTokens
+    if (record.outputTokens != null && Number.isFinite(record.outputTokens))
+      outputTokens += record.outputTokens
+    if (record.totalTokens != null && Number.isFinite(record.totalTokens))
+      totalTokens += record.totalTokens
   }
+  return { inputTokens, outputTokens, records: [...records], totalTokens }
 }

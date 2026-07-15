@@ -3,9 +3,9 @@ import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '
 import type { SourceTargetKind } from './source/types'
 
 export interface AlintRunFailure {
+  job: ProgressJob
   kind: 'cache-replay' | 'handler' | 'timeout'
   message: string
-  path: ProgressPath
 }
 
 export interface Diagnostic {
@@ -25,9 +25,7 @@ export interface Diagnostic {
 
 export interface DiagnosticProgressPayload {
   diagnostic: Diagnostic
-  /** Complete snapshot projected in planned job order. */
-  diagnostics: Diagnostic[]
-  path?: ProgressPath
+  job: ProgressJob
 }
 
 export interface ExecutionCounts {
@@ -46,72 +44,46 @@ export type InferenceUsageRecord = Omit<RuleInferenceUsageRecord, 'ruleId'> & {
   ruleId: string
 }
 
-export interface PlanProgressPayload {
+export interface JobEndPayload extends JobStartPayload {
+  cache: 'hit' | 'miss'
   endedAt?: number
-  execution: ExecutionCounts
-  plan: ProgressPlanRef
+  failure?: AlintRunFailure
+  state: 'cached' | 'cancelled' | 'completed' | 'failed' | 'skipped'
+}
+
+export interface JobQueuedPayload {
+  job: ProgressJob
+}
+
+export interface JobStartPayload {
+  job: ProgressJob
   startedAt?: number
 }
 
-export interface ProgressPath {
-  job: {
-    index: number
-    total: number
-  }
-  plan: ProgressPlanRef
-  rule: {
-    id: string
-    index: number
-    total: number
-  }
-  target: {
-    identity: string
-    index: number
-    kind: ProgressTargetKind
-    name?: string
-    total: number
-  }
-}
-
-export type ProgressPlanKind = 'directory' | 'project' | 'source'
-
-export interface ProgressPlanRef {
+export interface ProgressJob {
   id: string
   index: number
-  kind: ProgressPlanKind
-  path: string
-  planned: number
+  inputPath: string
+  ruleId: string
+  target: {
+    identity: string
+    kind: ProgressTargetKind
+    name?: string
+  }
   total: number
 }
 
 export interface ProgressReporter {
   onDiagnostic?: (payload: DiagnosticProgressPayload) => void
-  onPlanEnd?: (payload: PlanProgressPayload) => void
-  onPlanStart?: (payload: PlanProgressPayload) => void
-  onRuleEnd?: (payload: RuleEndPayload) => void
-  onRuleStart?: (payload: RuleStartPayload) => void
+  onJobEnd?: (payload: JobEndPayload) => void
+  onJobQueued?: (payload: JobQueuedPayload) => void
+  onJobStart?: (payload: JobStartPayload) => void
   onRunEnd?: (payload: RunEndPayload) => void
   onRunStart?: (payload: RunStartPayload) => void
-  onTargetEnd?: (payload: TargetProgressPayload) => void
-  onTargetStart?: (payload: TargetProgressPayload) => void
   onUsage?: (payload: UsageProgressPayload) => void
 }
 
 export type ProgressTargetKind = SourceTargetKind
-
-export interface RuleEndPayload {
-  cache: 'hit' | 'miss'
-  endedAt?: number
-  failure?: AlintRunFailure
-  path: ProgressPath
-  startedAt?: number
-  state: 'cached' | 'cancelled' | 'completed' | 'failed' | 'skipped'
-}
-
-export interface RuleStartPayload {
-  path: ProgressPath
-  startedAt?: number
-}
 
 export interface RunEndPayload {
   diagnostics: Diagnostic[]
@@ -158,9 +130,7 @@ export interface RunResult {
 }
 
 export interface RunStartPayload {
-  execution: ExecutionCounts
-  plans: ProgressPlanRef[]
-  rulesTotal: number
+  jobsTotal: number
   startedAt?: number
 }
 
@@ -179,16 +149,7 @@ export interface RunUsageTotals {
   totalTokens: number
 }
 
-export interface TargetProgressPayload {
-  endedAt?: number
-  execution: ExecutionCounts
-  path: ProgressPath
-  startedAt?: number
-}
-
 export interface UsageProgressPayload {
-  path?: ProgressPath
+  job: ProgressJob
   record: InferenceUsageRecord
-  /** Complete snapshot projected in planned job order. */
-  total: RunUsage
 }
