@@ -194,14 +194,6 @@ function parseModel(
   return parsedModel
 }
 
-function parseNonNegativeInteger(value: unknown, label: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0) {
-    throw new TypeError(`Invalid ${label}: must be a non-negative integer.`)
-  }
-
-  return value
-}
-
 function parsePositiveInteger(value: unknown, label: string): number {
   if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
     throw new TypeError(`Invalid ${label}: must be a positive integer.`)
@@ -248,7 +240,7 @@ function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
   const parsedRunner: RunnerConfig = {}
 
   if (runner.agent_retries !== undefined) {
-    parsedRunner.agentRetries = parseNonNegativeInteger(
+    parsedRunner.agentRetries = readFiniteNumber(
       runner.agent_retries,
       'runner agent_retries',
     )

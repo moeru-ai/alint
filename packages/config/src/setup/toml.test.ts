@@ -232,8 +232,8 @@ id = "qwen"
 `)).toThrow('Invalid runner file_concurrency: must be a positive integer.')
   })
 
-  it.each([-1, 1.5])('rejects invalid runner agent retries: %s', (agentRetries) => {
-    expect(() => parseSetupConfigToml(`
+  it.each([-1, 1.5])('preserves finite runner agent retries: %s', (agentRetries) => {
+    const config = parseSetupConfigToml(`
 version = 1
 
 [runner]
@@ -246,7 +246,9 @@ endpoint = "http://localhost:11434/v1"
 
 [[providers.models]]
 id = "qwen"
-`)).toThrow(/agent_retries.*non-negative integer/)
+`)
+
+    expect(config.runner?.agentRetries).toBe(agentRetries)
   })
 
   it('rejects invalid provider types', () => {
