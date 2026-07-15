@@ -1,6 +1,7 @@
 import type { RuleContext } from '../dsl/types'
 import type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage } from './types'
 
+export { isRetryableAgentError, RetryableAgentError } from './retry'
 export type { AgentAdapter, AgentRequest, AgentResult, AgentTool, AgentUsage }
 
 export function defineTool(tool: AgentTool): AgentTool {
