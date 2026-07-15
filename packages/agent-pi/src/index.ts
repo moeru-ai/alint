@@ -47,7 +47,7 @@ export function createPiAdapter(options: Partial<PiAdapterOptions> = {}): AgentA
       request.signal?.throwIfAborted()
       const assistant = [...messages].reverse().find(message => message.role === 'assistant')
 
-      if (assistant?.stopReason === 'error') {
+      if (assistant?.stopReason === 'error' || assistant?.stopReason === 'aborted') {
         throw new Error(
           typeof assistant.errorMessage === 'string'
             ? assistant.errorMessage

@@ -51,6 +51,19 @@ describe('pi adapter', () => {
     expect(error.cause.message).toBe('provider failed')
   })
 
+  it('marks an aborted assistant result before tools as safe to retry', async () => {
+    const controller = new AbortController()
+    const adapter = createPiAdapter({
+      run: async () => [{ errorMessage: 'request aborted', role: 'assistant', stopReason: 'aborted' }],
+    })
+
+    const error = await adapter(fakeRequest({ signal: controller.signal })).catch(error => error)
+
+    expect(error).toBeInstanceOf(RetryableAgentError)
+    expect(error.cause).toBeInstanceOf(Error)
+    expect(error.cause.message).toBe('request aborted')
+  })
+
   it('preserves an assistant error after a tool starts', async () => {
     let toolCalls = 0
     const adapter = createPiAdapter({
