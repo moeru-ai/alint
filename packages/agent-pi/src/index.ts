@@ -3,6 +3,7 @@ import type { AgentAdapter, AgentRequest, AgentResult, AgentTool } from '@alint-
 import type { AgentTool as PiTool } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
 
+import { RetryableAgentError } from '@alint-js/core/agent'
 import { Agent } from '@earendil-works/pi-agent-core'
 import { Type } from '@earendil-works/pi-ai'
 
@@ -12,7 +13,9 @@ export interface PiAdapterOptions {
 
 interface PiMessage {
   content?: unknown
+  errorMessage?: unknown
   role?: unknown
+  stopReason?: unknown
 }
 
 // NOTE(Makito): Extend this when necessary.
@@ -26,10 +29,41 @@ export function createPiAdapter(options: Partial<PiAdapterOptions> = {}): AgentA
   const run = options.run ?? runPiAgent
 
   return async (request: AgentRequest): Promise<AgentResult> => {
-    const messages = await run(request)
-    const assistant = [...messages].reverse().find(message => message.role === 'assistant')
+    let toolStarted = false
+    const trackedRequest: AgentRequest = {
+      ...request,
+      tools: request.tools.map(tool => ({
+        ...tool,
+        execute: (input) => {
+          toolStarted = true
+          return tool.execute(input)
+        },
+      })),
+    }
 
-    return { answer: extractPiText(assistant), usage: undefined }
+    try {
+      request.signal?.throwIfAborted()
+      const messages = await run(trackedRequest)
+      request.signal?.throwIfAborted()
+      const assistant = [...messages].reverse().find(message => message.role === 'assistant')
+
+      if (assistant?.stopReason === 'error') {
+        throw new Error(
+          typeof assistant.errorMessage === 'string'
+            ? assistant.errorMessage
+            : 'Pi agent failed',
+        )
+      }
+
+      return { answer: extractPiText(assistant), usage: undefined }
+    }
+    catch (error) {
+      if (request.signal?.aborted)
+        throw request.signal.reason
+      if (!toolStarted)
+        throw new RetryableAgentError('Pi agent invocation can be safely replayed', { cause: error })
+      throw error
+    }
   }
 }
 
@@ -98,9 +132,18 @@ async function runPiAgent(request: AgentRequest): Promise<PiMessage[]> {
       tools: toPiTools(request.tools),
     },
   })
+  const abort = () => agent.abort()
+  request.signal?.addEventListener('abort', abort, { once: true })
 
-  await agent.prompt(request.prompt)
-  await agent.waitForIdle()
+  try {
+    request.signal?.throwIfAborted()
+    await agent.prompt(request.prompt)
+    await agent.waitForIdle()
+    request.signal?.throwIfAborted()
 
-  return agent.state.messages as PiMessage[]
+    return agent.state.messages as PiMessage[]
+  }
+  finally {
+    request.signal?.removeEventListener('abort', abort)
+  }
 }
