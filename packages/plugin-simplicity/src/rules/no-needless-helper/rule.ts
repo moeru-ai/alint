@@ -154,6 +154,7 @@ async function judge(
       model: await ctx.model(),
       operation: 'no-needless-helper-judge',
       schema: needlessHelperResponseSchema,
+      signal: ctx.signal,
     }))
   }
   catch (error) {

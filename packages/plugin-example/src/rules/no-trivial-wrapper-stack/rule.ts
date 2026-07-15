@@ -15,6 +15,7 @@ export const trivialWrapperStackRule = defineRule({
         operation: 'trivial-wrapper-stack-judge',
         outputLanguage: ctx.outputLanguage,
         prompt: trivialWrapperStackPrompt,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
 

@@ -154,6 +154,7 @@ async function judgePythonTypedArtifactBoundary(
     model: await ctx.model(),
     operation: 'python-typed-artifact-boundary-judge',
     schema: pythonTypedArtifactBoundaryResponseSchema,
+    signal: ctx.signal,
   })
 
   return findings

@@ -169,6 +169,7 @@ async function judgeResponsibilityBoundary(
     model,
     operation: 'go-responsibility-boundary-judge',
     schema: responsibilityBoundaryResponseSchema,
+    signal: ctx.signal,
   })
 
   return findings

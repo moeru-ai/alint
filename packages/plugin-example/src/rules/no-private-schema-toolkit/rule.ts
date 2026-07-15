@@ -15,6 +15,7 @@ export const privateSchemaToolkitRule = defineRule({
         operation: 'private-schema-toolkit-judge',
         outputLanguage: ctx.outputLanguage,
         prompt: privateSchemaToolkitPrompt,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
 

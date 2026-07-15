@@ -71,6 +71,7 @@ export function createBasicStructuredRule(rule: DeclarativeRuleDefinition): Rule
           model,
           operation: `declarative-${rule.name}-structured`,
           schema: declarativeFindingResponseSchema,
+          signal: ctx.signal,
         })
 
         reportDeclarativeFindings({

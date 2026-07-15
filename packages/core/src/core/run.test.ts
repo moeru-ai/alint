@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import { requireAgent } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
-import { AlintRunError, runAlint } from './run'
+import { AlintAbortError, AlintRunError, runAlint } from './run'
 
 describe('runAlint', () => {
   function createSetupConfig(): SetupConfig {
@@ -2975,6 +2975,199 @@ describe('runAlint', () => {
       })
 
       await expect(access(join(root, '.alintcache'))).rejects.toThrow()
+    })
+  })
+
+  describe('signal', () => {
+    it('stops starting rules once the run is aborted', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-stops-'))
+      const filePath = join(root, 'demo.ts')
+      const controller = new AbortController()
+      const visited: string[] = []
+
+      await writeFile(filePath, [
+        'export function first() {}',
+        'export function second() {}',
+        'export function third() {}',
+      ].join('\n'))
+
+      // Abort from inside the first rule, standing in for a user cancelling mid-run.
+      const rule = defineRule({
+        create: () => ({
+          onTargetFunction: (target) => {
+            visited.push(target.name ?? 'anonymous')
+            controller.abort()
+          },
+        }),
+      })
+
+      let runError: unknown
+
+      try {
+        await runAlint({
+          config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+          cwd: root,
+          files: [filePath],
+          setupConfig: createSetupConfig(),
+          signal: controller.signal,
+        })
+      }
+      catch (error) {
+        runError = error
+      }
+
+      expect(runError).toBeInstanceOf(AlintAbortError)
+      expect(visited).toEqual(['first'])
+    })
+
+    it('reports an abort as cancellation rather than a rule failure', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-not-errored-'))
+      const filePath = join(root, 'demo.ts')
+      const controller = new AbortController()
+      const ruleEndEvents: string[] = []
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      // A rule whose model call is cancelled throws, exactly as generateStructured would.
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: () => {
+            controller.abort()
+            ctx.signal?.throwIfAborted()
+          },
+        }),
+      })
+
+      let runError: unknown
+
+      try {
+        await runAlint({
+          config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+          cwd: root,
+          files: [filePath],
+          progress: {
+            onRuleEnd: payload => ruleEndEvents.push(payload.state),
+          },
+          setupConfig: createSetupConfig(),
+          signal: controller.signal,
+        })
+      }
+      catch (error) {
+        runError = error
+      }
+
+      expect(runError).toBeInstanceOf(AlintAbortError)
+      expect((runError as AlintAbortError).result.execution?.errored).toBe(0)
+      expect(ruleEndEvents).toEqual([])
+    })
+
+    it('keeps diagnostics and cache entries from rules that finished before the abort', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-keeps-work-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const controller = new AbortController()
+
+      await writeFile(filePath, [
+        'export function first() {}',
+        'export function second() {}',
+      ].join('\n'))
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            ctx.report({ message: `checked ${target.name}` })
+
+            if (target.name === 'first') {
+              controller.abort()
+            }
+          },
+        }),
+      })
+      const config = createConfig({ review: rule }, { 'company/review': 'warn' })
+
+      let runError: unknown
+
+      try {
+        await runAlint({
+          config,
+          cwd: root,
+          files: [filePath],
+          runner: { cache: { location: cachePath } },
+          setupConfig: createSetupConfig(),
+          signal: controller.signal,
+        })
+      }
+      catch (error) {
+        runError = error
+      }
+
+      expect(runError).toBeInstanceOf(AlintAbortError)
+      expect((runError as AlintAbortError).result.diagnostics).toMatchObject([
+        { message: 'checked first' },
+      ])
+
+      // Cancelling must not throw away a rule that already ran, so a later run replays it.
+      const cacheFile = JSON.parse(await readFile(cachePath, 'utf8')) as {
+        entries: Record<string, { diagnostics: { message: string }[] }>
+      }
+      const cachedMessages = Object.values(cacheFile.entries).flatMap(entry => entry.diagnostics.map(d => d.message))
+
+      expect(cachedMessages).toEqual(['checked first'])
+    })
+
+    it('does not reach a rule when the signal is already aborted', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-upfront-'))
+      const filePath = join(root, 'demo.ts')
+      const controller = new AbortController()
+      let handlerCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+      controller.abort()
+
+      const rule = defineRule({
+        create: () => ({
+          onTargetFunction: () => {
+            handlerCalls += 1
+          },
+        }),
+      })
+
+      await expect(runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        setupConfig: createSetupConfig(),
+        signal: controller.signal,
+      })).rejects.toBeInstanceOf(AlintAbortError)
+
+      expect(handlerCalls).toBe(0)
+    })
+
+    it('exposes the signal on rule context so rules can forward it', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-ctx-'))
+      const filePath = join(root, 'demo.ts')
+      const controller = new AbortController()
+      const seen: (AbortSignal | undefined)[] = []
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: () => {
+            seen.push(ctx.signal)
+          },
+        }),
+      })
+
+      await runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        setupConfig: createSetupConfig(),
+        signal: controller.signal,
+      })
+
+      expect(seen).toEqual([controller.signal])
     })
   })
 })
