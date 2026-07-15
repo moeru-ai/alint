@@ -65,20 +65,16 @@ function createRenderingProgressReporter(
       summary.onDiagnostic?.(payload)
       renderer.render()
     },
-    onPlanEnd: (payload) => {
-      summary.onPlanEnd?.(payload)
+    onJobEnd: (payload) => {
+      summary.onJobEnd?.(payload)
       renderer.render()
     },
-    onPlanStart: (payload) => {
-      summary.onPlanStart?.(payload)
+    onJobQueued: (payload) => {
+      summary.onJobQueued?.(payload)
       renderer.render()
     },
-    onRuleEnd: (payload) => {
-      summary.onRuleEnd?.(payload)
-      renderer.render()
-    },
-    onRuleStart: (payload) => {
-      summary.onRuleStart?.(payload)
+    onJobStart: (payload) => {
+      summary.onJobStart?.(payload)
       renderer.render()
     },
     onRunEnd: (payload) => {
@@ -88,14 +84,6 @@ function createRenderingProgressReporter(
     onRunStart: (payload) => {
       summary.onRunStart?.(payload)
       renderer.start()
-    },
-    onTargetEnd: (payload) => {
-      summary.onTargetEnd?.(payload)
-      renderer.render()
-    },
-    onTargetStart: (payload) => {
-      summary.onTargetStart?.(payload)
-      renderer.render()
     },
     onUsage: (payload) => {
       summary.onUsage?.(payload)

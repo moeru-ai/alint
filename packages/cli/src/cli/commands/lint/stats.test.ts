@@ -1,4 +1,4 @@
-import type { PlanProgressPayload, RunEndPayload } from '@alint-js/core'
+import type { JobStartPayload, RunEndPayload } from '@alint-js/core'
 
 import { describe, expect, it } from 'vitest'
 
@@ -32,9 +32,7 @@ describe('createStatsCollector', () => {
   it('captures final counts and duration', () => {
     const collector = createStatsCollector()
     collector.reporter.onRunStart?.({
-      execution: counts({ planned: 5, queued: 5 }),
-      plans: [],
-      rulesTotal: 3,
+      jobsTotal: 5,
       startedAt: 1000,
     })
     collector.reporter.onRunEnd?.(runEnd({
@@ -76,23 +74,23 @@ describe('mergeProgressReporters', () => {
     const extraEvents: string[] = []
     const merged = mergeProgressReporters(
       {
-        onPlanStart: () => {
-          baseEvents.push('plan:start')
+        onJobStart: () => {
+          baseEvents.push('job:start')
           throw cause
         },
         onRunEnd: () => baseEvents.push('run:end'),
       },
       {
-        onPlanStart: () => extraEvents.push('plan:start'),
+        onJobStart: () => extraEvents.push('job:start'),
         onRunEnd: () => extraEvents.push('run:end'),
       },
     )
 
-    merged?.onPlanStart?.(planStart())
+    merged?.onJobStart?.(jobStart())
 
     expect(() => merged?.onRunEnd?.(runEnd())).toThrow(cause)
-    expect(baseEvents).toEqual(['plan:start'])
-    expect(extraEvents).toEqual(['plan:start', 'run:end'])
+    expect(baseEvents).toEqual(['job:start'])
+    expect(extraEvents).toEqual(['job:start', 'run:end'])
   })
 
   it('normalizes one nullish consumer failure after delivering to both', () => {
@@ -116,10 +114,16 @@ function counts(overrides: Partial<RunEndPayload['execution']>): RunEndPayload['
   return { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0, queued: 0, running: 0, skipped: 0, ...overrides }
 }
 
-function planStart(): PlanProgressPayload {
+function jobStart(): JobStartPayload {
   return {
-    execution: counts({ planned: 1, running: 1 }),
-    plan: { id: 'source:0', index: 0, kind: 'source', path: '/repo/a.ts', planned: 1, total: 1 },
+    job: {
+      id: 'job:0',
+      index: 0,
+      inputPath: '/repo/a.ts',
+      ruleId: 'rule/a',
+      target: { identity: 'file:0', kind: 'file' },
+      total: 1,
+    },
   }
 }
 

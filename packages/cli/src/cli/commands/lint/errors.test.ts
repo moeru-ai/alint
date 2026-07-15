@@ -1,6 +1,6 @@
 import type { AlintRunFailure, RunResult } from '@alint-js/core'
 
-import { AlintProgressError, AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { describe, expect, it } from 'vitest'
 
 import { formatCancelledError, formatRunError } from './errors'
@@ -15,20 +15,22 @@ function failure(
   index: number,
   kind: AlintRunFailure['kind'],
   planPath: string,
-  targetKind: AlintRunFailure['path']['target']['kind'],
+  targetKind: AlintRunFailure['job']['target']['kind'],
   ruleId: string,
   message: string,
   targetName?: string,
 ): AlintRunFailure {
   return {
+    job: {
+      id: `job-${index}`,
+      index,
+      inputPath: planPath,
+      ruleId,
+      target: { identity: `target-${index}`, kind: targetKind, name: targetName },
+      total: 3,
+    },
     kind,
     message,
-    path: {
-      job: { index, total: 3 },
-      plan: { id: `plan-${index}`, index, kind: targetKind === 'directory' ? 'directory' : targetKind === 'project' ? 'project' : 'source', path: planPath, planned: 1, total: 3 },
-      rule: { id: ruleId, index: 0, total: 1 },
-      target: { identity: `target-${index}`, index: 0, kind: targetKind, name: targetName, total: 1 },
-    },
   }
 }
 
@@ -47,34 +49,6 @@ describe('formatRunError', () => {
       '  [handler] src/a.ts > function parse > rule/a: boom',
       '  [timeout] src/b.ts > file > rule/b: Rule execution timed out after 100ms.',
       '  [cache-replay] . > project > rule/c: invalid cached diagnostic',
-      '',
-    ].join('\n'))
-  })
-
-  it('prints a progress infrastructure heading before attached rule failures', () => {
-    const cause = new Error('terminal renderer crashed')
-    const error = new AlintProgressError('Progress reporting failed.', EMPTY_RESULT, failures.slice(0, 1), cause)
-
-    expect(formatRunError(error, false)).toBe([
-      'error Progress reporting failed.',
-      '  infrastructure: terminal renderer crashed',
-      '  [handler] src/a.ts > function parse > rule/a: boom',
-      '',
-    ].join('\n'))
-  })
-
-  it.each([
-    [undefined, 'undefined'],
-    [null, 'null'],
-    [0, '0'],
-    [false, 'false'],
-    ['', ''],
-  ])('always formats infrastructure cause %j', (cause, expected) => {
-    const error = new AlintProgressError('Progress reporting failed.', EMPTY_RESULT, [], cause)
-
-    expect(formatRunError(error, false)).toBe([
-      'error Progress reporting failed.',
-      `  infrastructure: ${expected}`,
       '',
     ].join('\n'))
   })

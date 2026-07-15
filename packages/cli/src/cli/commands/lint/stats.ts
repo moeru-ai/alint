@@ -81,17 +81,14 @@ export function mergeProgressReporters(
     onDiagnostic: (payload) => {
       deliverBoth(reporter => reporter.onDiagnostic?.(payload))
     },
-    onPlanEnd: (payload) => {
-      deliverBoth(reporter => reporter.onPlanEnd?.(payload))
+    onJobEnd: (payload) => {
+      deliverBoth(reporter => reporter.onJobEnd?.(payload))
     },
-    onPlanStart: (payload) => {
-      deliverBoth(reporter => reporter.onPlanStart?.(payload))
+    onJobQueued: (payload) => {
+      deliverBoth(reporter => reporter.onJobQueued?.(payload))
     },
-    onRuleEnd: (payload) => {
-      deliverBoth(reporter => reporter.onRuleEnd?.(payload))
-    },
-    onRuleStart: (payload) => {
-      deliverBoth(reporter => reporter.onRuleStart?.(payload))
+    onJobStart: (payload) => {
+      deliverBoth(reporter => reporter.onJobStart?.(payload))
     },
     onRunEnd: (payload) => {
       deliverBoth(reporter => reporter.onRunEnd?.(payload))
@@ -100,12 +97,6 @@ export function mergeProgressReporters(
     },
     onRunStart: (payload) => {
       deliverBoth(reporter => reporter.onRunStart?.(payload))
-    },
-    onTargetEnd: (payload) => {
-      deliverBoth(reporter => reporter.onTargetEnd?.(payload))
-    },
-    onTargetStart: (payload) => {
-      deliverBoth(reporter => reporter.onTargetStart?.(payload))
     },
     onUsage: (payload) => {
       deliverBoth(reporter => reporter.onUsage?.(payload))

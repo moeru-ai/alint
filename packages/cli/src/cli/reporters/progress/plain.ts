@@ -1,7 +1,7 @@
 import type {
   Diagnostic,
+  JobStartPayload,
   ProgressReporter,
-  RuleStartPayload,
   RunEndPayload,
   RunStartPayload,
 } from '@alint-js/core'
@@ -14,12 +14,12 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
   const writeLine = (line: string) => options.write(`${line}\n`)
 
   return {
-    onRuleStart: (payload: RuleStartPayload) => {
-      const target = payload.path.target.name
-        ? `${payload.path.target.kind} ${payload.path.target.name}`
-        : payload.path.target.kind
+    onJobStart: (payload: JobStartPayload) => {
+      const target = payload.job.target.name
+        ? `${payload.job.target.kind} ${payload.job.target.name}`
+        : payload.job.target.kind
 
-      writeLine(`scan ${payload.path.plan.path} > ${target} > ${payload.path.rule.id}`)
+      writeLine(`scan ${payload.job.inputPath} > ${target} > ${payload.job.ruleId}`)
     },
     onRunEnd: (payload: RunEndPayload) => {
       const warnCount = countDiagnostics(payload.diagnostics, 'warn')
@@ -30,7 +30,7 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
       writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens, ${completed} completed, ${cached} cached, ${failed} failed, ${cancelled} cancelled, ${skipped} skipped`)
     },
     onRunStart: (payload: RunStartPayload) => {
-      writeLine(`alint started: ${payload.plans.length} plans, ${payload.rulesTotal} rules, ${payload.execution.planned} planned executions`)
+      writeLine(`alint started: ${payload.jobsTotal} queued jobs`)
     },
   }
 }

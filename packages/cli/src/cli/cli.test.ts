@@ -2784,7 +2784,7 @@ export default [
       expect(state.maxActive).toBe(3)
       const frames = io.stderrText.split(/\r\u001B\[K(?:\r\u001B\[1A\u001B\[K)*/u)
       expect(frames.some(frame =>
-        frame.includes('3 running') && frame.includes('3 more running rules hidden'),
+        frame.includes('3 running') && frame.includes('2 more running jobs hidden'),
       )).toBe(true)
       expect(io.stderrText).toContain('[handler]')
       expect(exitCode).toBe(2)
@@ -3177,28 +3177,15 @@ export default [
     expect(statsRecord.ruleCounts.cancelled).toBe(0)
   })
 
-  it('returns execution-failure exit code for progress infrastructure failures', async () => {
+  it('propagates progress reporter failures through the generic CLI error path', async () => {
     const io = await createTestIo()
     clearCiEnv(io.env)
-    const result = {
-      diagnostics: [],
-      execution: { cached: 0, cancelled: 0, completed: 1, failed: 2, planned: 3, queued: 0, running: 0, skipped: 0 },
-      usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
-    }
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(
-      new alintCore.AlintProgressError('Progress reporting failed.', result, [], new Error('render failed')),
-    )
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(new Error('render failed'))
 
     try {
       await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
 
-      const exitCode = await executeCli(['node', 'alint', 'demo.ts'], io)
-
-      expect(exitCode).toBe(2)
-      expect(io.stderrText).toContain('error Progress reporting failed.\n  infrastructure: render failed')
-      const statsFiles = await readdir(statsDirOf(io))
-      const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
-      expect(statsRecord.ruleCounts).toEqual({ cached: 0, cancelled: 0, completed: 1, failed: 2, planned: 3 })
+      await expect(executeCli(['node', 'alint', 'demo.ts'], io)).rejects.toThrow('render failed')
     }
     finally {
       runAlint.mockRestore()

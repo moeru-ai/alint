@@ -1,11 +1,4 @@
-import type {
-  Diagnostic,
-  ExecutionCounts,
-  ProgressPath,
-  ProgressPlanRef,
-  ProgressReporter,
-  RuleEndPayload,
-} from '@alint-js/core'
+import type { Diagnostic, ExecutionCounts, ProgressJob, ProgressReporter } from '@alint-js/core'
 
 import { relative } from 'node:path'
 
@@ -30,120 +23,72 @@ export interface SummaryProgressReporterOptions {
   spinnerFrames: string[]
 }
 
-interface ActiveRuleState {
-  path: ProgressPath
-  startedAt: number
-}
+type JobLifecycle = 'cached' | 'cancelled' | 'completed' | 'failed' | 'queued' | 'running' | 'skipped'
 
-interface PlanBlock {
-  rows: string[]
-  runningRules: number
-}
-
-interface PlanState {
-  activeRules: Map<number, ActiveRuleState>
-  execution: ExecutionCounts
-  hasExecutionSnapshot: boolean
-  lifecycle: 'queued' | 'running' | 'settled'
-  plan: ProgressPlanRef
+interface JobState {
+  job: ProgressJob
   startedAt?: number
+  state: JobLifecycle
 }
 
 interface SummaryState {
   diagnostics: Diagnostic[]
-  endedAt?: number
   execution: ExecutionCounts
-  plans: Map<string, PlanState>
-  runStartedAt?: number
+  jobs: Map<string, JobState>
   spinnerIndex: number
   totalTokens: number
 }
 
 export function createSummaryProgressReporter(options: SummaryProgressReporterOptions): SummaryProgressReporter {
   const now = Date.now
-  const state: SummaryState = createInitialState()
+  const state = createInitialState()
 
   return {
     getRows: () => createRows(state, options, now()),
-    onDiagnostic: (payload) => {
-      state.diagnostics = payload.diagnostics
+    onDiagnostic: ({ diagnostic }) => {
+      state.diagnostics.push(diagnostic)
     },
-    onPlanEnd: (payload) => {
-      const plan = getPlanState(state, payload.plan)
-      applyPlanSnapshot(state, plan, payload.execution)
-      plan.activeRules.clear()
-      plan.lifecycle = 'settled'
-    },
-    onPlanStart: (payload) => {
-      const plan = getPlanState(state, payload.plan)
-      applyPlanSnapshot(state, plan, payload.execution)
-      plan.lifecycle = 'running'
-      plan.startedAt = payload.startedAt ?? now()
-    },
-    onRuleEnd: (payload) => {
-      const plan = getPlanState(state, payload.path.plan)
-
-      if (!plan.activeRules.delete(payload.path.job.index))
-        return
-
-      transitionToTerminal(plan.execution, payload.state)
-      transitionToTerminal(state.execution, payload.state)
-    },
-    onRuleStart: (payload) => {
-      const plan = getPlanState(state, payload.path.plan)
-
-      plan.lifecycle = 'running'
-      plan.startedAt ??= payload.startedAt ?? now()
-      if (plan.activeRules.has(payload.path.job.index))
-        return
-
-      plan.activeRules.set(payload.path.job.index, {
-        path: payload.path,
-        startedAt: payload.startedAt ?? now(),
+    onJobEnd: (payload) => {
+      const current = state.jobs.get(payload.job.id)
+      state.jobs.set(payload.job.id, {
+        job: payload.job,
+        startedAt: payload.startedAt ?? current?.startedAt,
+        state: payload.state,
       })
-
-      // The first started job is already represented by onPlanStart's snapshot.
-      // Later starts need a local transition because rule events intentionally carry only paths.
-      if (plan.activeRules.size > plan.execution.running) {
-        transition(plan.execution, 'queued', 'running')
-        transition(state.execution, 'queued', 'running')
-      }
+      transition(state.execution, 'running', payload.state)
+    },
+    onJobQueued: ({ job }) => {
+      state.jobs.set(job.id, { job, state: 'queued' })
+      state.execution.queued += 1
+    },
+    onJobStart: (payload) => {
+      state.jobs.set(payload.job.id, {
+        job: payload.job,
+        startedAt: payload.startedAt ?? now(),
+        state: 'running',
+      })
+      transition(state.execution, 'queued', 'running')
     },
     onRunEnd: (payload) => {
-      state.diagnostics = payload.diagnostics
-      state.endedAt = payload.endedAt ?? now()
+      state.diagnostics = [...payload.diagnostics]
       state.execution = { ...payload.execution }
-      state.runStartedAt = payload.startedAt ?? state.runStartedAt
       state.totalTokens = payload.usage.totalTokens
     },
-    onRunStart: (payload) => {
+    onRunStart: ({ jobsTotal }) => {
       state.diagnostics = []
-      state.endedAt = undefined
-      state.execution = { ...payload.execution }
-      state.plans = new Map(payload.plans.map(plan => [plan.id, createPlanState(plan)]))
-      state.runStartedAt = payload.startedAt ?? now()
+      state.execution = createCounts(jobsTotal)
+      state.jobs.clear()
       state.spinnerIndex = 0
       state.totalTokens = 0
     },
-    onTargetEnd: () => {},
-    onTargetStart: () => {},
-    onUsage: (payload) => {
-      state.totalTokens = payload.total.totalTokens
+    onUsage: ({ record }) => {
+      if (record.totalTokens != null && Number.isFinite(record.totalTokens))
+        state.totalTokens += record.totalTokens
     },
     tick: () => {
       state.spinnerIndex = (state.spinnerIndex + 1) % Math.max(options.spinnerFrames.length, 1)
     },
   }
-}
-
-function applyPlanSnapshot(state: SummaryState, plan: PlanState, execution: ExecutionCounts): void {
-  const previous = plan.hasExecutionSnapshot ? plan.execution : createCounts(execution.planned)
-
-  for (const key of ['cached', 'cancelled', 'completed', 'failed', 'queued', 'running'] as const)
-    state.execution[key] += execution[key] - previous[key]
-
-  plan.execution = { ...execution }
-  plan.hasExecutionSnapshot = true
 }
 
 function completeGraphemeBoundary(input: string, maximumIndex: number): number {
@@ -170,7 +115,7 @@ function createCounts(planned = 0): ExecutionCounts {
     completed: 0,
     failed: 0,
     planned,
-    queued: planned,
+    queued: 0,
     running: 0,
     skipped: 0,
   }
@@ -180,19 +125,9 @@ function createInitialState(): SummaryState {
   return {
     diagnostics: [],
     execution: createCounts(),
-    plans: new Map(),
+    jobs: new Map(),
     spinnerIndex: 0,
     totalTokens: 0,
-  }
-}
-
-function createPlanState(plan: ProgressPlanRef): PlanState {
-  return {
-    activeRules: new Map(),
-    execution: createCounts(plan.planned),
-    hasExecutionSnapshot: false,
-    lifecycle: 'queued',
-    plan,
   }
 }
 
@@ -202,31 +137,23 @@ function createRows(state: SummaryState, options: SummaryProgressReporterOptions
 
   const warnCount = countDiagnostics(state.diagnostics, 'warn')
   const errorCount = countDiagnostics(state.diagnostics, 'error')
-  const blocks = [...state.plans.values()]
-    .filter(plan => plan.lifecycle === 'running')
-    .sort((left, right) => left.plan.index - right.plan.index)
-    .map(plan => formatPlanBlock(plan, state, options, now))
+  const runningJobs = [...state.jobs.values()]
+    .filter(job => job.state === 'running')
+    .sort((left, right) => left.job.index - right.job.index)
   const footerRows = 1
   const separatorRows = options.rows === undefined || options.rows >= 2 ? 1 : 0
-  const fixedRows = footerRows + separatorRows
   const contentBudget = options.rows === undefined
     ? Number.POSITIVE_INFINITY
-    : Math.max(options.rows - fixedRows, 0)
-  const allContentRows = blocks.reduce((total, block) => total + block.rows.length, 0)
-  const needsMarker = allContentRows > contentBudget
-  const blockBudget = needsMarker ? Math.max(contentBudget - 1, 0) : contentBudget
-  const visible: string[] = []
-  let hiddenRules = 0
+    : Math.max(options.rows - footerRows - separatorRows, 0)
+  const needsMarker = runningJobs.length > contentBudget
+  const jobBudget = needsMarker ? Math.max(contentBudget - 1, 0) : contentBudget
+  const visible = runningJobs
+    .slice(0, jobBudget)
+    .map(job => formatJobRow(job, state, options, now))
+  const hiddenJobs = runningJobs.length - visible.length
 
-  for (const block of blocks) {
-    if (visible.length + block.rows.length <= blockBudget)
-      visible.push(...block.rows)
-    else
-      hiddenRules += block.runningRules
-  }
-
-  if (hiddenRules > 0 && contentBudget > 0)
-    visible.push(fitRow(`    └─ … ${hiddenRules} more running rules hidden`, options.columns))
+  if (hiddenJobs > 0 && contentBudget > 0)
+    visible.push(fitRow(`    └─ … ${hiddenJobs} more running jobs hidden`, options.columns))
   if (separatorRows === 1)
     visible.push('')
   visible.push(formatFooter(state, warnCount, errorCount, options))
@@ -277,62 +204,23 @@ function formatFooter(
   const { cached, failed, queued, running } = state.execution
 
   return fitRow(
-    `${running} running / ${queued} queued / ${cached} cached / ${warnCount} warn / ${errorCount} error / ${failed} failed`,
+    `${running} running / ${queued} queued / ${cached} cached / ${warnCount} warn / ${errorCount} error / ${failed} failed / ${state.totalTokens} tokens`,
     options.columns,
   )
 }
 
-function formatPlanBlock(
-  plan: PlanState,
-  state: SummaryState,
-  options: SummaryProgressReporterOptions,
-  now: number,
-): PlanBlock {
-  const rules = [...plan.activeRules.values()].sort((left, right) => left.path.job.index - right.path.job.index)
-
-  return {
-    rows: [
-      formatPlanRow(plan, state, options),
-      ...rules.map(rule => fitRow(
-        `    ${formatTarget(rule.path)} > ${rule.path.rule.id} (${formatDuration(now - rule.startedAt)})`,
-        options.columns,
-      )),
-    ],
-    runningRules: rules.length,
-  }
-}
-
-function formatPlanRow(plan: PlanState, state: SummaryState, options: SummaryProgressReporterOptions): string {
+function formatJobRow(jobState: JobState, state: SummaryState, options: SummaryProgressReporterOptions, now: number): string {
   const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
-  const path = options.cwd ? relative(options.cwd, plan.plan.path) || '.' : plan.plan.path
-  const prefix = `${spinner} ${path}`
-  const { cached, completed, failed, planned } = plan.execution
-  const counter = `${completed}/${cached}/${failed}/${planned}`
-  const counterWidth = fastStringWidth(counter)
+  const inputPath = options.cwd ? relative(options.cwd, jobState.job.inputPath) || '.' : jobState.job.inputPath
+  const target = jobState.job.target.name
+    ? `${jobState.job.target.kind} ${jobState.job.target.name}`
+    : jobState.job.target.kind
+  const startedAt = jobState.startedAt ?? now
 
-  if (options.columns <= counterWidth)
-    return fitRow(counter, options.columns)
-
-  const fittedPrefix = fitRow(prefix, options.columns - counterWidth - 1)
-  const padding = Math.max(1, options.columns - fastStringWidth(fittedPrefix) - counterWidth)
-
-  return `${fittedPrefix}${' '.repeat(padding)}${counter}`
-}
-
-function formatTarget(path: ProgressPath): string {
-  return path.target.name ? `${path.target.kind} ${path.target.name}` : path.target.kind
-}
-
-function getPlanState(state: SummaryState, plan: ProgressPlanRef): PlanState {
-  const existing = state.plans.get(plan.id)
-  if (existing) {
-    existing.plan = plan
-    return existing
-  }
-
-  const next = createPlanState(plan)
-  state.plans.set(plan.id, next)
-  return next
+  return fitRow(
+    `${spinner} ${inputPath} > ${target} > ${jobState.job.ruleId} (${formatDuration(now - startedAt)})`,
+    options.columns,
+  )
 }
 
 function styleRow(
@@ -358,8 +246,4 @@ function styleRow(
 function transition(counts: ExecutionCounts, from: 'queued' | 'running', to: keyof ExecutionCounts): void {
   counts[from] -= 1
   counts[to] += 1
-}
-
-function transitionToTerminal(counts: ExecutionCounts, terminal: RuleEndPayload['state']): void {
-  transition(counts, 'running', terminal)
 }

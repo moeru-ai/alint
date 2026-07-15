@@ -5,7 +5,7 @@ import type { LintCommandOptions } from './options'
 import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { AlintProgressError, AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
+import { AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
 import { resolve } from 'pathe'
 
 import { formatDiagnostics } from '../../reporters'
@@ -132,7 +132,7 @@ async function runLintCommand(
     restoreProgressConsole?.()
     progress?.dispose()
 
-    if (error instanceof AlintProgressError || error instanceof AlintRunError) {
+    if (error instanceof AlintRunError) {
       await persistStats(error.result)
       io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
       return 2

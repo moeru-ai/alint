@@ -1,4 +1,4 @@
-import type { ExecutionCounts } from '@alint-js/core'
+import type { ExecutionCounts, ProgressJob } from '@alint-js/core'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -19,32 +19,33 @@ function counts(overrides: Partial<ExecutionCounts> = {}): ExecutionCounts {
   }
 }
 
+const JOB: ProgressJob = {
+  id: 'job:1',
+  index: 1,
+  inputPath: 'src/input.ts',
+  ruleId: 'company/require-title',
+  target: { identity: 'function:loadConfig', kind: 'function', name: 'loadConfig' },
+  total: 2,
+}
+
 describe('createPlainProgressReporter', () => {
-  it('writes plan paths and final exclusive execution counts without ANSI escapes', () => {
+  it('writes flat job paths and final exclusive execution counts without ANSI escapes', () => {
     const chunks: string[] = []
     const reporter = createPlainProgressReporter({ write: chunk => chunks.push(chunk) })
-    const plan = { id: 'source:1', index: 1, kind: 'source' as const, path: 'src/input.ts', planned: 2, total: 1 }
 
-    reporter.onRunStart?.({ execution: counts({ planned: 2, queued: 2 }), plans: [plan], rulesTotal: 2 })
-    reporter.onRuleStart?.({
-      path: {
-        job: { index: 1, total: 2 },
-        plan,
-        rule: { id: 'company/require-title', index: 1, total: 2 },
-        target: { identity: 'function:loadConfig', index: 1, kind: 'function', name: 'loadConfig', total: 2 },
-      },
-    })
+    reporter.onRunStart?.({ jobsTotal: 2 })
+    reporter.onJobStart?.({ job: JOB })
     reporter.onRunEnd?.({
       diagnostics: [
-        { filePath: plan.path, message: 'warned', ruleId: 'company/require-title', severity: 'warn' },
-        { filePath: plan.path, message: 'errored', ruleId: 'company/require-title', severity: 'error' },
+        { filePath: JOB.inputPath, message: 'warned', ruleId: JOB.ruleId, severity: 'warn' },
+        { filePath: JOB.inputPath, message: 'errored', ruleId: JOB.ruleId, severity: 'error' },
       ],
       execution: counts({ cached: 1, completed: 1, planned: 2 }),
       usage: { inputTokens: 10, outputTokens: 14, records: [], totalTokens: 24 },
     })
 
     expect(chunks.join('')).toBe([
-      'alint started: 1 plans, 2 rules, 2 planned executions',
+      'alint started: 2 queued jobs',
       'scan src/input.ts > function loadConfig > company/require-title',
       'alint finished: 1 warn, 1 error, 24 tokens, 1 completed, 1 cached, 0 failed, 0 cancelled, 0 skipped',
       '',
@@ -78,13 +79,13 @@ describe('createCliProgressReporter', () => {
       write: chunk => chunks.push(chunk),
     })
 
-    progress.reporter.onRunStart?.({ execution: counts({ planned: 1, queued: 1 }), plans: [], rulesTotal: 1 })
+    progress.reporter.onRunStart?.({ jobsTotal: 1 })
     progress.dispose()
 
-    expect(chunks).toEqual(['alint started: 0 plans, 1 rules, 1 planned executions\n'])
+    expect(chunks).toEqual(['alint started: 1 queued jobs\n'])
   })
 
-  it('forwards plan lifecycle events to the rendering summary', () => {
+  it('renders queued and started jobs through the TTY summary', () => {
     vi.useFakeTimers()
     const chunks: string[] = []
     const progress = createCliProgressReporter({
@@ -95,12 +96,13 @@ describe('createCliProgressReporter', () => {
       rows: 10,
       write: chunk => chunks.push(chunk),
     })
-    const plan = { id: 'project:1', index: 1, kind: 'project' as const, path: '/repo', planned: 1, total: 1 }
+    const current = { ...JOB, inputPath: '/repo/src/input.ts' }
 
-    progress.reporter.onRunStart?.({ execution: counts({ planned: 1, queued: 1 }), plans: [plan], rulesTotal: 1 })
-    progress.reporter.onPlanStart?.({ execution: counts({ planned: 1, running: 1 }), plan })
+    progress.reporter.onRunStart?.({ jobsTotal: 1 })
+    progress.reporter.onJobQueued?.({ job: current })
+    progress.reporter.onJobStart?.({ job: current })
 
-    expect(chunks.join('\n')).toContain('⠋ .')
+    expect(chunks.join('\n')).toContain('⠋ src/input.ts > function loadConfig > company/require-title')
     progress.dispose()
     vi.useRealTimers()
   })
