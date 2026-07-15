@@ -208,6 +208,30 @@ describe('runAlint', () => {
     ])
   })
 
+  it('assigns unique job IDs to repeated inputs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-repeated-job-id-'))
+    const filePath = join(root, 'demo.txt')
+    const jobs: ProgressJob[] = []
+    await writeFile(filePath, 'hello\n')
+    const rule = defineRule({
+      create: () => ({
+        onTargetFile: () => {},
+      }),
+    })
+
+    await runAlint({
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'text/plain' }),
+      cwd: root,
+      files: [filePath, filePath],
+      progress: { onJobQueued: ({ job }) => jobs.push(job) },
+      runner: { cache: false },
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(jobs.map(job => job.index)).toEqual([1, 2])
+    expect(new Set(jobs.map(job => job.id)).size).toBe(2)
+  })
+
   it('exposes the run signal only through the active rule execution context', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-rule-signal-'))
     const filePath = join(root, 'demo.txt')
@@ -2945,16 +2969,21 @@ describe('runAlint', () => {
   it('propagates a reporter exception caught by the handler', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-caught-diagnostic-progress-'))
     const filePath = join(root, 'demo.txt')
-    const sentinel = new Error('caught diagnostic reporter failed')
+    const firstSentinel = new Error('first caught diagnostic reporter failed')
+    const secondSentinel = new Error('second caught diagnostic reporter failed')
+    const sentinels = [firstSentinel, secondSentinel]
+    let callbackIndex = 0
     await writeFile(filePath, 'hello\n')
     const rule = defineRule({
       create: ctx => ({
         onTargetFile: () => {
-          try {
-            ctx.report({ message: 'finding' })
-          }
-          catch {
-            // A rule cannot suppress an infrastructure failure from the reporter.
+          for (const message of ['first finding', 'second finding']) {
+            try {
+              ctx.report({ message })
+            }
+            catch {
+              // A rule cannot suppress an infrastructure failure from the reporter.
+            }
           }
         },
       }),
@@ -2965,7 +2994,7 @@ describe('runAlint', () => {
       await runAlint({
         config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'text/plain' }),
         files: [filePath],
-        progress: { onDiagnostic: () => { throw sentinel } },
+        progress: { onDiagnostic: () => { throw sentinels[callbackIndex++] } },
         setupConfig: createSetupConfig(),
       })
     }
@@ -2973,7 +3002,7 @@ describe('runAlint', () => {
       runError = error
     }
 
-    expect(runError).toBe(sentinel)
+    expect(runError).toBe(firstSentinel)
   })
 
   describe('cacheOnly', () => {

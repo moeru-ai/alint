@@ -21,7 +21,6 @@ export interface ExecuteRuleJobOptions {
 export interface RuleJob {
   execution: RuleTargetExecution
   job: ProgressJob
-  plan: TargetExecutionPlan
   target: ExecutionTarget
 }
 
@@ -48,11 +47,12 @@ export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
     for (const target of plan.targets) {
       for (const execution of target.executions) {
         const ruleId = execution.runtime.enabledRule.id
+        const index = jobs.length + 1
         jobs.push({
           execution,
           job: {
-            id: stableHash({ planId: plan.id, ruleId, targetIdentity: target.identity }),
-            index: jobs.length + 1,
+            id: stableHash({ index, planId: plan.id, ruleId, targetIdentity: target.identity }),
+            index,
             inputPath: plan.path,
             ruleId,
             target: {
@@ -62,7 +62,6 @@ export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
             },
             total,
           },
-          plan,
           target,
         })
       }

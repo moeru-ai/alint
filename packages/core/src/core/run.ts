@@ -329,8 +329,10 @@ function createRuleRuntimes(options: {
             options.progress?.onUsage?.({ job: state.job, record: usageRecord })
           }
           catch (cause) {
-            state.reporterCause = cause
-            state.reporterFailed = true
+            if (!state.reporterFailed) {
+              state.reporterCause = cause
+              state.reporterFailed = true
+            }
             throw cause
           }
         },
@@ -387,8 +389,10 @@ function createRuleRuntimes(options: {
           options.progress?.onDiagnostic?.({ diagnostic, job: state.job })
         }
         catch (cause) {
-          state.reporterCause = cause
-          state.reporterFailed = true
+          if (!state.reporterFailed) {
+            state.reporterCause = cause
+            state.reporterFailed = true
+          }
           throw cause
         }
       },
