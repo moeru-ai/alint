@@ -25,6 +25,7 @@ interface StringifiableRunnerCacheConfig {
 }
 
 interface StringifiableRunnerConfig {
+  agent_retries?: number
   cache?: boolean | StringifiableRunnerCacheConfig
   file_concurrency?: number
   rule_concurrency?: number
@@ -68,6 +69,7 @@ interface TomlRunnerCacheConfig {
 }
 
 interface TomlRunnerConfig {
+  agent_retries?: unknown
   cache?: unknown
   file_concurrency?: unknown
   rule_concurrency?: unknown
@@ -236,6 +238,13 @@ function parseProvider(provider: TomlProviderDefinition): ProviderDefinition {
 
 function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
   const parsedRunner: RunnerConfig = {}
+
+  if (runner.agent_retries !== undefined) {
+    parsedRunner.agentRetries = readFiniteNumber(
+      runner.agent_retries,
+      'runner agent_retries',
+    )
+  }
 
   if (runner.cache !== undefined) {
     parsedRunner.cache = parseRunnerCache(runner.cache)
@@ -441,6 +450,7 @@ function toTomlProvider(
 
 function toTomlRunner(runner: RunnerConfig): StringifiableRunnerConfig {
   return {
+    agent_retries: runner.agentRetries,
     cache: toTomlRunnerCache(runner.cache),
     file_concurrency: runner.fileConcurrency,
     rule_concurrency: runner.ruleConcurrency,

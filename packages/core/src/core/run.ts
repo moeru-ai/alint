@@ -12,6 +12,7 @@ import { cwd as processCwd } from 'node:process'
 import { errorCauseFrom, errorMessageFrom } from '@moeru/std/error'
 import { resolve } from 'pathe'
 
+import { withAgentRetry } from '../agent/retry'
 import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
@@ -415,10 +416,14 @@ function createRuleRuntimes(options: {
   src: ReturnType<typeof createSourceRuntime>
   usage: UsageAccumulator
 }): RuleRuntime[] {
+  const agent = options.effectiveAgent
+    ? withAgentRetry(options.effectiveAgent, options.options.runner?.agentRetries)
+    : undefined
+
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const context: RuleContext = {
-      agent: options.effectiveAgent,
+      agent,
       cwd: options.cwd,
       id: enabledRule.id,
       localId: enabledRule.localId,

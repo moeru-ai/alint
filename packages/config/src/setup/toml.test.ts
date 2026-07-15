@@ -90,6 +90,7 @@ max_tokens = 2048
 version = 1
 
 [runner]
+agent_retries = 0
 file_concurrency = 2
 rule_concurrency = 1
 timeout_ms = 120000
@@ -104,6 +105,7 @@ id = "qwen"
 `)
 
     expect(config.runner).toEqual({
+      agentRetries: 0,
       fileConcurrency: 2,
       ruleConcurrency: 1,
       timeoutMs: 120000,
@@ -121,6 +123,7 @@ id = "qwen"
         },
       ],
       runner: {
+        agentRetries: 2,
         fileConcurrency: 2,
         ruleConcurrency: 1,
         timeoutMs: 120000,
@@ -129,6 +132,7 @@ id = "qwen"
     })
 
     expect(toml).toContain('[runner]')
+    expect(toml).toContain('agent_retries = 2')
     expect(toml).toContain('file_concurrency = 2')
     expect(toml).toContain('rule_concurrency = 1')
     expect(toml).toContain('timeout_ms = 120000')
@@ -226,6 +230,25 @@ endpoint = "http://localhost:11434/v1"
 [[providers.models]]
 id = "qwen"
 `)).toThrow('Invalid runner file_concurrency: must be a positive integer.')
+  })
+
+  it.each([-1, 1.5])('preserves finite runner agent retries: %s', (agentRetries) => {
+    const config = parseSetupConfigToml(`
+version = 1
+
+[runner]
+agent_retries = ${agentRetries}
+
+[[providers]]
+id = "local"
+type = "openai-compatible"
+endpoint = "http://localhost:11434/v1"
+
+[[providers.models]]
+id = "qwen"
+`)
+
+    expect(config.runner?.agentRetries).toBe(agentRetries)
   })
 
   it('rejects invalid provider types', () => {

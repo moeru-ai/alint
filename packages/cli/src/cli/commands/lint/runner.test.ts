@@ -1,0 +1,21 @@
+import { describe, expect, it } from 'vitest'
+
+import { resolveRunnerConfig } from './runner'
+
+describe('resolveRunnerConfig', () => {
+  it('lets project config override setup agent retries', () => {
+    expect(resolveRunnerConfig(
+      { providers: [], runner: { agentRetries: 1 }, version: 1 },
+      { runner: { agentRetries: 4 } },
+      { format: 'stylish' },
+    )?.agentRetries).toBe(4)
+  })
+
+  it('preserves zero agent retries from project config', () => {
+    expect(resolveRunnerConfig(
+      { providers: [], runner: { agentRetries: 1 }, version: 1 },
+      { runner: { agentRetries: 0 } },
+      { format: 'stylish' },
+    )?.agentRetries).toBe(0)
+  })
+})
