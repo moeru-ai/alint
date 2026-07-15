@@ -1120,18 +1120,26 @@ describe('runAlint', () => {
   it('does not retry an ordinary configured agent error', async () => {
     const failure = new Error('ordinary configured agent failure')
     let calls = 0
+    let error: unknown
 
-    await expect(runSingleAgentRule({
-      adapter: async () => {
-        calls += 1
-        throw failure
-      },
-    })).rejects.toMatchObject({
-      cause: failure,
-      message: 'ordinary configured agent failure',
-    })
+    try {
+      await runSingleAgentRule({
+        adapter: async () => {
+          calls += 1
+          throw failure
+        },
+      })
+    }
+    catch (caught) {
+      error = caught
+    }
 
     expect(calls).toBe(1)
+    expect(error).toBeInstanceOf(AlintRunError)
+    if (!(error instanceof AlintRunError))
+      throw new TypeError('Expected runSingleAgentRule to reject with AlintRunError.')
+    expect(error.message).toBe('ordinary configured agent failure')
+    expect(error.cause).toBe(failure)
   })
 
   it('does not retry a retryable configured agent when agent retries are zero', async () => {
