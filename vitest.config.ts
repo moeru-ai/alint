@@ -8,7 +8,7 @@ export default defineConfig({
       'packages/config',
       'packages/cli',
       'packages/tools-fs',
-      'packages/plugin-example',
+      'packages/plugin-js',
       'packages/plugin-example-agent',
       'packages/plugin-example-go',
       'packages/plugin-example-rust',
