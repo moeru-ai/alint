@@ -11,7 +11,7 @@ export function isRetryableApeiraFailure(error: unknown): boolean {
     }
 
     // NOTICE: xsAI's APICallError exposes response statuses as `statusCode`. Revisit this read if its upstream contract changes:
-    // `https://github.com/moeru-ai/xsai/blob/642bb49212083aca2e1d23df5e65a00116c1f4d0/packages/shared/src/error/index.ts`
+    // `https://github.com/moeru-ai/xsai/blob/642bb49212083aca2e1d23df5e65a00116c1f4d0/packages/shared/src/error/index.ts#L56-L66`
     const statusCode = readProperty(candidate, 'statusCode')
     if (
       typeof statusCode === 'number'
