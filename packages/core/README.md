@@ -14,7 +14,6 @@ This package provides the core SDK and run engine APIs used by plugins, rules, l
 - model resolution by size and capability
 - diagnostics and progress payload types
 - framework-neutral agent contracts under `@alint-js/core/agent`
-- request-level inference retry under `@alint-js/core/inference`
 - tool-call structured output under `@alint-js/core/structured-output`
 - config DSL and types for advanced SDK consumers
 
@@ -74,13 +73,6 @@ const { findings } = await generateStructured({
   schema: responseSchema,
 })
 ```
-
-First-party model adapters that directly own fetch use `@alint-js/core/inference`
-for bounded request-level retry. `createRetryingFetch()` retries HTTP 408, 429,
-5xx, and typed transient transport failures without replaying an entire agent
-invocation. Adapters whose runtime owns transport may use the provider's native
-request retry while sharing the same bounded retry budget. Rules and plugins
-should not add their own provider retry loops.
 
 The reporting tool is named `reportFindings` by default (`toolName` overrides it) and its
 description defaults to the schema's valibot `description(...)`. `toolParametersFromSchema`,

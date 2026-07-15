@@ -11,14 +11,6 @@ An [Apeira](https://github.com/moeru-ai/apeira)-backed `AgentAdapter` for alint.
 Apeira's `chat` runner: it translates the framework-agnostic `AgentTool`s to xsai tools,
 runs the tool loop (capped at 8 steps), and reads back the final answer and usage.
 
-Each Apeira model step uses bounded inference retry by default: two retries for HTTP
-408, 429, and 5xx responses and typed transport failures. Retry stays inside the failed
-provider request, so completed steps and tool calls are not replayed. Pass
-`{ retryPolicy }` to lower or tune the request retry budget.
-
-Recovery after a partially consumed HTTP-200 response is not supported until
-Apeira/xsAI exposes safe request-step resume.
-
 ## How to use
 
 ```ts
@@ -27,8 +19,7 @@ import { createApeiraAdapter } from '@alint-js/agent-apeira'
 const adapter = createApeiraAdapter()
 ```
 
-Pass `{ createRunner }` to inject a custom Apeira runner. The injected factory receives
-the resolved model, maximum step count, and retrying provider `fetch`.
+Pass `{ createRunner }` to inject a custom Apeira runner.
 
 ## When to use
 

@@ -6,7 +6,7 @@ import type { ResolvedModel } from '../models/types'
 import { createServer } from 'node:http'
 
 import { array, description, number, object, optional, picklist, pipe, string } from 'valibot'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured, InvalidStructuredOutputError, toolParametersFromSchema } from './index'
 
@@ -23,9 +23,7 @@ const responseSchema = pipe(
   description('Report findings for this file.'),
 )
 
-type QueuedResponse
-  = | { body: unknown, status?: number }
-    | { disconnect: true }
+interface QueuedResponse { body: unknown, status?: number }
 
 interface RecordedRequest {
   body: Record<string, unknown>
@@ -50,10 +48,6 @@ beforeEach(async () => {
       requests.push({ body: JSON.parse(payload) as Record<string, unknown>, url: request.url ?? '' })
 
       const next = responses.shift() ?? { body: {}, status: 500 }
-      if ('disconnect' in next) {
-        request.socket.destroy()
-        return
-      }
       response.writeHead(next.status ?? 200, { 'Content-Type': 'application/json' })
       response.end(JSON.stringify(next.body))
     })
@@ -276,97 +270,6 @@ describe('generateStructured', () => {
     expect(result).toEqual(validPayload)
     expect(requests).toHaveLength(2)
     expect(requests[1].body.messages).toEqual(requests[0].body.messages)
-  })
-
-  it('keeps transport retries when semantic attempts are limited to one', async () => {
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-    responses.push({ body: toolCallCompletion(validPayload) })
-
-    const result = await generateStructured({ ...createOptions(), maxAttempts: 1 })
-
-    expect(result).toEqual(validPayload)
-    expect(requests).toHaveLength(2)
-  })
-
-  it('retries a disconnected request without restarting semantic validation', async () => {
-    responses.push({ disconnect: true })
-    responses.push({ body: toolCallCompletion(validPayload) })
-
-    const result = await generateStructured(createOptions())
-
-    expect(result).toEqual(validPayload)
-    expect(requests).toHaveLength(2)
-    expect(requests[1].body.messages).toEqual(requests[0].body.messages)
-  })
-
-  it('does not send a request when the caller signal is already aborted', async () => {
-    const controller = new AbortController()
-    const reason = new Error('rule timed out')
-    controller.abort(reason)
-
-    await expect(generateStructured({
-      ...createOptions(),
-      signal: controller.signal,
-    })).rejects.toBe(reason)
-    expect(requests).toHaveLength(0)
-  })
-
-  it('cancels a pending semantic retry delay', async () => {
-    responses.push({ body: toolCallCompletion({ findings: [{ line: 'three' }] }) })
-    const controller = new AbortController()
-    const reason = new Error('rule timed out')
-    const backoff = Promise.withResolvers<void>()
-    let settled = false
-    const pending = generateStructured({
-      ...createOptions(),
-      retryDelay: () => {
-        vi.useFakeTimers()
-        backoff.resolve()
-        return 60_000
-      },
-      signal: controller.signal,
-    })
-    void pending.finally(() => {
-      settled = true
-    }).catch(() => {})
-
-    await backoff.promise
-    try {
-      controller.abort(reason)
-      await Promise.resolve()
-      await Promise.resolve()
-
-      expect(settled).toBe(true)
-      await expect(pending).rejects.toBe(reason)
-      expect(requests).toHaveLength(1)
-    }
-    finally {
-      await vi.runAllTimersAsync()
-      vi.useRealTimers()
-      await pending.catch(() => {})
-    }
-  })
-
-  it('does not multiply exhausted transport retries through semantic attempts', async () => {
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-
-    await expect(generateStructured(createOptions()))
-      .rejects
-      .toThrow('Remote sent 500 response')
-    expect(requests).toHaveLength(3)
-  })
-
-  it('keeps transport exhaustion bounded when semantic attempts are increased', async () => {
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-    responses.push({ body: { error: 'retry me' }, status: 500 })
-
-    await expect(generateStructured({ ...createOptions(), maxAttempts: 5 }))
-      .rejects
-      .toThrow('Remote sent 500 response')
-    expect(requests).toHaveLength(3)
   })
 
   it('propagates other HTTP errors without retrying', async () => {

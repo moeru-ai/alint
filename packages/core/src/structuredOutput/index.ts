@@ -7,12 +7,11 @@ import type { RuleContext } from '../dsl/types'
 import type { ResolvedModel } from '../models/types'
 
 import { errorMessageFrom } from '@moeru/std/error'
+import { sleep } from '@moeru/std/sleep'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
 import { getDescription, parse } from 'valibot'
-
-import { createRetryingFetch } from '../inference/retry'
 
 const defaultMaxAttempts = 3
 const defaultToolName = 'reportFindings'
@@ -31,14 +30,9 @@ export interface GenerateStructuredOptions<Schema extends GenericSchema> {
   model: ResolvedModel
   /** Label recorded in metering metadata and debug logs, e.g. `go-responsibility-boundary-judge`. */
   operation: string
-  /**
-   * Supplies milliseconds for semantic and request-level transport retries.
-   * Numbers are 1-based independently within each retry layer.
-   */
+  /** Milliseconds to wait before the given (1-based) attempt is retried. */
   retryDelay?: (attempt: number) => number
   schema: Schema
-  /** Cancels the active model request or any pending retry. */
-  signal?: AbortSignal
   temperature?: number
   /** Shown to the model as the tool description. Defaults to the schema's valibot description. */
   toolDescription?: string
@@ -86,14 +80,6 @@ export async function generateStructured<Schema extends GenericSchema>(
   const maxAttempts = options.maxAttempts ?? defaultMaxAttempts
   const retryDelay = options.retryDelay ?? exponentialRetryDelay
   const toolName = options.toolName ?? defaultToolName
-  const configuredRetryDelay = options.retryDelay
-  const fetch = createRetryingFetch({
-    policy: {
-      ...(configuredRetryDelay
-        ? { retryDelay: attempt => configuredRetryDelay(attempt) }
-        : {}),
-    },
-  })
 
   const tool = rawTool({
     description: options.toolDescription ?? getDescription(options.schema),
@@ -112,9 +98,7 @@ export async function generateStructured<Schema extends GenericSchema>(
 
     try {
       response = await generateText({
-        abortSignal: options.signal,
         baseURL: options.model.provider.endpoint,
-        fetch,
         headers: options.model.provider.headers,
         messages: options.createMessages(previousError ? retryFeedbackFrom(toolName, previousError) : undefined),
         model: options.model.id,
@@ -132,14 +116,14 @@ export async function generateStructured<Schema extends GenericSchema>(
     catch (error) {
       const callError = `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`
 
-      previousError = callError
+      previousError = isRetriableHttpError(error) ? undefined : callError
       options.logger?.debug(`${options.operation} attempt ${attempt} failed while calling the model: ${callError}`)
 
       if (!isRetriableCallError(error) || attempt === maxAttempts) {
         throw error
       }
 
-      await waitForSemanticRetry(retryDelay(attempt), options.signal)
+      await sleep(retryDelay(attempt))
       continue
     }
 
@@ -158,7 +142,7 @@ export async function generateStructured<Schema extends GenericSchema>(
       throw new InvalidStructuredOutputError(`Invalid structured model response: ${previousError}`)
     }
 
-    await waitForSemanticRetry(retryDelay(attempt), options.signal)
+    await sleep(retryDelay(attempt))
   }
 
   throw new InvalidStructuredOutputError('Model did not return a valid structured result')
@@ -186,14 +170,31 @@ function exponentialRetryDelay(attempt: number): number {
 }
 
 function isRetriableCallError(error: unknown): boolean {
-  if (!(error instanceof Error))
-    return false
+  if (!(error instanceof Error)) {
+    return true
+  }
 
-  // These errors come from completed responses and can be corrected with
-  // validation feedback. Request transport retry is owned by the fetch layer.
+  if (isRetriableHttpError(error)) {
+    return true
+  }
+
+  // Malformed tool calls are the model's fault and worth retrying with
+  // feedback; anything else (transport, auth, provider errors) is not.
   return error.name === 'InvalidToolCallError'
     || error.name === 'InvalidToolInputError'
     || error.name === 'ToolExecutionError'
+}
+
+function isRetriableHttpError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+
+  const statusCode = 'statusCode' in error && typeof error.statusCode === 'number'
+    ? error.statusCode
+    : undefined
+
+  return statusCode !== undefined && (statusCode >= 500 || [408, 429].includes(statusCode))
 }
 
 function normalizeJsonSchemaDefinition(schema: boolean | JsonSchema): boolean | JsonSchema {
@@ -366,30 +367,4 @@ function retryFeedbackFrom(toolName: string, error: string): string {
     `Validation error: ${error}`,
     `Call ${toolName} again with arguments that exactly match the tool schema.`,
   ].join('\n')
-}
-
-function waitForSemanticRetry(delay: number, signal: AbortSignal | undefined): Promise<void> {
-  if (signal?.aborted)
-    throw signal.reason
-
-  if (delay === 0)
-    return Promise.resolve()
-
-  return new Promise((resolve, reject) => {
-    let timer: ReturnType<typeof setTimeout> | undefined
-    const onAbort = () => {
-      if (timer)
-        clearTimeout(timer)
-      signal?.removeEventListener('abort', onAbort)
-      reject(signal?.reason)
-    }
-
-    timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort)
-      resolve()
-    }, delay)
-    signal?.addEventListener('abort', onAbort, { once: true })
-    if (signal?.aborted)
-      onAbort()
-  })
 }

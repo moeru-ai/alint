@@ -14,39 +14,12 @@ sends the rule prompt, and maps the SDK run result back to alint's `{ answer,
 usage }` shape. Codex uses its own local configuration, AGENTS instructions,
 sandboxing, MCP servers, and tool runtime.
 
-Codex owns retries below the SDK turn boundary. Its model provider configuration
-supports `request_max_retries` and `stream_max_retries`; pass them through
-`CodexCliAdapterOptions.config` to adjust the defaults. See the official
-[Codex configuration reference](https://developers.openai.com/codex/config-reference/)
-for the available settings.
-
-Alint never retries `thread.run()`. A failed turn may already have executed
-commands or changed files, so replaying the whole turn could duplicate those
-effects.
-
 ## How to use
 
 ```ts
 import { createCodexCliAdapter } from '@alint-js/agent-codex-cli'
 
 const adapter = createCodexCliAdapter({
-  sandbox: 'read-only',
-})
-```
-
-For example, if a provider named `proxy` is already defined and selected in the
-user's Codex configuration, this overlay customizes its native retry budgets:
-
-```ts
-const adapter = createCodexCliAdapter({
-  config: {
-    model_providers: {
-      proxy: {
-        request_max_retries: 2,
-        stream_max_retries: 3,
-      },
-    },
-  },
   sandbox: 'read-only',
 })
 ```

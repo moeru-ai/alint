@@ -11,10 +11,6 @@
       "types": "./dist/agent.d.mts",
       "default": "./dist/agent.mjs"
     },
-    "./inference": {
-      "types": "./dist/inference.d.mts",
-      "default": "./dist/inference.mjs"
-    },
     "./structured-output": {
       "types": "./dist/structured-output.d.mts",
       "default": "./dist/structured-output.mjs"

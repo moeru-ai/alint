@@ -1,16 +1,13 @@
 import type { ResolvedModel } from '@alint-js/core'
 import type { AgentAdapter, AgentRequest, AgentResult, AgentTool } from '@alint-js/core/agent'
-import type { AgentTool as PiTool, StreamFn } from '@earendil-works/pi-agent-core'
+import type { AgentTool as PiTool } from '@earendil-works/pi-agent-core'
 import type { Model } from '@earendil-works/pi-ai'
 
-import { defaultInferenceRetryPolicy } from '@alint-js/core/inference'
 import { Agent } from '@earendil-works/pi-agent-core'
 import { Type } from '@earendil-works/pi-ai'
-import { streamSimple } from '@earendil-works/pi-ai/compat'
 
 export interface PiAdapterOptions {
-  maxRetries?: number
-  run: (request: AgentRequest, maxRetries: number) => Promise<PiMessage[]>
+  run: (request: AgentRequest) => Promise<PiMessage[]>
 }
 
 interface PiMessage {
@@ -26,15 +23,10 @@ export function apiKeyFromModel(model: ResolvedModel): string {
 }
 
 export function createPiAdapter(options: Partial<PiAdapterOptions> = {}): AgentAdapter {
-  const maxRetries = options.maxRetries ?? defaultInferenceRetryPolicy.maxRetries
   const run = options.run ?? runPiAgent
 
-  if (!Number.isInteger(maxRetries) || maxRetries < 0) {
-    throw new TypeError('Pi adapter maxRetries must be a non-negative integer')
-  }
-
   return async (request: AgentRequest): Promise<AgentResult> => {
-    const messages = await run(request, maxRetries)
+    const messages = await run(request)
     const assistant = [...messages].reverse().find(message => message.role === 'assistant')
 
     return { answer: extractPiText(assistant), usage: undefined }
@@ -97,14 +89,7 @@ function isTextPart(part: unknown): part is { text: string, type: 'text' } {
     && typeof (part as { text?: unknown }).text === 'string'
 }
 
-async function runPiAgent(request: AgentRequest, maxRetries: number): Promise<PiMessage[]> {
-  request.signal?.throwIfAborted()
-  const prompt = request.prompt
-
-  const streamFn: StreamFn = (model, context, options) => streamSimple(model, context, {
-    ...options,
-    maxRetries,
-  })
+async function runPiAgent(request: AgentRequest): Promise<PiMessage[]> {
   const agent = new Agent({
     getApiKey: () => apiKeyFromModel(request.model),
     initialState: {
@@ -112,20 +97,10 @@ async function runPiAgent(request: AgentRequest, maxRetries: number): Promise<Pi
       systemPrompt: request.instructions,
       tools: toPiTools(request.tools),
     },
-    streamFn,
   })
-  const abort = () => agent.abort()
 
-  request.signal?.addEventListener('abort', abort, { once: true })
+  await agent.prompt(request.prompt)
+  await agent.waitForIdle()
 
-  try {
-    request.signal?.throwIfAborted()
-    await agent.prompt(prompt)
-    await agent.waitForIdle()
-    request.signal?.throwIfAborted()
-    return agent.state.messages as PiMessage[]
-  }
-  finally {
-    request.signal?.removeEventListener('abort', abort)
-  }
+  return agent.state.messages as PiMessage[]
 }
