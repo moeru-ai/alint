@@ -27,7 +27,6 @@ interface StringifiableRunnerCacheConfig {
 interface StringifiableRunnerConfig {
   agent_retries?: number
   cache?: boolean | StringifiableRunnerCacheConfig
-  file_concurrency?: number
   rule_concurrency?: number
   stats?: boolean | StringifiableRunnerStatsConfig
   timeout_ms?: number
@@ -71,7 +70,6 @@ interface TomlRunnerCacheConfig {
 interface TomlRunnerConfig {
   agent_retries?: unknown
   cache?: unknown
-  file_concurrency?: unknown
   rule_concurrency?: unknown
   stats?: unknown
   timeout_ms?: unknown
@@ -248,13 +246,6 @@ function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
 
   if (runner.cache !== undefined) {
     parsedRunner.cache = parseRunnerCache(runner.cache)
-  }
-
-  if (runner.file_concurrency !== undefined) {
-    parsedRunner.fileConcurrency = parsePositiveInteger(
-      runner.file_concurrency,
-      'runner file_concurrency',
-    )
   }
 
   if (runner.rule_concurrency !== undefined) {
@@ -452,7 +443,6 @@ function toTomlRunner(runner: RunnerConfig): StringifiableRunnerConfig {
   return {
     agent_retries: runner.agentRetries,
     cache: toTomlRunnerCache(runner.cache),
-    file_concurrency: runner.fileConcurrency,
     rule_concurrency: runner.ruleConcurrency,
     stats: toTomlRunnerStats(runner.stats),
     timeout_ms: runner.timeoutMs,

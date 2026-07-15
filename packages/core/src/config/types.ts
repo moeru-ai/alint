@@ -19,7 +19,6 @@ export interface RunnerConfig {
   /** Retries after the initial attempt for replay-safe agent failures. @default 2 */
   agentRetries?: number
   cache?: boolean | RunnerCacheConfig
-  fileConcurrency?: number
   ruleConcurrency?: number
   stats?: boolean | RunnerStatsConfig
   timeoutMs?: number

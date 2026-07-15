@@ -2,61 +2,92 @@ import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
 import type { DirectoryTarget, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
+import type { ExecutionProjection } from './execution/projection'
+import type { RuleExecutionOutcome } from './execution/types'
 import type { PreparedDirectory } from './targets/directory'
-import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleEndCounters, RuleRuntime, RuleRuntimeState, TargetExecutionPlan, UsageAccumulator } from './targets/types'
-import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, RunOptions, RunResult, RunUsage } from './types'
+import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from './targets/types'
+import type { AlintRunFailure, Diagnostic, ProgressPlanRef, RunOptions, RunResult } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { cwd as processCwd } from 'node:process'
 
-import { errorCauseFrom, errorMessageFrom } from '@moeru/std/error'
+import { errorMessageFrom } from '@moeru/std/error'
 import { resolve } from 'pathe'
 
+import { combineAbortSignals } from '../agent'
 import { withAgentRetry } from '../agent/retry'
 import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
 import { createCacheStore, hashText, normalizeCachePath, normalizeRunnerCacheConfig, stableHash } from './cache'
+import { executeRuleExecutionJob, resolveRuleExecutionTimeout } from './execution/envelope'
+import { selectTerminalFailure } from './execution/failure'
+import { createRuleExecutionJobs } from './execution/jobs'
+import { RunProgress } from './execution/progress'
+import { createExecutionProjection } from './execution/projection'
+import { runWithConcurrency } from './execution/scheduler'
 import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
 import { createSourceRuntime } from './source/runtime'
 import { createDirectoryExecutionPlans } from './targets/directory'
-import { AlintRuleExecutionError, executeTargetPlans } from './targets/execution'
 import { createProjectExecutionPlan } from './targets/project'
 import { createSourceExecutionPlans } from './targets/source'
 
-export class AlintRunError extends Error {
-  readonly failure?: AlintRunFailure
+export class AlintRunCancelledError extends Error {
   readonly result: RunResult
 
-  constructor(message: string, result: RunResult, options: { cause?: unknown, failure?: AlintRunFailure } = {}) {
-    super(message, { cause: options.cause })
-    this.name = 'AlintRunError'
-    this.failure = options.failure
+  constructor(result: RunResult, cause?: unknown) {
+    super('Alint run cancelled.', { cause })
+    this.name = 'AlintRunCancelledError'
     this.result = result
   }
 }
 
-/**
- * Thrown when {@link RunOptions.signal} aborts a run.
- *
- * Extends {@link AlintRunError} so existing handlers still receive the partial `result`, while
- * callers that treat cancellation differently from failure can test for this type.
- */
-export class AlintAbortError extends AlintRunError {
+/** Cancellation error carrying the partial result gathered before the abort. */
+export class AlintAbortError extends AlintRunCancelledError {
   constructor(result: RunResult, options: { cause?: unknown } = {}) {
-    super('alint run was aborted', result, { cause: options.cause })
+    super(result, options.cause)
     this.name = 'AlintAbortError'
   }
 }
 
+export class AlintProgressError extends Error {
+  readonly failures: AlintRunFailure[]
+  readonly result: RunResult
+
+  constructor(message: string, result: RunResult, failures: AlintRunFailure[], cause?: unknown) {
+    super(message, { cause })
+    this.name = 'AlintProgressError'
+    this.failures = failures
+    this.result = result
+  }
+}
+
+export class AlintRunError extends Error {
+  readonly failures: AlintRunFailure[]
+  readonly result: RunResult
+
+  constructor(message: string, result: RunResult, options: { cause?: unknown, failures?: AlintRunFailure[] } = {}) {
+    super(message, { cause: options.cause })
+    this.name = 'AlintRunError'
+    this.failures = options.failures ?? []
+    this.result = result
+  }
+}
+
 export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
+  const timeoutMs = resolveRuleExecutionTimeout(options.runner?.timeoutMs)
+  const concurrency = resolveRuleConcurrency(options.runner?.ruleConcurrency)
   const cwd = options.cwd ?? processCwd()
   const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
   const clock = Date.now
-  const diagnostics: Diagnostic[] = []
-
-  const usage = createUsageAccumulator()
+  const projection = createExecutionProjection()
+  let progress: RunProgress | undefined
+  const currentProgress = (): RunProgress => {
+    if (!progress)
+      throw new Error('Rule progress is unavailable before execution planning completes.')
+    return progress
+  }
   const src = createSourceRuntime()
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
@@ -103,14 +134,14 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
 
     const ruleRuntimes = createRuleRuntimes({
       cwd,
-      diagnostics,
       effectiveAgent: effectiveConfig.agent,
       effectiveSettings: effectiveConfig.settings,
       options,
+      progress: currentProgress,
+      projection,
       registry,
       setupConfig,
       src,
-      usage,
     })
 
     return {
@@ -147,14 +178,14 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       }),
       ruleRuntimes: createRuleRuntimes({
         cwd,
-        diagnostics,
         effectiveAgent: effectiveConfig.agent,
         effectiveSettings: effectiveConfig.settings,
         options,
+        progress: currentProgress,
+        projection,
         registry,
         setupConfig,
         src,
-        usage,
       }),
       target,
     }
@@ -166,169 +197,135 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     ? []
     : createRuleRuntimes({
         cwd,
-        diagnostics,
         effectiveAgent: projectConfig.agent,
         effectiveSettings: projectConfig.settings,
         options,
+        progress: currentProgress,
+        projection,
         registry: buildRuleRegistry(projectConfig),
         setupConfig,
         src,
-        usage,
       })
-  let planned = 0
-  const counters = createRuleEndCounters()
-  let filePlans: PreparedFileExecutionPlan[] = []
-  let directoryPlans: TargetExecutionPlan[] = []
-  let projectPlan: TargetExecutionPlan | undefined
-  let runStartedAt: number | undefined
-  let runError: unknown
+  const filePlans = createSourceExecutionPlans(files, cwd)
+  const directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
+  const projectPlan = resolvedProjectConfig.ignored
+    ? undefined
+    : createProjectExecutionPlan({
+        configHash: stableHash({ settings: projectConfig.settings }),
+        files,
+        index: filePlans.length + directoryPlans.length + 1,
+        root: cwd,
+        ruleRuntimes: projectRuleRuntimes,
+      })
+  const allPlans = [...filePlans, ...directoryPlans, ...(projectPlan ? [projectPlan] : [])]
+  const activePlans = allPlans.filter(plan => plan.targets.length > 0)
+  const jobs = createRuleExecutionJobs(allPlans)
+  progress = new RunProgress(options.progress, jobs, clock)
+  const runStartedAt = clock()
+  let outcomes: RuleExecutionOutcome[] = []
+  const settledOutcomes = new Array<RuleExecutionOutcome | undefined>(jobs.length)
+  let infrastructureFailed = false
+  let infrastructureError: unknown
+
+  progress.emit('onRunStart', {
+    execution: progress.execution,
+    plans: activePlans.map(plan => toProgressPlanRef(plan, allPlans.length)),
+    rulesTotal: countEnabledRuleIds(files, directories, projectRuleRuntimes),
+    startedAt: runStartedAt,
+  })
 
   try {
-    // Bail before planning so an already-cancelled caller never reaches a rule. Reading and
-    // extracting the files above is local work that costs no tokens, so it is not worth a
-    // second abort check earlier.
-    options.signal?.throwIfAborted()
+    const tasks = jobs.map((job, index) => async (): Promise<RuleExecutionOutcome> => {
+      const observation = projection.register(job)
+      if (options.signal?.aborted) {
+        progress.cancelJob(job)
+        const outcome: RuleExecutionOutcome = { bucket: observation.bucket, cache: 'miss', job, state: 'cancelled' }
+        settledOutcomes[index] = outcome
+        return outcome
+      }
 
-    filePlans = createSourceExecutionPlans(files, cwd)
-    directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
-    projectPlan = resolvedProjectConfig.ignored
-      ? undefined
-      : createProjectExecutionPlan({
-          configHash: stableHash({
-            settings: projectConfig.settings,
-          }),
-          files,
-          root: cwd,
-          ruleRuntimes: projectRuleRuntimes,
+      progress.startJob(job)
+      try {
+        const outcome = await executeRuleExecutionJob(job, {
+          cache: cacheContext,
+          cacheOnly: options.cacheOnly,
+          clock,
+          observation,
+          progress,
+          runSignal: options.signal,
+          timeoutMs,
         })
-
-    const activeDirectoryPlans = directoryPlans
-      .filter(plan => plan.targets.length > 0)
-      .map((plan, directoryOffset) => ({
-        ...plan,
-        fileIndex: filePlans.length + directoryOffset + 1,
-      }))
-
-    const inputsTotal = files.length + activeDirectoryPlans.length
-    planned = calculatePlannedExecutions([...filePlans, ...directoryPlans]) + (projectPlan?.planned ?? 0)
-    runStartedAt = clock()
-
-    options.progress?.onRunStart?.({
-      files: [...filePlans, ...activeDirectoryPlans].map(plan => toProgressFilePath(plan, inputsTotal)),
-      filesTotal: inputsTotal,
-      planned,
-      rulesTotal: countEnabledRuleIds(files, directories, projectRuleRuntimes),
-      startedAt: runStartedAt,
+        progress.endJob(outcome)
+        settledOutcomes[index] = outcome
+        return outcome
+      }
+      catch (error) {
+        progress.interruptJob(job)
+        throw error
+      }
     })
-
-    await runConcurrently(
-      filePlans.filter(filePlan => filePlan.targets.length > 0),
-      resolveFileConcurrency(options.runner?.fileConcurrency),
-      filePlan => executeTargetPlans({
-        cache: cacheContext,
-        cacheOnly: options.cacheOnly,
-        clock,
-        counters,
-        diagnostics,
-        filesTotal: inputsTotal,
-        plans: [filePlan],
-        progress: options.progress,
-        signal: options.signal,
-        usage,
-      }),
-    )
-
-    await runConcurrently(
-      activeDirectoryPlans,
-      resolveFileConcurrency(options.runner?.fileConcurrency),
-      directoryPlan => executeTargetPlans({
-        cache: cacheContext,
-        cacheOnly: options.cacheOnly,
-        clock,
-        counters,
-        diagnostics,
-        filesTotal: inputsTotal,
-        plans: [directoryPlan],
-        progress: options.progress,
-        signal: options.signal,
-        usage,
-      }),
-    )
-
-    if (projectPlan) {
-      await executeTargetPlans({
-        cache: cacheContext,
-        cacheOnly: options.cacheOnly,
-        clock,
-        counters,
-        diagnostics,
-        filesTotal: inputsTotal,
-        plans: [projectPlan],
-        progress: options.progress,
-        signal: options.signal,
-        usage,
-      })
-    }
+    outcomes = await runWithConcurrency(tasks, concurrency)
   }
   catch (error) {
-    runError = error
+    infrastructureFailed = true
+    infrastructureError = error
+    progress.cancelQueuedJobs()
+    outcomes = settledOutcomes.filter((outcome): outcome is RuleExecutionOutcome => outcome != null)
   }
   finally {
-    // cacheOnly runs are strictly read-only.
-    //
-    // `reconcileCache` rewrites the whole cache file from the snapshot loaded at run start,
-    // so any long-lived reader (an editor session doing a pass per file open) would race a
-    // concurrent writer and rename its stale snapshot over results that writer just paid
-    // model tokens for.
-    //
-    // Staying read-only also avoids `markFile` narrowing each file's entry list to only the
-    // keys this run touched: skipped rules never call `rememberCacheEntry`, so reconciling a
-    // cacheOnly run would drop the keys of every rule it declined to execute.
-    if (!options.cacheOnly) {
+    // cacheOnly runs are strictly read-only: reconciling a partial cache snapshot could
+    // discard entries for the jobs deliberately skipped by this run.
+    if (!options.cacheOnly)
       await reconcileCache(filePlans, cacheContext)
-    }
-
-    try {
-      options.progress?.onRunEnd?.({
-        ...counters.snapshot(planned),
-        diagnostics,
-        endedAt: clock(),
-        startedAt: runStartedAt ?? clock(),
-        usage: usage.toJSON(),
-      })
-    }
-    catch (error) {
-      runError ??= error
-    }
   }
 
-  const result = {
-    diagnostics,
-    execution: counters.snapshot(planned),
-    usage: usage.toJSON(),
+  outcomes.sort((left, right) => left.job.path.job.index - right.job.path.job.index)
+  const failedOutcomes = outcomes.filter(
+    (outcome): outcome is Extract<RuleExecutionOutcome, { state: 'failed' }> => outcome.state === 'failed',
+  )
+  const failures = failedOutcomes.map(outcome => outcome.failure)
+  const result: RunResult = {
+    diagnostics: projection.diagnostics(),
+    execution: progress.execution,
+    usage: projection.usage(),
   }
 
-  if (runError) {
-    // Cancellation surfaces as its own type: the run did not fail, it was called off, and the
-    // rules that finished before the abort still contributed diagnostics and cache entries.
-    if (options.signal?.aborted) {
-      throw new AlintAbortError(result, { cause: runError })
-    }
+  progress.emit('onRunEnd', {
+    diagnostics: result.diagnostics,
+    endedAt: clock(),
+    execution: result.execution,
+    startedAt: runStartedAt,
+    usage: result.usage,
+  })
 
-    throw createAlintRunError(runError, result)
+  const terminalFailure = selectTerminalFailure({
+    cancellationCause: options.signal?.reason,
+    cancelled: options.signal?.aborted ?? false,
+    failedOutcomeCauses: failedOutcomes.map(outcome => outcome.cause),
+    failures,
+    infrastructureCause: infrastructureError,
+    infrastructureFailed,
+    progressCause: progress.error,
+    progressFailed: progress.failed,
+  })
+  if (terminalFailure?.kind === 'progress')
+    throw new AlintProgressError('Progress reporting failed.', result, terminalFailure.failures, terminalFailure.cause)
+  if (terminalFailure?.kind === 'cancelled')
+    throw new AlintAbortError(result, { cause: terminalFailure.cause })
+  if (terminalFailure?.kind === 'infrastructure') {
+    throw new AlintRunError(errorMessageFrom(terminalFailure.cause) ?? String(terminalFailure.cause), result, {
+      cause: terminalFailure.cause,
+      failures: terminalFailure.failures,
+    })
+  }
+  if (terminalFailure?.kind === 'rules') {
+    throw new AlintRunError(`${terminalFailure.failures.length} rule execution${terminalFailure.failures.length === 1 ? '' : 's'} failed.`, result, {
+      cause: new AggregateError(terminalFailure.causes, 'Rule execution failures.'),
+      failures: terminalFailure.failures,
+    })
   }
 
   return result
-}
-
-function addTokenCount(base: number, value: number | undefined): number {
-  return typeof value === 'number' && Number.isFinite(value) ? base + value : base
-}
-
-function calculatePlannedExecutions(
-  filePlans: TargetExecutionPlan[],
-): number {
-  return filePlans.reduce((total, filePlan) => total + filePlan.planned, 0)
 }
 
 function countEnabledRuleIds(
@@ -357,71 +354,25 @@ function countEnabledRuleIds(
   return ids.size
 }
 
-function createAlintRunError(error: unknown, result: RunResult): AlintRunError {
-  if (error instanceof AlintRunError) {
-    return error
-  }
-
-  if (error instanceof AlintRuleExecutionError) {
-    return new AlintRunError(error.message, result, {
-      cause: errorCauseFrom(error),
-      failure: error.failure,
-    })
-  }
-
-  return new AlintRunError(errorMessageFrom(error) ?? String(error), result, {
-    cause: error,
-  })
-}
-
-function createRuleEndCounters(): RuleEndCounters {
-  let cached = 0
-  let completed = 0
-  let errored = 0
-  let skipped = 0
-
-  return {
-    cache() {
-      cached += 1
-    },
-    complete() {
-      completed += 1
-    },
-    error() {
-      errored += 1
-    },
-    skip() {
-      skipped += 1
-    },
-    snapshot(planned: number) {
-      return {
-        cached,
-        completed,
-        errored,
-        planned,
-        skipped,
-      }
-    },
-  }
-}
-
 function createRuleRuntimes(options: {
   cwd: string
-  diagnostics: Diagnostic[]
   effectiveAgent: AgentAdapter | undefined
   effectiveSettings: Record<string, unknown>
   options: RunOptions
+  progress: () => Pick<RunProgress, 'emit'>
+  projection: ExecutionProjection
   registry: ReturnType<typeof buildRuleRegistry>
   setupConfig: SetupConfig
   src: ReturnType<typeof createSourceRuntime>
-  usage: UsageAccumulator
 }): RuleRuntime[] {
-  const agent = options.effectiveAgent
-    ? withAgentRetry(options.effectiveAgent, options.options.runner?.agentRetries)
-    : undefined
-
   return options.registry.enabledRules.map((enabledRule) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+    const agent = options.effectiveAgent
+      ? withAgentRetry(request => options.effectiveAgent!({
+          ...request,
+          signal: combineAbortSignals(executionState.getStore()?.signal, request.signal),
+        }), options.options.runner?.agentRetries)
+      : undefined
     const context: RuleContext = {
       agent,
       cwd: options.cwd,
@@ -432,19 +383,24 @@ function createRuleRuntimes(options: {
       },
       metering: {
         recordUsage: (record) => {
-          const usageRecord = options.usage.record({
+          const state = executionState.getStore()
+          // TODO: (planning-observations) Create-time diagnostics and usage are rejected because they have no rule-job order; revisit only with an owner-approved planning evidence contract.
+          if (!state)
+            throw new Error('Cannot record usage outside an active rule job.')
+
+          const usageRecord = {
             ...record,
             ruleId: record.ruleId ?? enabledRule.id,
-          })
-          const state = executionState.getStore()
+          }
 
-          state?.cacheUsage?.push(usageRecord)
+          state.bucket.usage.push(usageRecord)
 
-          options.options.progress?.onUsage?.({
-            path: state?.progressPath,
+          const payload = {
+            path: state.progressPath,
             record: usageRecord,
-            total: options.usage.toJSON(),
-          })
+            total: options.projection.usage(),
+          }
+          options.progress().emit('onUsage', payload)
         },
       },
       model: async (selector) => {
@@ -470,17 +426,19 @@ function createRuleRuntimes(options: {
       outputLanguage: options.options.outputLanguage,
       report: (descriptor) => {
         const state = executionState.getStore()
-        const filePath = descriptor.filePath ?? state?.activeFilePath
+        // TODO: (planning-observations) Create-time diagnostics and usage are rejected because they have no rule-job order; revisit only with an owner-approved planning evidence contract.
+        if (!state)
+          throw new Error('Cannot report a diagnostic outside an active rule job.')
+
+        const filePath = descriptor.filePath ?? state.activeFilePath
 
         if (!filePath) {
           throw new Error(`Diagnostic for rule "${enabledRule.id}" is missing filePath.`)
         }
 
-        const diagnosticModel = state?.currentModel ? { ...state.currentModel } : undefined
+        const diagnosticModel = state.currentModel ? { ...state.currentModel } : undefined
 
-        if (state) {
-          state.currentModel = undefined
-        }
+        state.currentModel = undefined
 
         const diagnostic = {
           evidence: descriptor.evidence,
@@ -492,16 +450,18 @@ function createRuleRuntimes(options: {
           severity: enabledRule.severity,
         } satisfies Diagnostic
 
-        options.diagnostics.push(diagnostic)
-        state?.cacheDiagnostics?.push(diagnostic)
-        options.options.progress?.onDiagnostic?.({
+        state.bucket.diagnostics.push(diagnostic)
+        const payload = {
           diagnostic,
-          diagnostics: [...options.diagnostics],
-          path: state?.progressPath,
-        })
+          diagnostics: options.projection.diagnostics(),
+          path: state.progressPath,
+        }
+        options.progress().emit('onDiagnostic', payload)
       },
       settings: options.effectiveSettings,
-      signal: options.options.signal,
+      get signal() {
+        return executionState.getStore()?.signal
+      },
       src: options.src,
     }
 
@@ -521,53 +481,6 @@ function createRuleRuntimes(options: {
       }),
     }
   })
-}
-
-function createUsageAccumulator(): UsageAccumulator {
-  const live = createUsageTotals()
-  const cached = createUsageTotals()
-
-  return {
-    record(record: InferenceUsageRecord): InferenceUsageRecord {
-      return live.record(record)
-    },
-    recordCached(record: InferenceUsageRecord): InferenceUsageRecord {
-      return cached.record(record)
-    },
-    toJSON(): RunUsage {
-      const cachedUsage = cached.toJSON()
-
-      return {
-        ...live.toJSON(),
-        ...(cachedUsage.records.length > 0 ? { cached: cachedUsage } : {}),
-      }
-    },
-  }
-}
-
-function createUsageTotals() {
-  const records: InferenceUsageRecord[] = []
-  let inputTokens = 0
-  let outputTokens = 0
-  let totalTokens = 0
-
-  return {
-    record(record: InferenceUsageRecord): InferenceUsageRecord {
-      records.push(record)
-      inputTokens = addTokenCount(inputTokens, record.inputTokens)
-      outputTokens = addTokenCount(outputTokens, record.outputTokens)
-      totalTokens = addTokenCount(totalTokens, record.totalTokens)
-      return record
-    },
-    toJSON() {
-      return {
-        inputTokens,
-        outputTokens,
-        records,
-        totalTokens,
-      }
-    },
-  }
 }
 
 function mergeCapabilities(
@@ -641,43 +554,12 @@ async function reconcileCache(
   }
 }
 
-function resolveFileConcurrency(fileConcurrency: number | undefined): number {
-  return fileConcurrency ?? 1
-}
-
-async function runConcurrently<T>(
-  items: T[],
-  concurrency: number,
-  runItem: (item: T) => Promise<void>,
-): Promise<void> {
-  let firstError: unknown
-  let nextIndex = 0
-  const workerCount = Math.min(Math.max(concurrency, 1), items.length)
-
-  async function runWorker(): Promise<void> {
-    while (firstError === undefined) {
-      const currentIndex = nextIndex
-      nextIndex += 1
-
-      if (currentIndex >= items.length) {
-        return
-      }
-
-      try {
-        await runItem(items[currentIndex]!)
-      }
-      catch (error) {
-        firstError ??= error
-        return
-      }
-    }
-  }
-
-  await Promise.all(Array.from({ length: workerCount }, () => runWorker()))
-
-  if (firstError !== undefined) {
-    throw firstError
-  }
+function resolveRuleConcurrency(ruleConcurrency: number | undefined): number {
+  if (ruleConcurrency === undefined)
+    return 4
+  if (!Number.isFinite(ruleConcurrency) || !Number.isInteger(ruleConcurrency) || ruleConcurrency <= 0)
+    throw new TypeError('Rule execution concurrency must be a finite positive integer.')
+  return ruleConcurrency
 }
 
 function toDiagnosticModel(
@@ -691,11 +573,13 @@ function toDiagnosticModel(
   }
 }
 
-function toProgressFilePath(filePlan: TargetExecutionPlan, filesTotal: number) {
+function toProgressPlanRef(plan: TargetExecutionPlan, total: number): ProgressPlanRef {
   return {
-    index: filePlan.fileIndex,
-    path: filePlan.path,
-    planned: filePlan.planned,
-    total: filesTotal,
+    id: plan.id,
+    index: plan.index,
+    kind: plan.kind,
+    path: plan.path,
+    planned: plan.planned,
+    total,
   }
 }

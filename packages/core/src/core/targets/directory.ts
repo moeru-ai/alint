@@ -9,7 +9,7 @@ export interface PreparedDirectory {
 
 export function createDirectoryExecutionPlans(
   directories: PreparedDirectory[],
-  fileOffset: number,
+  sourcePlanCount: number,
 ): TargetExecutionPlan[] {
   return directories.map((directory, directoryOffset) => {
     const executions = directory.ruleRuntimes
@@ -35,6 +35,7 @@ export function createDirectoryExecutionPlans(
       ? []
       : [{
           activeFilePath: directory.target.path,
+          // TODO: (directory-cache-snapshot) Directory caching stays disabled because rule read scope has no stable snapshot contract; revisit only with an owner-approved target-cache design.
           cacheFilePaths: [],
           configHash: directory.configHash,
           executions,
@@ -45,8 +46,9 @@ export function createDirectoryExecutionPlans(
         }]
 
     return {
-      emitFileProgress: true,
-      fileIndex: fileOffset + directoryOffset + 1,
+      id: `directory:${directory.target.path}`,
+      index: sourcePlanCount + directoryOffset + 1,
+      kind: 'directory',
       path: directory.target.path,
       planned: executions.length,
       targets,

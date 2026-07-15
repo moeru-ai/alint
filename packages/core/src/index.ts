@@ -22,7 +22,7 @@ export {
   resolveLanguage,
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
-export { AlintRunError, runAlint } from './core/run'
+export { AlintAbortError, AlintProgressError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
 export type {
   ClassTarget,
@@ -49,10 +49,12 @@ export type {
   AlintRunFailure,
   Diagnostic,
   DiagnosticProgressPayload,
-  FileProgressPayload,
+  ExecutionCounts,
   InferenceUsageRecord,
-  ProgressFilePath,
+  PlanProgressPayload,
   ProgressPath,
+  ProgressPlanKind,
+  ProgressPlanRef,
   ProgressReporter,
   ProgressTargetKind,
   RuleEndPayload,

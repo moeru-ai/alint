@@ -35,7 +35,7 @@ describe('createRunStat', () => {
     const stat = createRunStat({
       cwd: '/p',
       durationMs: 42,
-      ruleCounts: { cached: 0, completed: 1, errored: 0, planned: 1 },
+      ruleCounts: { cached: 0, cancelled: 0, completed: 1, failed: 0, planned: 1 },
       usage,
     })
 
@@ -61,7 +61,7 @@ describe('createRunStat', () => {
 
     const stat = createRunStat({
       cwd: '/p',
-      ruleCounts: { cached: 0, completed: 0, errored: 0, planned: 0 },
+      ruleCounts: { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0 },
       usage,
     })
 

@@ -41,7 +41,7 @@ catalog:
   '@earendil-works/pi-ai': ^0.80.7
   '@modelcontextprotocol/sdk': ^1.29.0
   '@moeru/eslint-config': ^0.1.0-beta.18
-  '@moeru/std': ^0.1.0-beta.18
+  '@moeru/std': ^0.1.0-beta.20
   '@openai/codex-sdk': ^0.144.3
   '@package-json/types': ^0.0.13
   '@pnpm/find-workspace-dir': ^1000.1.5
@@ -63,6 +63,8 @@ catalog:
   es-toolkit: ^1.49.0
   eslint: ^10.5.0
   eslint-plugin-oxlint: ^1.73.0
+  fast-string-truncated-width: ^3.0.3
+  fast-string-width: ^3.0.2
   gitignore-fs: ^2.2.3
   h3: 2.0.1-rc.25
   jiti: ^2.7.0

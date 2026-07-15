@@ -3,7 +3,7 @@ import type { AsyncLocalStorage } from 'node:async_hooks'
 import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
 import type { CacheEntry, CacheStore } from '../cache'
 import type { SourceFile, SourceTarget } from '../source/types'
-import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressTargetKind, RunExecution, RunUsage } from '../types'
+import type { Diagnostic, InferenceUsageRecord, ProgressPath, ProgressPlanKind, ProgressTargetKind } from '../types'
 
 export interface CacheRunContext {
   cwd: string
@@ -11,18 +11,6 @@ export interface CacheRunContext {
   fileEntryKeys: Map<string, Set<string>>
   modelHash: string
   store: CacheStore
-}
-
-export interface ExecutionPlanEntry {
-  fileIndex: number
-  filePlanned: number
-  fileTotal: number
-  ruleIndex: number
-  ruleTotal: number
-  targetIndex: number
-  targetKind: ProgressTargetKind
-  targetName?: string
-  targetTotal: number
 }
 
 export interface ExecutionTarget {
@@ -52,12 +40,9 @@ export interface PreparedFileExecutionPlan extends TargetExecutionPlan {
   preparedFile: PreparedFile
 }
 
-export interface RuleEndCounters {
-  cache: () => void
-  complete: () => void
-  error: () => void
-  skip: () => void
-  snapshot: (planned: number) => RunExecution
+export interface RuleExecutionBucket {
+  diagnostics: Diagnostic[]
+  usage: InferenceUsageRecord[]
 }
 
 export interface RuleRuntime {
@@ -70,10 +55,10 @@ export interface RuleRuntime {
 
 export interface RuleRuntimeState {
   activeFilePath?: string
-  cacheDiagnostics?: Diagnostic[]
-  cacheUsage?: InferenceUsageRecord[]
+  bucket: RuleExecutionBucket
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  progressPath?: ProgressPath
+  progressPath: ProgressPath
+  signal: AbortSignal
 }
 
 export interface RuleTargetExecution {
@@ -82,15 +67,10 @@ export interface RuleTargetExecution {
 }
 
 export interface TargetExecutionPlan {
-  emitFileProgress: boolean
-  fileIndex: number
+  id: string
+  index: number
+  kind: ProgressPlanKind
   path: string
   planned: number
   targets: ExecutionTarget[]
-}
-
-export interface UsageAccumulator {
-  record: (record: InferenceUsageRecord) => InferenceUsageRecord
-  recordCached: (record: InferenceUsageRecord) => InferenceUsageRecord
-  toJSON: () => RunUsage
 }

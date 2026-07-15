@@ -21,14 +21,12 @@ export function resolveRunnerConfig(
 ): SetupConfig['runner'] {
   const cache = resolveRunnerCacheConfig(setupConfig.runner?.cache, config.runner?.cache, options)
   const stats = resolveRunnerStatsConfig(setupConfig.runner?.stats, config.runner?.stats, options)
-  const fileConcurrency = parsePositiveIntegerOption(options.fileConcurrency, '--file-concurrency')
   const ruleConcurrency = parsePositiveIntegerOption(options.ruleConcurrency, '--rule-concurrency')
   const timeoutMs = parsePositiveIntegerOption(options.timeoutMs, '--timeout-ms')
   const runner = {
     ...(setupConfig.runner ?? {}),
     ...(config.runner ?? {}),
     cache,
-    fileConcurrency: fileConcurrency ?? config.runner?.fileConcurrency ?? setupConfig.runner?.fileConcurrency,
     ruleConcurrency: ruleConcurrency ?? config.runner?.ruleConcurrency ?? setupConfig.runner?.ruleConcurrency,
     stats,
     timeoutMs: timeoutMs ?? config.runner?.timeoutMs ?? setupConfig.runner?.timeoutMs,

@@ -100,6 +100,7 @@ describe('apeira adapter', () => {
 
   it('passes instructions, prompt, and translated tools to the runner', async () => {
     let captured: RunnerContext | undefined
+    const controller = new AbortController()
 
     const grepTool: AgentTool = {
       description: 'search the repo',
@@ -119,9 +120,11 @@ describe('apeira adapter', () => {
       instructions: 'be careful',
       model: fakeModel(),
       prompt: 'find duplicates',
+      signal: controller.signal,
       tools: [grepTool],
     })
 
+    expect(captured?.abortSignal).toBe(controller.signal)
     expect(captured?.instructions).toBe('be careful')
     expect(JSON.stringify(captured?.input)).toContain('find duplicates')
     expect(captured?.tools.map(tool => tool.function.name)).toEqual(['grep'])

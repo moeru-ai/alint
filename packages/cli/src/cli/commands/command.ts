@@ -395,7 +395,6 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--cache-location',
     '--config',
     '--cwd',
-    '--file-concurrency',
     '--format',
     '--model',
     '--provider-endpoint',

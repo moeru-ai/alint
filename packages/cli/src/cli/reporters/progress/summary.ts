@@ -1,21 +1,21 @@
 import type {
   Diagnostic,
-  DiagnosticProgressPayload,
-  ProgressFilePath,
+  ExecutionCounts,
+  ProgressPath,
+  ProgressPlanRef,
   ProgressReporter,
   RuleEndPayload,
-  RuleStartPayload,
-  RunEndPayload,
-  RunStartPayload,
-  TargetProgressPayload,
-  UsageProgressPayload,
 } from '@alint-js/core'
 
 import { relative } from 'node:path'
 
+import fastStringTruncatedWidth from 'fast-string-truncated-width'
+import fastStringWidth from 'fast-string-width'
+
 import { createColors } from 'tinyrainbow'
 
 const colors = createColors({ force: true })
+const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
 export interface SummaryProgressReporter extends ProgressReporter {
   getRows: () => string[]
@@ -26,34 +26,34 @@ export interface SummaryProgressReporterOptions {
   color: boolean
   columns: number
   cwd?: string
+  rows?: number
   spinnerFrames: string[]
 }
 
 interface ActiveRuleState {
-  id: string
+  path: ProgressPath
   startedAt: number
-  target: string
 }
 
-interface FileState {
-  cached: number
-  completed: number
-  endedAt?: number
-  errored: number
-  file: ProgressFilePath
-  rule?: ActiveRuleState
+interface PlanBlock {
+  rows: string[]
+  runningRules: number
+}
+
+interface PlanState {
+  activeRules: Map<number, ActiveRuleState>
+  execution: ExecutionCounts
+  hasExecutionSnapshot: boolean
+  lifecycle: 'queued' | 'running' | 'settled'
+  plan: ProgressPlanRef
   startedAt?: number
-  target?: string
 }
 
 interface SummaryState {
-  cached: number
-  completed: number
   diagnostics: Diagnostic[]
   endedAt?: number
-  errored: number
-  files: Map<string, FileState>
-  planned: number
+  execution: ExecutionCounts
+  plans: Map<string, PlanState>
   runStartedAt?: number
   spinnerIndex: number
   totalTokens: number
@@ -61,109 +61,73 @@ interface SummaryState {
 
 export function createSummaryProgressReporter(options: SummaryProgressReporterOptions): SummaryProgressReporter {
   const now = Date.now
-  const state: SummaryState = {
-    cached: 0,
-    completed: 0,
-    diagnostics: [],
-    errored: 0,
-    files: new Map(),
-    planned: 0,
-    spinnerIndex: 0,
-    totalTokens: 0,
-  }
+  const state: SummaryState = createInitialState()
 
   return {
     getRows: () => createRows(state, options, now()),
-    onDiagnostic: (payload: DiagnosticProgressPayload) => {
+    onDiagnostic: (payload) => {
       state.diagnostics = payload.diagnostics
     },
-    onFileEnd: (payload) => {
-      const file = getFileState(state, payload.file)
-
-      file.endedAt = payload.endedAt ?? now()
-      file.rule = undefined
-      file.target = undefined
+    onPlanEnd: (payload) => {
+      const plan = getPlanState(state, payload.plan)
+      applyPlanSnapshot(state, plan, payload.execution)
+      plan.activeRules.clear()
+      plan.lifecycle = 'settled'
     },
-    onFileStart: (payload) => {
-      const file = getFileState(state, payload.file)
-
-      file.startedAt = payload.startedAt ?? now()
-      file.endedAt = undefined
+    onPlanStart: (payload) => {
+      const plan = getPlanState(state, payload.plan)
+      applyPlanSnapshot(state, plan, payload.execution)
+      plan.lifecycle = 'running'
+      plan.startedAt = payload.startedAt ?? now()
     },
-    onRuleEnd: (payload: RuleEndPayload) => {
-      const file = getFileState(state, payload.path.file)
+    onRuleEnd: (payload) => {
+      const plan = getPlanState(state, payload.path.plan)
 
-      if (payload.cache === 'hit') {
-        state.cached += 1
-        file.cached += 1
-      }
+      if (!plan.activeRules.delete(payload.path.job.index))
+        return
 
-      if (payload.state === 'completed') {
-        state.completed += 1
-        file.completed += 1
-      }
-
-      if (payload.state === 'errored') {
-        state.errored += 1
-        file.errored += 1
-      }
-
-      if (file.rule?.id === payload.path.rule.id) {
-        file.rule = undefined
-      }
+      transitionToTerminal(plan.execution, payload.state)
+      transitionToTerminal(state.execution, payload.state)
     },
-    onRuleStart: (payload: RuleStartPayload) => {
-      const file = getFileState(state, payload.path.file)
+    onRuleStart: (payload) => {
+      const plan = getPlanState(state, payload.path.plan)
 
-      file.startedAt ??= payload.startedAt ?? now()
-      file.rule = {
-        id: payload.path.rule.id,
+      plan.lifecycle = 'running'
+      plan.startedAt ??= payload.startedAt ?? now()
+      if (plan.activeRules.has(payload.path.job.index))
+        return
+
+      plan.activeRules.set(payload.path.job.index, {
+        path: payload.path,
         startedAt: payload.startedAt ?? now(),
-        target: formatTarget(payload),
+      })
+
+      // The first started job is already represented by onPlanStart's snapshot.
+      // Later starts need a local transition because rule events intentionally carry only paths.
+      if (plan.activeRules.size > plan.execution.running) {
+        transition(plan.execution, 'queued', 'running')
+        transition(state.execution, 'queued', 'running')
       }
-      file.target = file.rule.target
     },
-    onRunEnd: (payload: RunEndPayload) => {
-      state.cached = payload.cached
-      state.completed = payload.completed
+    onRunEnd: (payload) => {
       state.diagnostics = payload.diagnostics
       state.endedAt = payload.endedAt ?? now()
-      state.errored = payload.errored
-      state.planned = payload.planned
+      state.execution = { ...payload.execution }
       state.runStartedAt = payload.startedAt ?? state.runStartedAt
       state.totalTokens = payload.usage.totalTokens
     },
-    onRunStart: (payload: RunStartPayload) => {
-      state.cached = 0
-      state.completed = 0
+    onRunStart: (payload) => {
       state.diagnostics = []
       state.endedAt = undefined
-      state.errored = 0
-      state.files = new Map()
-      state.planned = payload.planned
+      state.execution = { ...payload.execution }
+      state.plans = new Map(payload.plans.map(plan => [plan.id, createPlanState(plan)]))
       state.runStartedAt = payload.startedAt ?? now()
       state.spinnerIndex = 0
       state.totalTokens = 0
-
-      for (const file of payload.files ?? []) {
-        state.files.set(file.path, createFileState(file))
-      }
     },
-    onTargetEnd: (payload: TargetProgressPayload) => {
-      const file = getFileState(state, payload.path.file)
-      const target = formatTarget(payload)
-
-      if (file.target === target) {
-        file.target = undefined
-      }
-    },
-    onTargetStart: (payload: TargetProgressPayload) => {
-      const file = getFileState(state, payload.path.file)
-
-      file.startedAt ??= payload.startedAt ?? now()
-      file.target = formatTarget(payload)
-    },
-    onUsage: (payload: UsageProgressPayload) => {
+    onTargetEnd: () => {},
+    onTargetStart: () => {},
+    onUsage: (payload) => {
       state.totalTokens = payload.total.totalTokens
     },
     tick: () => {
@@ -172,215 +136,203 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
   }
 }
 
+function applyPlanSnapshot(state: SummaryState, plan: PlanState, execution: ExecutionCounts): void {
+  const previous = plan.hasExecutionSnapshot ? plan.execution : createCounts(execution.planned)
+
+  for (const key of ['cached', 'cancelled', 'completed', 'failed', 'queued', 'running'] as const)
+    state.execution[key] += execution[key] - previous[key]
+
+  plan.execution = { ...execution }
+  plan.hasExecutionSnapshot = true
+}
+
+function completeGraphemeBoundary(input: string, maximumIndex: number): number {
+  let boundary = 0
+
+  for (const segment of graphemeSegmenter.segment(input)) {
+    const end = segment.index + segment.segment.length
+    if (end > maximumIndex)
+      break
+    boundary = end
+  }
+
+  return boundary
+}
+
 function countDiagnostics(diagnostics: Diagnostic[], severity: Diagnostic['severity']): number {
   return diagnostics.filter(diagnostic => diagnostic.severity === severity).length
 }
 
-function countQueuedFiles(state: SummaryState): number {
-  return [...state.files.values()].filter(file =>
-    file.startedAt === undefined && file.endedAt === undefined && (file.file.planned ?? 0) > 0,
-  ).length
-}
-
-function createFileState(file: ProgressFilePath): FileState {
+function createCounts(planned = 0): ExecutionCounts {
   return {
     cached: 0,
+    cancelled: 0,
     completed: 0,
-    errored: 0,
-    file,
+    failed: 0,
+    planned,
+    queued: planned,
+    running: 0,
+    skipped: 0,
+  }
+}
+
+function createInitialState(): SummaryState {
+  return {
+    diagnostics: [],
+    execution: createCounts(),
+    plans: new Map(),
+    spinnerIndex: 0,
+    totalTokens: 0,
+  }
+}
+
+function createPlanState(plan: ProgressPlanRef): PlanState {
+  return {
+    activeRules: new Map(),
+    execution: createCounts(plan.planned),
+    hasExecutionSnapshot: false,
+    lifecycle: 'queued',
+    plan,
   }
 }
 
 function createRows(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {
-  const activeFiles = getActiveFiles(state)
-  const rows = activeFiles.flatMap(file => formatFileRows(file, state, options, now))
-  const queued = countQueuedFiles(state)
+  if (options.rows !== undefined && options.rows <= 0)
+    return []
+
   const warnCount = countDiagnostics(state.diagnostics, 'warn')
   const errorCount = countDiagnostics(state.diagnostics, 'error')
-  const footer = formatFooter(state, warnCount, errorCount, queued, options, now)
+  const blocks = [...state.plans.values()]
+    .filter(plan => plan.lifecycle === 'running')
+    .sort((left, right) => left.plan.index - right.plan.index)
+    .map(plan => formatPlanBlock(plan, state, options, now))
+  const footerRows = 1
+  const separatorRows = options.rows === undefined || options.rows >= 2 ? 1 : 0
+  const fixedRows = footerRows + separatorRows
+  const contentBudget = options.rows === undefined
+    ? Number.POSITIVE_INFINITY
+    : Math.max(options.rows - fixedRows, 0)
+  const allContentRows = blocks.reduce((total, block) => total + block.rows.length, 0)
+  const needsMarker = allContentRows > contentBudget
+  const blockBudget = needsMarker ? Math.max(contentBudget - 1, 0) : contentBudget
+  const visible: string[] = []
+  let hiddenRules = 0
 
-  if (queued > 0) {
-    rows.push(formatQueuedRow(queued, options))
+  for (const block of blocks) {
+    if (visible.length + block.rows.length <= blockBudget)
+      visible.push(...block.rows)
+    else
+      hiddenRules += block.runningRules
   }
 
-  if (rows.length === 0) {
-    rows.push(formatIdleRow(state, options))
-  }
-
-  rows.push('', footer)
+  if (hiddenRules > 0 && contentBudget > 0)
+    visible.push(fitRow(`    └─ … ${hiddenRules} more running rules hidden`, options.columns))
+  if (separatorRows === 1)
+    visible.push('')
+  visible.push(formatFooter(state, warnCount, errorCount, options))
 
   return options.color
-    ? rows.map(row => styleRow(row, state, warnCount, errorCount, options))
-    : rows
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-}
-
-function estimateTotal(elapsedMs: number, completed: number, planned: number): number | undefined {
-  if (completed <= 0 || planned <= 0) {
-    return undefined
-  }
-
-  return elapsedMs * planned / completed
+    ? visible.map(row => styleRow(row, state, warnCount, errorCount, options))
+    : visible
 }
 
 function fitRow(row: string, columns: number): string {
   if (columns <= 0)
     return ''
-
-  if (row.length <= columns)
+  if (fastStringWidth(row) <= columns)
     return row
 
-  if (columns === 1)
-    return '…'
+  // Re-measure the candidate because ambiguous glyphs may differ between the
+  // truncation primitive's index calculation and the terminal-width primitive.
+  let limit = columns
+  while (limit > 0) {
+    const result = fastStringTruncatedWidth(row, { ellipsis: '…', limit })
+    // The width primitive already skips complete ANSI escape sequences. Clamp
+    // its raw index to a grapheme boundary so astral, ZWJ, and combining
+    // sequences cannot be split while preserving that ANSI-safe upper bound.
+    const index = completeGraphemeBoundary(row, result.index)
+    const visible = row.slice(0, index)
+    const reset = visible.includes('\u001B') ? '\u001B[0m' : ''
+    const fitted = `${visible}${reset}${result.ellipsed ? '…' : ''}`
+    const overflow = fastStringWidth(fitted) - columns
 
-  return `${row.slice(0, columns - 1)}…`
-}
-
-function formatDuration(ms: number | undefined): string {
-  if (ms === undefined || !Number.isFinite(ms)) {
-    return '?'
+    if (overflow <= 0)
+      return fitted
+    limit -= overflow
   }
 
+  return ''
+}
+
+function formatDuration(ms: number): string {
   return `${(Math.max(ms, 0) / 1000).toFixed(1)}s`
-}
-
-function formatEstimatedDuration(ms: number | undefined): string {
-  return `~${formatDuration(ms)}`
-}
-
-function formatFilePath(filePath: string, cwd: string | undefined): string {
-  if (!cwd)
-    return filePath
-
-  return relative(cwd, filePath) || filePath
-}
-
-function formatFileRows(
-  file: FileState,
-  state: SummaryState,
-  options: SummaryProgressReporterOptions,
-  now: number,
-): string[] {
-  const firstRow = formatFileSummaryRow(file, state, options)
-
-  if (!file.rule) {
-    return [firstRow]
-  }
-
-  const elapsed = now - file.rule.startedAt
-  const done = file.completed + file.cached + file.errored
-  const estimated = estimateTotal(
-    file.startedAt === undefined ? elapsed : now - file.startedAt,
-    done,
-    file.file.planned ?? 0,
-  )
-
-  return [
-    firstRow,
-    fitRow(`    ${file.rule.target} > ${file.rule.id} (${formatDuration(elapsed)}, ${formatEstimatedDuration(estimated)})`, options.columns),
-  ]
-}
-
-function formatFileSummaryRow(
-  file: FileState,
-  state: SummaryState,
-  options: SummaryProgressReporterOptions,
-): string {
-  const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
-  const path = formatFilePath(file.file.path, options.cwd)
-  const prefix = `${spinner} ${path}`
-  const counter = `${file.completed}/${file.cached}/${file.errored}/${file.file.planned ?? 0}`
-  const minimumSpace = 1
-
-  return fitRow(
-    `${prefix}${' '.repeat(Math.max(minimumSpace, options.columns - prefix.length - counter.length))}${counter}`,
-    options.columns,
-  )
 }
 
 function formatFooter(
   state: SummaryState,
   warnCount: number,
   errorCount: number,
-  queued: number,
   options: SummaryProgressReporterOptions,
-  now: number,
 ): string {
-  const endedAt = state.endedAt ?? now
-  const elapsed = state.runStartedAt === undefined ? undefined : endedAt - state.runStartedAt
-  const completed = state.completed + state.cached + state.errored
-  const estimated = elapsed === undefined
-    ? undefined
-    : estimateTotal(elapsed, completed, state.planned)
-  const estimatedTokens = completed > 0 && state.planned > 0
-    ? Math.ceil(state.totalTokens * state.planned / completed).toLocaleString('en-US')
-    : '?'
-
-  return fitRow([
-    `${formatDuration(elapsed)} -> ${formatEstimatedDuration(estimated)}`,
-    `${state.totalTokens.toLocaleString('en-US')} tokens -> ~${estimatedTokens} tokens`,
-    `${queued} queued / ${state.cached} cached / ${warnCount} warn / ${errorCount} error`,
-  ].join(' | '), options.columns)
-}
-
-function formatIdleRow(state: SummaryState, options: SummaryProgressReporterOptions): string {
-  const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
-  const prefix = `${spinner} alint`
-  const counter = `${state.completed}/${state.cached}/${state.errored}/${state.planned}`
-  const minimumSpace = 1
+  const { cached, failed, queued, running } = state.execution
 
   return fitRow(
-    `${prefix}${' '.repeat(Math.max(minimumSpace, options.columns - prefix.length - counter.length))}${counter}`,
+    `${running} running / ${queued} queued / ${cached} cached / ${warnCount} warn / ${errorCount} error / ${failed} failed`,
     options.columns,
   )
 }
 
-function formatQueuedRow(queued: number, options: SummaryProgressReporterOptions): string {
-  return fitRow(`  ${queued} ${queued === 1 ? 'file' : 'files'} queued`, options.columns)
+function formatPlanBlock(
+  plan: PlanState,
+  state: SummaryState,
+  options: SummaryProgressReporterOptions,
+  now: number,
+): PlanBlock {
+  const rules = [...plan.activeRules.values()].sort((left, right) => left.path.job.index - right.path.job.index)
+
+  return {
+    rows: [
+      formatPlanRow(plan, state, options),
+      ...rules.map(rule => fitRow(
+        `    ${formatTarget(rule.path)} > ${rule.path.rule.id} (${formatDuration(now - rule.startedAt)})`,
+        options.columns,
+      )),
+    ],
+    runningRules: rules.length,
+  }
 }
 
-function formatTarget(payload: RuleStartPayload | TargetProgressPayload): string {
-  return payload.path.target.name
-    ? `${payload.path.target.kind} ${payload.path.target.name}`
-    : payload.path.target.kind
+function formatPlanRow(plan: PlanState, state: SummaryState, options: SummaryProgressReporterOptions): string {
+  const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
+  const path = options.cwd ? relative(options.cwd, plan.plan.path) || '.' : plan.plan.path
+  const prefix = `${spinner} ${path}`
+  const { cached, completed, failed, planned } = plan.execution
+  const counter = `${completed}/${cached}/${failed}/${planned}`
+  const counterWidth = fastStringWidth(counter)
+
+  if (options.columns <= counterWidth)
+    return fitRow(counter, options.columns)
+
+  const fittedPrefix = fitRow(prefix, options.columns - counterWidth - 1)
+  const padding = Math.max(1, options.columns - fastStringWidth(fittedPrefix) - counterWidth)
+
+  return `${fittedPrefix}${' '.repeat(padding)}${counter}`
 }
 
-function getActiveFiles(state: SummaryState): FileState[] {
-  return [...state.files.values()]
-    .filter(file => file.startedAt !== undefined && file.endedAt === undefined)
-    .sort((left, right) => left.file.index - right.file.index)
+function formatTarget(path: ProgressPath): string {
+  return path.target.name ? `${path.target.kind} ${path.target.name}` : path.target.kind
 }
 
-function getFileState(state: SummaryState, file: ProgressFilePath): FileState {
-  const existingFile = state.files.get(file.path)
-
-  if (existingFile) {
-    existingFile.file = {
-      ...existingFile.file,
-      ...file,
-      planned: file.planned ?? existingFile.file.planned,
-    }
-
-    return existingFile
+function getPlanState(state: SummaryState, plan: ProgressPlanRef): PlanState {
+  const existing = state.plans.get(plan.id)
+  if (existing) {
+    existing.plan = plan
+    return existing
   }
 
-  const nextFile = createFileState({
-    ...file,
-    planned: file.planned ?? (state.files.size === 0 ? state.planned : undefined),
-  })
-  state.files.set(file.path, nextFile)
-
-  return nextFile
-}
-
-function replaceFirst(row: string, search: string, replacement: string): string {
-  if (search.length === 0)
-    return row
-
-  return row.replace(new RegExp(escapeRegExp(search)), replacement)
+  const next = createPlanState(plan)
+  state.plans.set(plan.id, next)
+  return next
 }
 
 function styleRow(
@@ -393,16 +345,21 @@ function styleRow(
   let styledRow = row
   const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
 
-  if (spinner) {
-    styledRow = replaceFirst(styledRow, spinner, colors.cyan(spinner))
-  }
-
-  styledRow = styledRow
-    .replace(/\|/g, colors.gray('|'))
-    .replace(`${warnCount} warn`, colors.yellow(`${warnCount} warn`))
-    .replace(`${errorCount} error`, (errorCount > 0 ? colors.red : colors.gray)(`${errorCount} error`))
-    .replace(/(\d+\/\d+\/\d+\/\d+)/, match => state.errored > 0 ? colors.red(match) : colors.gray(match))
-    .replace(/(\d[\d,]* tokens)/g, match => colors.cyan(match))
+  if (spinner)
+    styledRow = styledRow.replace(spinner, colors.cyan(spinner))
 
   return styledRow
+    .replace(/\//g, colors.gray('/'))
+    .replace(`${warnCount} warn`, colors.yellow(`${warnCount} warn`))
+    .replace(`${errorCount} error`, (errorCount > 0 ? colors.red : colors.gray)(`${errorCount} error`))
+    .replace(`${state.execution.failed} failed`, (state.execution.failed > 0 ? colors.red : colors.gray)(`${state.execution.failed} failed`))
+}
+
+function transition(counts: ExecutionCounts, from: 'queued' | 'running', to: keyof ExecutionCounts): void {
+  counts[from] -= 1
+  counts[to] += 1
+}
+
+function transitionToTerminal(counts: ExecutionCounts, terminal: RuleEndPayload['state']): void {
+  transition(counts, 'running', terminal)
 }

@@ -6,6 +6,7 @@ import { hashText, normalizeCachePath, stableHash } from '../cache'
 export function createProjectExecutionPlan(options: {
   configHash: string
   files: PreparedFile[]
+  index: number
   root: string
   ruleRuntimes: RuleRuntime[]
 }): TargetExecutionPlan | undefined {
@@ -66,8 +67,9 @@ export function createProjectExecutionPlan(options: {
   }
 
   return {
-    emitFileProgress: false,
-    fileIndex: 0,
+    id: `project:${options.root}`,
+    index: options.index,
+    kind: 'project',
     path: options.root,
     planned: executions.length,
     targets: [target],

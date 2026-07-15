@@ -17,6 +17,7 @@ export interface CliProgressReporterOptions {
   columns: number
   cwd: string
   isTty: boolean
+  rows?: number
   write: (chunk: string) => void
 }
 
@@ -33,6 +34,7 @@ export function createCliProgressReporter(options: CliProgressReporterOptions): 
     color: options.color,
     columns: options.columns,
     cwd: options.cwd,
+    rows: options.rows,
     spinnerFrames: cliSpinners.dots.frames,
   })
   const renderer = createTtyProgressRenderer<ReturnType<typeof globalThis.setInterval>>({
@@ -63,12 +65,12 @@ function createRenderingProgressReporter(
       summary.onDiagnostic?.(payload)
       renderer.render()
     },
-    onFileEnd: (payload) => {
-      summary.onFileEnd?.(payload)
+    onPlanEnd: (payload) => {
+      summary.onPlanEnd?.(payload)
       renderer.render()
     },
-    onFileStart: (payload) => {
-      summary.onFileStart?.(payload)
+    onPlanStart: (payload) => {
+      summary.onPlanStart?.(payload)
       renderer.render()
     },
     onRuleEnd: (payload) => {
