@@ -1,5 +1,5 @@
 {
-  "name": "@alint-js/plugin-example",
+  "name": "@alint-js/plugin-js",
   "type": "module",
   "version": "0.0.27",
   "exports": {
