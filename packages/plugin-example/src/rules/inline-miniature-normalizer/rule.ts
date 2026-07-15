@@ -15,6 +15,7 @@ export const inlineMiniatureNormalizerRule = defineRule({
         operation: 'inline-miniature-normalizer-judge',
         outputLanguage: ctx.outputLanguage,
         prompt: inlineMiniatureNormalizerPrompt,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
 

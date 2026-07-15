@@ -36,6 +36,19 @@ export class AlintRunError extends Error {
   }
 }
 
+/**
+ * Thrown when {@link RunOptions.signal} aborts a run.
+ *
+ * Extends {@link AlintRunError} so existing handlers still receive the partial `result`, while
+ * callers that treat cancellation differently from failure can test for this type.
+ */
+export class AlintAbortError extends AlintRunError {
+  constructor(result: RunResult, options: { cause?: unknown } = {}) {
+    super('alint run was aborted', result, { cause: options.cause })
+    this.name = 'AlintAbortError'
+  }
+}
+
 export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const cwd = options.cwd ?? processCwd()
   const config = options.config ?? []
@@ -171,6 +184,11 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   let runError: unknown
 
   try {
+    // Bail before planning so an already-cancelled caller never reaches a rule. Reading and
+    // extracting the files above is local work that costs no tokens, so it is not worth a
+    // second abort check earlier.
+    options.signal?.throwIfAborted()
+
     filePlans = createSourceExecutionPlans(files, cwd)
     directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
     projectPlan = resolvedProjectConfig.ignored
@@ -215,6 +233,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         filesTotal: inputsTotal,
         plans: [filePlan],
         progress: options.progress,
+        signal: options.signal,
         usage,
       }),
     )
@@ -231,6 +250,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         filesTotal: inputsTotal,
         plans: [directoryPlan],
         progress: options.progress,
+        signal: options.signal,
         usage,
       }),
     )
@@ -245,6 +265,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         filesTotal: inputsTotal,
         plans: [projectPlan],
         progress: options.progress,
+        signal: options.signal,
         usage,
       })
     }
@@ -288,6 +309,12 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   }
 
   if (runError) {
+    // Cancellation surfaces as its own type: the run did not fail, it was called off, and the
+    // rules that finished before the abort still contributed diagnostics and cache entries.
+    if (options.signal?.aborted) {
+      throw new AlintAbortError(result, { cause: runError })
+    }
+
     throw createAlintRunError(runError, result)
   }
 
@@ -474,6 +501,7 @@ function createRuleRuntimes(options: {
         })
       },
       settings: options.effectiveSettings,
+      signal: options.options.signal,
       src: options.src,
     }
 

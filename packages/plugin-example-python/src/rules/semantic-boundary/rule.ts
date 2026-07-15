@@ -169,6 +169,7 @@ async function judgePythonSemanticBoundary(
     model,
     operation: 'python-semantic-boundary-judge',
     schema: pythonSemanticBoundaryResponseSchema,
+    signal: ctx.signal,
   })
 
   return findings

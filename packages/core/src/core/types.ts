@@ -142,6 +142,15 @@ export interface RunOptions {
   progress?: ProgressReporter
   runner?: RunnerOptions
   setupConfig?: SetupConfig
+  /**
+   * Cancels the run. Aborting stops the engine from starting further rules and cancels the
+   * in-flight model call, so a cancelled run stops spending tokens.
+   *
+   * `runAlint` rejects with {@link AlintAbortError}, which carries the diagnostics gathered
+   * before the abort. Rules that already finished keep their cache entries: cancelling never
+   * throws away work you already paid for.
+   */
+  signal?: AbortSignal
 }
 
 export interface RunResult {

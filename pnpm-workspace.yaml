@@ -1,6 +1,6 @@
 catalogMode: prefer
 minimumReleaseAge: 1
-
+fetchTimeout: 600000
 shellEmulator: true
 trustPolicy: no-downgrade
 packages:
@@ -24,21 +24,29 @@ overrides:
   safer-buffer: npm:@nolyfill/safer-buffer@^1.0.44
   side-channel: npm:@nolyfill/side-channel@^1.0.44
   string.prototype.matchall: npm:@nolyfill/string.prototype.matchall@^1.0.44
+  # TODO:
+  # Oops! Something went wrong! :(
+  #
+  # eslint: 10.5.0
+  #
+  # TypeError: Cannot read properties of undefined (reading 'FunctionType')
+  #     at ./node_modules/.pnpm/eslint-plugin-sonarjs@4.1.0_eslint@10.5.0_jiti@2.7.0_/node_modules/eslint-plugin-sonarjs/cjs/S2201/rule.js:244:62
+  typescript: '^6.0.3'
 
 catalog:
   '@antfu/eslint-config': ^9.1.0
-  '@arethetypeswrong/core': ^0.18.4
-  '@clack/prompts': ^1.6.0
-  '@earendil-works/pi-agent-core': ^0.80.2
-  '@earendil-works/pi-ai': ^0.80.2
+  '@arethetypeswrong/core': ^0.18.5
+  '@clack/prompts': ^1.7.0
+  '@earendil-works/pi-agent-core': ^0.80.7
+  '@earendil-works/pi-ai': ^0.80.7
   '@modelcontextprotocol/sdk': ^1.29.0
   '@moeru/eslint-config': ^0.1.0-beta.18
   '@moeru/std': ^0.1.0-beta.18
   '@openai/codex-sdk': ^0.144.3
   '@package-json/types': ^0.0.13
   '@pnpm/find-workspace-dir': ^1000.1.5
-  '@smithy/node-http-handler': ^4.9.1
-  '@types/node': ^26.0.1
+  '@smithy/node-http-handler': ^4.9.6
+  '@types/node': ^26.1.1
   '@types/tar-stream': ^3.1.4
   '@valibot/to-json-schema': ^1.7.1
   '@xsai/generate-text': ^0.5.0-beta.7
@@ -46,34 +54,34 @@ catalog:
   '@xsai/tool': ^0.5.0-beta.7
   apeira: ^0.0.7
   bumpp: ^11.1.0
-  c12: ^3.3.4
+  c12: ^4.0.0-beta.5
   cac: ^7.0.0
   cli-spinners: ^3.4.0
-  cspell: ^9.8.0
+  cspell: ^10.0.1
   doctoc: ^2.5.0
   effect: ^3.22.0
   es-toolkit: ^1.49.0
   eslint: ^10.5.0
-  eslint-plugin-oxlint: ^1.71.0
+  eslint-plugin-oxlint: ^1.73.0
   gitignore-fs: ^2.2.3
   h3: 2.0.1-rc.25
   jiti: ^2.7.0
-  knip: ^6.21.0
+  knip: ^6.27.0
   local-pkg: ^1.2.1
   minimatch: ^10.2.5
   mlly: ^1.8.2
   nano-staged: ^1.0.2
   ofetch: ^1.5.1
-  oxc-minify: ^0.137.0
-  oxc-parser: ^0.137.0
-  oxlint: ^1.71.0
+  oxc-minify: ^0.140.0
+  oxc-parser: ^0.140.0
+  oxlint: ^1.74.0
   pathe: ^2.0.3
   publint: ^0.3.21
   resolve.exports: 2.0.3
   rollup: ^4.62.2
   simple-git-hooks: ^2.13.1
   smol-toml: ^1.7.0
-  sury: ^10.0.4
+  sury: ^11.0.0-alpha.10
   table: ^6.9.0
   tar-stream: ^3.2.0
   taze: ^19.14.1
@@ -81,18 +89,18 @@ catalog:
   tinyglobby: ^0.2.17
   tinyrainbow: ^3.1.0
   tree-sitter-wasms: ^0.1.13
-  tsdown: ^0.22.3
-  tsx: ^4.22.4
-  turbo: ^2.10.0
+  tsdown: ^0.22.8
+  tsx: ^4.23.1
+  turbo: ^2.10.5
   typescript: ^6.0.3
   unplugin-raw: ^0.7.0
   unplugin-unused: ^0.5.7
-  valibot: ^1.4.1
+  valibot: ^1.4.2
   vite: ^8.1.0
   web-tree-sitter: ^0.24.7
   xdg-basedir: ^5.1.0
 
 catalogs:
   vitest:
-    '@vitest/coverage-v8': ^4.1.9
-    vitest: ^4.1.9
+    '@vitest/coverage-v8': ^4.1.10
+    vitest: ^4.1.10

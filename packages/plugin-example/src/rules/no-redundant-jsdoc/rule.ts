@@ -15,6 +15,7 @@ export const redundantJsdocRule = defineRule({
         operation: 'redundant-jsdoc-judge',
         outputLanguage: ctx.outputLanguage,
         prompt: redundantJsdocPrompt,
+        signal: ctx.signal,
         source: ctx.src.getText(target),
       })
 

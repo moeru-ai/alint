@@ -124,6 +124,13 @@ export interface RuleContext {
   outputLanguage?: string
   report: (diagnostic: DiagnosticDescriptor) => void
   settings: Record<string, unknown>
+  /**
+   * Cancels the run. Forward it to anything long-running a rule starts, so cancelling stops
+   * the work instead of letting it finish and bill.
+   *
+   * `ctx.agent` already injects it, and `generateStructured` accepts it as `signal`.
+   */
+  signal?: AbortSignal
   src: SourceRuntime
 }
 
