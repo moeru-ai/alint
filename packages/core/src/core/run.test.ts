@@ -2942,6 +2942,40 @@ describe('runAlint', () => {
     expect(runError).toBe(sentinel)
   })
 
+  it('propagates a reporter exception caught by the handler', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-caught-diagnostic-progress-'))
+    const filePath = join(root, 'demo.txt')
+    const sentinel = new Error('caught diagnostic reporter failed')
+    await writeFile(filePath, 'hello\n')
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFile: () => {
+          try {
+            ctx.report({ message: 'finding' })
+          }
+          catch {
+            // A rule cannot suppress an infrastructure failure from the reporter.
+          }
+        },
+      }),
+    })
+
+    let runError: unknown
+    try {
+      await runAlint({
+        config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'text/plain' }),
+        files: [filePath],
+        progress: { onDiagnostic: () => { throw sentinel } },
+        setupConfig: createSetupConfig(),
+      })
+    }
+    catch (error) {
+      runError = error
+    }
+
+    expect(runError).toBe(sentinel)
+  })
+
   describe('cacheOnly', () => {
     const reportingRule = () => defineRule({
       create: ctx => ({

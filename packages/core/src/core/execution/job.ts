@@ -144,6 +144,9 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     options.runSignal?.removeEventListener('abort', forwardRunAbort)
   }
 
+  if (state.reporterFailed)
+    throw state.reporterCause
+
   if (options.runSignal?.aborted)
     return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
 
