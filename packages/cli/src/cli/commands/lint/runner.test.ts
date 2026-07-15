@@ -10,4 +10,12 @@ describe('resolveRunnerConfig', () => {
       { format: 'stylish' },
     )?.agentRetries).toBe(4)
   })
+
+  it('preserves zero agent retries from project config', () => {
+    expect(resolveRunnerConfig(
+      { providers: [], runner: { agentRetries: 1 }, version: 1 },
+      { runner: { agentRetries: 0 } },
+      { format: 'stylish' },
+    )?.agentRetries).toBe(0)
+  })
 })
