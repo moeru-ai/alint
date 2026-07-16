@@ -6,6 +6,7 @@ describe('examplePlugin', () => {
   it('exports the recommended example rules', () => {
     const expectedRuleIds = [
       'inline-miniature-normalizer',
+      'no-mixed-layers-without-abstraction',
       'no-private-schema-toolkit',
       'no-redundant-binding',
       'no-redundant-jsdoc',

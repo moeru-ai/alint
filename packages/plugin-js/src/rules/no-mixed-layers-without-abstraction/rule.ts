@@ -1,8 +1,9 @@
-import type { RuleContext } from '@alint-js/plugin'
+import type { FileTarget, RuleContext } from '@alint-js/plugin'
 import type { JsonSchema } from '@valibot/to-json-schema'
 import type { InferOutput } from 'valibot'
 
-import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, toolParametersFromSchema } from '@alint-js/core/structured-output'
+import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateStructured, toolParametersFromSchema } from '@alint-js/core/structured-output'
+import { defineRule } from '@alint-js/plugin'
 import { array, description, number, picklist, pipe, strictObject, string } from 'valibot'
 
 import { mixedLayersWithoutAbstractionPrompt } from './prompt'
@@ -73,6 +74,53 @@ export const mixedLayerResponseSchema = pipe(
 )
 
 export type MixedLayerFinding = InferOutput<typeof mixedLayerFindingSchema>
+
+export const mixedLayersWithoutAbstractionRule = defineRule({
+  cacheKey: [mixedLayersWithoutAbstractionPrompt, 'mixed-layer-findings-v1'],
+  create: (ctx) => {
+    /**
+     * Reviews one file target for integration responsibilities that lack a stable owner.
+     *
+     * Triggering workflow:
+     *
+     * {@link mixedLayersWithoutAbstractionRule}
+     *   -> `onTargetFile`
+     *     -> {@link onTargetFile}
+     *
+     * Upstream:
+     * - {@link mixedLayersWithoutAbstractionRule}
+     *
+     * Downstream:
+     * - {@link generateStructured}
+     * - {@link reportMixedLayerFindings}
+     */
+    async function onTargetFile(target: FileTarget): Promise<void> {
+      const model = await ctx.model()
+      const source = ctx.src.getText(target)
+      const { findings } = await generateStructured({
+        createMessages: retryFeedback => createMixedLayerMessages(
+          source,
+          retryFeedback,
+          ctx.outputLanguage,
+        ),
+        logger: ctx.logger,
+        metering: ctx.metering,
+        model,
+        operation: 'mixed-layers-without-abstraction-judge',
+        schema: mixedLayerResponseSchema,
+        signal: ctx.signal,
+      })
+
+      reportMixedLayerFindings(
+        ctx,
+        target.file.path,
+        normalizeMixedLayerFindings(findings, source),
+      )
+    }
+
+    return { onTargetFile }
+  },
+})
 
 export function createMixedLayerMessages(
   source: string,

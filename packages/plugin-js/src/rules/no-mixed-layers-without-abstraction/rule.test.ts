@@ -9,6 +9,7 @@ import {
   createMixedLayerToolParameters,
   mixedLayerFindingSchema,
   mixedLayerResponseSchema,
+  mixedLayersWithoutAbstractionRule,
   normalizeMixedLayerFindings,
   reportMixedLayerFindings,
 } from './rule'
@@ -20,6 +21,56 @@ function createReportContext() {
   }
 
   return { context, diagnostics }
+}
+
+function createRuleContext(): RuleContext {
+  return {
+    cwd: '/repo',
+    id: 'example/no-mixed-layers-without-abstraction',
+    localId: 'no-mixed-layers-without-abstraction',
+    logger: { debug: () => {} },
+    metering: { recordUsage: () => {} },
+    model: async () => ({
+      aliases: [],
+      capabilities: ['tool-call'],
+      id: 'model',
+      name: 'model',
+      params: {},
+      provider: {
+        endpoint: 'http://localhost:11434/v1',
+        headers: {},
+        id: 'provider',
+        type: 'openai-compatible',
+      },
+    }),
+    report: () => {},
+    settings: {},
+    src: {
+      getText: target => target.text,
+      readFile: async filePath => ({
+        language: 'text/plain',
+        lines: [''],
+        path: filePath,
+        text: '',
+      }),
+      sliceLines: (file, range) => ({
+        filePath: file.path,
+        loc: {
+          end: { column: 0, line: range.endLine },
+          start: { column: 0, line: range.startLine },
+        },
+        text: file.lines.slice(range.startLine - 1, range.endLine).join('\n'),
+      }),
+      sliceRange: (file, range) => ({
+        filePath: file.path,
+        loc: {
+          end: { column: range.end, line: 1 },
+          start: { column: range.start, line: 1 },
+        },
+        text: file.text.slice(range.start, range.end),
+      }),
+    },
+  }
 }
 
 function finding(overrides: Partial<Parameters<typeof normalizeMixedLayerFindings>[0][number]> = {}) {
@@ -70,6 +121,19 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     ]) {
       expect(normalizedPrompt).not.toContain(triggerTerm)
     }
+  })
+})
+
+describe('mixedLayersWithoutAbstractionRule', () => {
+  it('exposes only the file-target handler and versions its cache behavior', () => {
+    const handlers = mixedLayersWithoutAbstractionRule.create(createRuleContext())
+
+    expect(Object.keys(handlers)).toEqual(['onTargetFile'])
+    expect(handlers.onTargetFile).toBeTypeOf('function')
+    expect(mixedLayersWithoutAbstractionRule.cacheKey).toEqual([
+      mixedLayersWithoutAbstractionPrompt,
+      'mixed-layer-findings-v1',
+    ])
   })
 })
 
