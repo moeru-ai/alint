@@ -2925,6 +2925,64 @@ export default [
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
   })
 
+  it('reports nothing and writes no cache when --cache-only misses', async () => {
+    const io = await createTestIo()
+
+    await writeCacheFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-only',
+      'demo.ts',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    const result = JSON.parse(io.stdoutText)
+    expect(result.diagnostics).toEqual([])
+    expect(result.execution.skipped).toBeGreaterThanOrEqual(1)
+    // cacheOnly is read-only: a cold run must call no model and leave no cache file behind.
+    await expect(readFile(join(io.cwd, '.alintcache'), 'utf8')).rejects.toThrow()
+  })
+
+  it('replays cached diagnostics under --cache-only without re-running the rule', async () => {
+    const io = await createTestIo()
+
+    await writeCacheFixture(io.cwd)
+
+    // Warm the cache with a normal run; the rule increments its call counter to 1.
+    const warmExitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(warmExitCode).toBe(0)
+    expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
+
+    io.stdoutText = ''
+    io.stderrText = ''
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      '--cache-only',
+      'demo.ts',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    const result = JSON.parse(io.stdoutText)
+    // Still "checked 1", not "checked 2": the diagnostic was replayed, the rule never re-ran.
+    expect(result.diagnostics[0].message).toBe('checked 1')
+    expect(result.diagnostics[0].cached).toBe(true)
+    expect(result.execution.cached).toBeGreaterThanOrEqual(1)
+  })
+
   it('writes and reads the requested cache location', async () => {
     const io = await createTestIo()
     const cachePath = join(io.cwd, 'custom-cache.json')

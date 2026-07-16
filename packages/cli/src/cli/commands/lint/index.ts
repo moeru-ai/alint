@@ -117,6 +117,7 @@ async function runLintCommand(
   try {
     // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
     result = await runAlint({
+      cacheOnly: options.cacheOnly,
       config,
       cwd: io.cwd,
       directories: lintTargets.directories,

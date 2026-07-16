@@ -34,6 +34,7 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
   cli
     .option('--no-cache', 'Disable cache for this run')
     .option('--cache-location <path>', 'Path to the alint cache file or directory')
+    .option('--cache-only', 'Report only cached diagnostics; skip rules that miss the cache and call no model')
     .option('-c, --config <path>', 'Path to alint config file')
     .option('--format <format>', 'Reporter format', { default: 'stylish' })
     .option('--model <model>', 'Force a model override')
