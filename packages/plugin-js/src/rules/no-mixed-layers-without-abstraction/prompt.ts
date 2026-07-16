@@ -41,6 +41,9 @@ Finding granularity:
 - If no stable abstraction is missing, return no findings.
 - Once a missing boundary is established, keep each declaration as a primary finding when it independently owns external access, a reusable integration operation, response interpretation or adaptation, or consumer-specific policy.
 - After qualification, report every primary declaration that meets that standard, even when several declarations should move into the same focused owner.
+- Every primary finding must materially participate in the identified missing boundary or responsibility flow.
+- Do not report a declaration merely because it coexists in a source that otherwise qualifies.
+- Its suggestion or relatedDeclarations must show how it belongs to that cluster: move with another declaration, call through the boundary, or remove a direct dependency.
 - A primary declaration may be a function, method, operation definition, or policy declaration.
 - Put supporting types and constants in relatedDeclarations unless they independently own an operation or policy.
 - relatedDeclarations may cue supporting declarations and cooperation, movement, or call relationships between primary findings, but must not replace a primary finding for an independently owned operation, adaptation, or policy.

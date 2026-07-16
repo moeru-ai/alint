@@ -153,6 +153,10 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionPrompt).toContain('external access, a reusable integration operation, response interpretation or adaptation, or consumer-specific policy')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('relatedDeclarations may cue supporting declarations and cooperation, movement, or call relationships between primary findings')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('must not replace a primary finding for an independently owned operation, adaptation, or policy')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Every primary finding must materially participate in the identified missing boundary or responsibility flow')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Do not report a declaration merely because it coexists in a source that otherwise qualifies')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Its suggestion or relatedDeclarations must show how it belongs to that cluster')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('move with another declaration, call through the boundary, or remove a direct dependency')
 
     const normalizedPrompt = mixedLayersWithoutAbstractionPrompt.toLowerCase()
     for (const triggerTerm of [
