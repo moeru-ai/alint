@@ -1,7 +1,7 @@
 {
   "name": "@alint-js/agent-apeira",
   "type": "module",
-  "version": "0.0.30",
+  "version": "0.0.31",
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
