@@ -18,7 +18,8 @@ First determine whether all of these conditions are visible in the reviewed file
 - the consumer understands lower-level request, response, failure, or protocol details to complete its own work
 
 Before reporting, identify the focused owner the suggestion would create:
-- If that owner already exists in the reviewed source as a stable boundary whose callers do not need the lower-level knowledge, internal richness alone is not mixed ownership.
+- Suppress only if that owner already exists in the reviewed source as a stable boundary: a semantic interface callable from outside the current consuming feature without importing or understanding that consumer and whose callers do not need the lower-level knowledge.
+- The presence of a container or construction helper is not sufficient evidence of that boundary.
 - Multiple cohesive implementation steps inside that owner do not by themselves establish mixed ownership.
 - Suppress the finding when the suggestion would only rename, re-extract, or recreate that existing boundary, or move cohesive internals behind materially the same interface.
 - Still report when the existing boundary embeds a separate consuming workflow or policy, leaks lower-level details to callers, or owns responsibilities outside its promised boundary that can change or be reused independently.
@@ -36,10 +37,13 @@ Qualifying responsibilities include:
 - mixing reusable integration behavior with selection, ranking, truncation, policy, or representation specific to the current feature
 
 Finding granularity:
+- Separate the boundary decision from finding granularity.
 - If no stable abstraction is missing, return no findings.
-- If a boundary is missing, report every primary declaration that materially owns a distinct mixed responsibility.
+- Once a missing boundary is established, keep each declaration as a primary finding when it independently owns external access, a reusable integration operation, response interpretation or adaptation, or consumer-specific policy.
+- After qualification, report every primary declaration that meets that standard, even when several declarations should move into the same focused owner.
 - A primary declaration may be a function, method, operation definition, or policy declaration.
 - Put supporting types and constants in relatedDeclarations unless they independently own an operation or policy.
+- relatedDeclarations may cue supporting declarations and cooperation, movement, or call relationships between primary findings, but must not replace a primary finding for an independently owned operation, adaptation, or policy.
 - Do not replace declaration findings with one file-level summary.
 - Each suggestion must name the declarations that belong together, the focused owner they should form, and the lower-level knowledge its interface should remove from the consumer.
 - Use relatedDeclarations to cue declarations that should move together, call through the proposed boundary, or stop depending on each other directly.

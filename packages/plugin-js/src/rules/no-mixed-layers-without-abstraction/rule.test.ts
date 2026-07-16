@@ -145,6 +145,14 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionPrompt).toContain('embeds a separate consuming workflow or policy')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('leaks lower-level details to callers')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('owns responsibilities outside its promised boundary that can change or be reused independently')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('callable from outside the current consuming feature')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('without importing or understanding that consumer')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('The presence of a container or construction helper is not sufficient evidence of that boundary')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Separate the boundary decision from finding granularity')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Once a missing boundary is established, keep each declaration as a primary finding when it independently owns')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('external access, a reusable integration operation, response interpretation or adaptation, or consumer-specific policy')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('relatedDeclarations may cue supporting declarations and cooperation, movement, or call relationships between primary findings')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('must not replace a primary finding for an independently owned operation, adaptation, or policy')
 
     const normalizedPrompt = mixedLayersWithoutAbstractionPrompt.toLowerCase()
     for (const triggerTerm of [
