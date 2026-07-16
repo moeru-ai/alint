@@ -1,6 +1,44 @@
+import type { RuleContext } from '@alint-js/plugin'
+
+import { getDescription } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import { mixedLayersWithoutAbstractionPrompt } from './prompt'
+import {
+  createMixedLayerMessages,
+  createMixedLayerToolParameters,
+  mixedLayerFindingSchema,
+  normalizeMixedLayerFindings,
+  reportMixedLayerFindings,
+} from './rule'
+
+function createReportContext() {
+  const diagnostics: Parameters<RuleContext['report']>[0][] = []
+  const context: Pick<RuleContext, 'report'> = {
+    report: diagnostic => diagnostics.push(diagnostic),
+  }
+
+  return { context, diagnostics }
+}
+
+function finding(overrides: Partial<Parameters<typeof normalizeMixedLayerFindings>[0][number]> = {}) {
+  return {
+    boundaryKind: 'data-adaptation' as const,
+    confidence: 'high' as const,
+    declaration: 'interpretFrame',
+    line: 2,
+    message: 'interpretFrame makes a reusable external response contract inside the consumer.',
+    relatedDeclarations: [
+      {
+        line: 1,
+        name: 'readFrame',
+        relationship: 'Move with interpretFrame behind the same external integration interface.',
+      },
+    ],
+    suggestion: 'Move readFrame and interpretFrame into a focused integration owner and expose interpreted frames.',
+    ...overrides,
+  }
+}
 
 describe('mixedLayersWithoutAbstractionPrompt', () => {
   it('defines reusable integration boundaries without motivating trigger terms', () => {
@@ -31,5 +69,113 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     ]) {
       expect(normalizedPrompt).not.toContain(triggerTerm)
     }
+  })
+})
+
+describe('mixed layer structured findings', () => {
+  it('creates strict provider-compatible schemas for nested relationships', () => {
+    const parameters = createMixedLayerToolParameters()
+    const findings = parameters.properties?.findings
+
+    expect(parameters.additionalProperties).toBe(false)
+    expect(typeof findings).toBe('object')
+
+    if (typeof findings !== 'object' || Array.isArray(findings.items) || typeof findings.items !== 'object') {
+      throw new TypeError('Expected findings.items to be an object schema')
+    }
+
+    expect(findings.items.additionalProperties).toBe(false)
+    const relationships = findings.items.properties?.relatedDeclarations
+    expect(typeof relationships).toBe('object')
+
+    if (typeof relationships !== 'object' || Array.isArray(relationships.items) || typeof relationships.items !== 'object') {
+      throw new TypeError('Expected relatedDeclarations.items to be an object schema')
+    }
+
+    expect(relationships.items.additionalProperties).toBe(false)
+    expect(getDescription(mixedLayerFindingSchema)).toContain('declaration-level warning')
+  })
+
+  it('builds retry-aware numbered messages with output language instructions', () => {
+    const messages = createMixedLayerMessages(
+      'const readFrame = transport.read\nconst result = readFrame()\n',
+      'Return the required tool object.',
+      'Simplified Chinese',
+    )
+
+    expect(messages[0]?.role).toBe('system')
+    expect(messages[0]?.content).toBe(mixedLayersWithoutAbstractionPrompt)
+    expect(messages[1]).toEqual({ content: 'Return the required tool object.', role: 'user' })
+    expect(messages[2]?.content).toContain('Write all human-readable finding messages and suggestions in this language: Simplified Chinese.')
+    expect(messages[2]?.content).toContain('1 | const readFrame = transport.read')
+    expect(messages[2]?.content).toContain('2 | const result = readFrame()')
+  })
+
+  it('deduplicates primary lines and removes invalid related declaration lines', () => {
+    const normalized = normalizeMixedLayerFindings(
+      [
+        finding({
+          relatedDeclarations: [
+            { line: 1, name: 'readFrame', relationship: 'Move with the adapter.' },
+            { line: 1, name: 'readFrame', relationship: 'Duplicate relationship.' },
+            { line: 9, name: 'outside', relationship: 'Invalid line.' },
+          ],
+        }),
+        finding({ declaration: 'duplicateLine', line: 2 }),
+        finding({ declaration: 'fractionalLine', line: 1.5 }),
+        finding({ declaration: 'outsideSource', line: 9 }),
+      ],
+      'const readFrame = transport.read\nconst result = readFrame()\n',
+    )
+
+    expect(normalized).toHaveLength(1)
+    expect(normalized[0]?.declaration).toBe('interpretFrame')
+    expect(normalized[0]?.relatedDeclarations).toEqual([
+      { line: 1, name: 'readFrame', relationship: 'Move with the adapter.' },
+    ])
+  })
+
+  it('reports every accepted primary declaration with relationship evidence', () => {
+    const { context, diagnostics } = createReportContext()
+    const findings = [
+      finding(),
+      finding({
+        boundaryKind: 'consumer-policy',
+        confidence: 'medium',
+        declaration: 'selectFrames',
+        line: 3,
+        message: 'selectFrames mixes consumer policy with the external response owner.',
+        suggestion: 'Keep selectFrames in the consumer and call the interpreted-frame interface.',
+      }),
+    ]
+
+    reportMixedLayerFindings(context, '/repo/source.ts', findings)
+
+    expect(diagnostics).toEqual([
+      {
+        evidence: {
+          boundaryKind: 'data-adaptation',
+          confidence: 'high',
+          declaration: 'interpretFrame',
+          relatedDeclarations: findings[0]?.relatedDeclarations,
+          suggestion: findings[0]?.suggestion,
+        },
+        filePath: '/repo/source.ts',
+        loc: { start: { column: 0, line: 2 } },
+        message: findings[0]?.message,
+      },
+      {
+        evidence: {
+          boundaryKind: 'consumer-policy',
+          confidence: 'medium',
+          declaration: 'selectFrames',
+          relatedDeclarations: findings[1]?.relatedDeclarations,
+          suggestion: findings[1]?.suggestion,
+        },
+        filePath: '/repo/source.ts',
+        loc: { start: { column: 0, line: 3 } },
+        message: findings[1]?.message,
+      },
+    ])
   })
 })
