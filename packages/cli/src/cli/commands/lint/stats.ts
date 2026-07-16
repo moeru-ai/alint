@@ -19,7 +19,7 @@ interface StatsWriteTarget {
 }
 
 export function createStatsCollector(): StatsCollector {
-  const counts: RunRuleCounts = { cached: 0, completed: 0, errored: 0, planned: 0 }
+  const counts: RunRuleCounts = { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0 }
   let startedAt: number | undefined
   let endedAt: number | undefined
 
@@ -28,10 +28,11 @@ export function createStatsCollector(): StatsCollector {
     durationMs: () => (startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : undefined),
     reporter: {
       onRunEnd: (payload: RunEndPayload) => {
-        counts.cached = payload.cached
-        counts.completed = payload.completed
-        counts.errored = payload.errored
-        counts.planned = payload.planned
+        counts.cached = payload.execution.cached
+        counts.cancelled = payload.execution.cancelled
+        counts.completed = payload.execution.completed
+        counts.failed = payload.execution.failed
+        counts.planned = payload.execution.planned
         endedAt = payload.endedAt
       },
       onRunStart: (payload: RunStartPayload) => {
@@ -53,46 +54,52 @@ export function mergeProgressReporters(
     return base
   }
 
+  const baseState = { disabled: false, reporter: base }
+  const extraState = { disabled: false, reporter: extra }
+  let firstFailure: Error | undefined
+  const deliver = (
+    state: { disabled: boolean, reporter: ProgressReporter },
+    callback: (reporter: ProgressReporter) => void,
+  ): void => {
+    if (state.disabled)
+      return
+
+    try {
+      callback(state.reporter)
+    }
+    catch (error) {
+      state.disabled = true
+      firstFailure ??= normalizeReporterError(error)
+    }
+  }
+  const deliverBoth = (callback: (reporter: ProgressReporter) => void): void => {
+    deliver(baseState, callback)
+    deliver(extraState, callback)
+  }
+
   return {
     onDiagnostic: (payload) => {
-      base.onDiagnostic?.(payload)
-      extra.onDiagnostic?.(payload)
+      deliverBoth(reporter => reporter.onDiagnostic?.(payload))
     },
-    onFileEnd: (payload) => {
-      base.onFileEnd?.(payload)
-      extra.onFileEnd?.(payload)
+    onJobEnd: (payload) => {
+      deliverBoth(reporter => reporter.onJobEnd?.(payload))
     },
-    onFileStart: (payload) => {
-      base.onFileStart?.(payload)
-      extra.onFileStart?.(payload)
+    onJobQueued: (payload) => {
+      deliverBoth(reporter => reporter.onJobQueued?.(payload))
     },
-    onRuleEnd: (payload) => {
-      base.onRuleEnd?.(payload)
-      extra.onRuleEnd?.(payload)
-    },
-    onRuleStart: (payload) => {
-      base.onRuleStart?.(payload)
-      extra.onRuleStart?.(payload)
+    onJobStart: (payload) => {
+      deliverBoth(reporter => reporter.onJobStart?.(payload))
     },
     onRunEnd: (payload) => {
-      base.onRunEnd?.(payload)
-      extra.onRunEnd?.(payload)
+      deliverBoth(reporter => reporter.onRunEnd?.(payload))
+      if (firstFailure)
+        throw firstFailure
     },
     onRunStart: (payload) => {
-      base.onRunStart?.(payload)
-      extra.onRunStart?.(payload)
-    },
-    onTargetEnd: (payload) => {
-      base.onTargetEnd?.(payload)
-      extra.onTargetEnd?.(payload)
-    },
-    onTargetStart: (payload) => {
-      base.onTargetStart?.(payload)
-      extra.onTargetStart?.(payload)
+      deliverBoth(reporter => reporter.onRunStart?.(payload))
     },
     onUsage: (payload) => {
-      base.onUsage?.(payload)
-      extra.onUsage?.(payload)
+      deliverBoth(reporter => reporter.onUsage?.(payload))
     },
   }
 }
@@ -130,11 +137,23 @@ export async function writeRunStats(
     await store.record(createRunStat({
       cwd,
       durationMs: collector.durationMs(),
-      ruleCounts: collector.counts,
+      ruleCounts: {
+        cached: result.execution.cached,
+        cancelled: result.execution.cancelled,
+        completed: result.execution.completed,
+        failed: result.execution.failed,
+        planned: result.execution.planned,
+      },
       usage: result.usage,
     }))
   }
   catch {
     // Noop: Stats persistence is non-critical.
   }
+}
+
+function normalizeReporterError(error: unknown): Error {
+  if (error instanceof Error)
+    return error
+  return new Error(error != null ? String(error) : 'Unknown progress reporter error.')
 }

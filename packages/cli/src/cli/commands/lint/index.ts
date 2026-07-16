@@ -5,7 +5,7 @@ import type { LintCommandOptions } from './options'
 import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { AlintRunError, runAlint } from '@alint-js/core'
+import { AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
 import { resolve } from 'pathe'
 
 import { formatDiagnostics } from '../../reporters'
@@ -13,7 +13,7 @@ import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
 import { loadMergedSetupConfig } from '../config/setup-config'
 import { findLintTargets, NoFilesFoundError } from './discovery'
-import { formatRunError } from './errors'
+import { formatCancelledError, formatRunError } from './errors'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
 
@@ -99,6 +99,7 @@ async function runLintCommand(
         columns: io.stderr.columns ?? 80,
         cwd: io.cwd,
         isTty: io.stderr.isTTY === true,
+        rows: io.stderr.rows,
         write: chunk => io.stderr.write(chunk),
       })
     : undefined
@@ -107,9 +108,14 @@ async function runLintCommand(
     : undefined
   const statsTarget = resolveStatsWrite(runner?.stats, io.env)
   const statsCollector = statsTarget ? createStatsCollector() : undefined
+  const persistStats = async (runResult: Awaited<ReturnType<typeof runAlint>>): Promise<void> => {
+    if (statsTarget && statsCollector)
+      await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
+  }
   let result: Awaited<ReturnType<typeof runAlint>>
 
   try {
+    // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
     result = await runAlint({
       config,
       cwd: io.cwd,
@@ -127,7 +133,14 @@ async function runLintCommand(
     progress?.dispose()
 
     if (error instanceof AlintRunError) {
+      await persistStats(error.result)
       io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
+      return 2
+    }
+
+    if (error instanceof AlintRunCancelledError) {
+      await persistStats(error.result)
+      io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
       return 2
     }
 
@@ -137,9 +150,7 @@ async function runLintCommand(
   restoreProgressConsole?.()
   progress?.dispose()
 
-  if (statsTarget && statsCollector) {
-    await writeRunStats(statsTarget, statsCollector, result, io.cwd)
-  }
+  await persistStats(result)
 
   io.stdout.write(formatDiagnostics(options.format as ReporterName, result, {
     color: io.stdout.isTTY === true,

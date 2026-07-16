@@ -22,7 +22,7 @@ export {
   resolveLanguage,
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
-export { AlintRunError, runAlint } from './core/run'
+export { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
 export type {
   ClassTarget,
@@ -49,14 +49,14 @@ export type {
   AlintRunFailure,
   Diagnostic,
   DiagnosticProgressPayload,
-  FileProgressPayload,
+  ExecutionCounts,
   InferenceUsageRecord,
-  ProgressFilePath,
-  ProgressPath,
+  JobEndPayload,
+  JobQueuedPayload,
+  JobStartPayload,
+  ProgressJob,
   ProgressReporter,
   ProgressTargetKind,
-  RuleEndPayload,
-  RuleStartPayload,
   RunEndPayload,
   RunExecution,
   RunOptions,
@@ -64,7 +64,6 @@ export type {
   RunStartPayload,
   RunUsage,
   RunUsageTotals,
-  TargetProgressPayload,
   UsageProgressPayload,
 } from './core/types'
 export { defineConfig, definePlugin, defineRule } from './dsl/define'

@@ -13,5 +13,6 @@ export interface CliIo {
 export interface CliWritable {
   columns?: number
   isTTY?: boolean
+  rows?: number
   write: (chunk: string) => unknown
 }

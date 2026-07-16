@@ -1,31 +1,29 @@
-import type { AlintRunError } from '@alint-js/core'
+import type { AlintRunCancelledError, AlintRunError, AlintRunFailure } from '@alint-js/core'
 
-import c from 'tinyrainbow'
+import { createColors } from 'tinyrainbow'
 
-export function formatRunError(error: AlintRunError, color: boolean): string {
-  const label = color ? c.red('error') : 'error'
-  const context = formatRunErrorContext(error)
-  const message = error.failure?.message ?? error.message
+const colors = createColors({ force: true })
 
-  return `${label} ${context}\n  Rule running failed due to ${message}\n`
+export function formatCancelledError(error: AlintRunCancelledError, color: boolean): string {
+  const label = color ? colors.red('error') : 'error'
+  return `${label} ${error.message}\n`
 }
 
-function formatRunErrorContext(error: AlintRunError): string {
-  const failure = error.failure
+export function formatRunError(error: AlintRunError, color: boolean): string {
+  const label = color ? colors.red('error') : 'error'
+  const lines = [
+    `${label} ${error.message}`,
+    ...error.failures.map(formatFailure),
+    '',
+  ]
 
-  if (!failure) {
-    return 'alint run failed'
-  }
+  return lines.join('\n')
+}
 
-  const target = failure.target
-    ? failure.target.name
-      ? `${failure.target.kind} ${failure.target.name}`
-      : failure.target.kind
-    : undefined
+function formatFailure(failure: AlintRunFailure): string {
+  const target = failure.job.target.name
+    ? `${failure.job.target.kind} ${failure.job.target.name}`
+    : failure.job.target.kind
 
-  return [
-    failure.filePath,
-    target,
-    failure.ruleId,
-  ].filter(Boolean).join(' > ')
+  return `  [${failure.kind}] ${failure.job.inputPath} > ${target} > ${failure.job.ruleId}: ${failure.message}`
 }

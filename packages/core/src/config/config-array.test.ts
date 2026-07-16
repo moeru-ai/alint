@@ -304,7 +304,7 @@ describe('config array resolution', () => {
         languageOptions: { parser: 'a', sourceType: 'module' },
         linterOptions: { noInlineConfig: true },
         processor: firstProcessor,
-        runner: { agentRetries: 1, fileConcurrency: 1, timeoutMs: 100 },
+        runner: { agentRetries: 1, ruleConcurrency: 1, timeoutMs: 100 },
         settings: { review: { depth: 'light' }, shared: true },
       },
       {
@@ -324,7 +324,7 @@ describe('config array resolution', () => {
       noInlineConfig: true,
       reportUnusedDisableDirectives: 'warn',
     })
-    expect(result.config.runner).toEqual({ agentRetries: 3, fileConcurrency: 1, timeoutMs: 200 })
+    expect(result.config.runner).toEqual({ agentRetries: 3, ruleConcurrency: 1, timeoutMs: 200 })
     expect(result.config.settings).toEqual({ review: { depth: 'strict' }, shared: true })
   })
 

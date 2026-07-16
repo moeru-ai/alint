@@ -89,7 +89,7 @@ function formatDiagnosticCount(total: number, cached: number, label: string): st
   return `${total} ${label}${cached > 0 ? ` (${cached} cached)` : ''}`
 }
 
-function formatExecutionSummary(execution: RunResult['execution']): string | undefined {
+function formatExecutionSummary(execution: RunResult['execution'] | undefined): string | undefined {
   if (!execution || execution.cached === 0) {
     return undefined
   }

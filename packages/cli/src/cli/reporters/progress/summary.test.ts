@@ -1,283 +1,171 @@
-import { describe, expect, it } from 'vitest'
+import type { ExecutionCounts, ProgressJob } from '@alint-js/core'
+
+import fastStringWidth from 'fast-string-width'
+
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createSummaryProgressReporter } from './summary'
 
-function stripAnsi(value: string): string {
-  return value.replace(/\u001B\[[0-9;]*m/g, '')
+function counts(overrides: Partial<ExecutionCounts> = {}): ExecutionCounts {
+  return {
+    cached: 0,
+    cancelled: 0,
+    completed: 0,
+    failed: 0,
+    planned: 0,
+    queued: 0,
+    running: 0,
+    skipped: 0,
+    ...overrides,
+  }
 }
 
+function createReporter(rows?: number) {
+  return createSummaryProgressReporter({
+    color: false,
+    columns: 120,
+    cwd: '/repo',
+    rows,
+    spinnerFrames: ['⠋', '⠙'],
+  })
+}
+
+function job(index: number, inputPath = `/repo/src/${index}.ts`, kind: ProgressJob['target']['kind'] = 'file', name?: string): ProgressJob {
+  return {
+    id: `job:${index}`,
+    index,
+    inputPath,
+    ruleId: `rule/${index}`,
+    target: { identity: `target:${index}`, kind, name },
+    total: 3,
+  }
+}
+
+afterEach(() => {
+  vi.useRealTimers()
+})
+
 describe('createSummaryProgressReporter', () => {
-  it('renders active files nested rule rows queued files and footer estimates', () => {
-    const reporter = createSummaryProgressReporter({
-      color: false,
-      columns: 120,
-      cwd: '/repo',
-      spinnerFrames: ['⠋', '⠙'],
-    })
-    const firstPath = {
-      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 3 },
-      rule: { id: '@alint-js/plugin-example/inline-miniature-normalizer', index: 1, total: 1 },
-      target: { index: 1, kind: 'file' as const, total: 1 },
-    }
-    const secondPath = {
-      file: { index: 2, path: '/repo/src/config/file-2.ts', planned: 1, total: 3 },
-      rule: { id: '@alint-js/plugin-example/inline-miniature-normalizer', index: 1, total: 1 },
-      target: { index: 1, kind: 'function' as const, name: 'load', total: 1 },
-    }
+  it('renders flat running jobs in planned order and reports queued jobs', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(2_000)
+    const reporter = createReporter()
+    const jobs = [job(3, '/repo/src/three.ts'), job(1, '/repo/src/one.ts'), job(2, '/repo/src/two.ts', 'function', 'load')]
 
-    reporter.onRunStart?.({
-      files: [
-        firstPath.file,
-        secondPath.file,
-        { index: 3, path: '/repo/src/config/file-3.ts', planned: 1, total: 3 },
-      ],
-      filesTotal: 3,
-      planned: 3,
-      rulesTotal: 1,
-      startedAt: 0,
-    })
-    reporter.tick()
-    reporter.onFileStart?.({ file: firstPath.file, startedAt: 1800 })
-    reporter.onTargetStart?.({ path: firstPath, startedAt: 1800 })
-    reporter.onRuleStart?.({ path: firstPath, startedAt: 1800 })
-    reporter.onFileStart?.({ file: secondPath.file, startedAt: 4200 })
-    reporter.onTargetStart?.({ path: secondPath, startedAt: 4200 })
-    reporter.onRuleStart?.({ path: secondPath, startedAt: 4200 })
+    reporter.onRunStart?.({ jobsTotal: 3, startedAt: 0 })
+    for (const queued of jobs)
+      reporter.onJobQueued?.({ job: queued })
+    reporter.onJobStart?.({ job: jobs[0]!, startedAt: 1_800 })
+    reporter.onJobStart?.({ job: jobs[1]!, startedAt: 1_000 })
 
-    const rows = reporter.getRows()
-
-    expect(rows[0]).toMatch(/^⠙ src\/setup\/toml\.ts\s+0\/0\/0\/1$/)
-    expect(rows[1]).toMatch(/^ {4}file > @alint-js\/plugin-example\/inline-miniature-normalizer \(\d+\.\ds, ~\?\)$/)
-    expect(rows[2]).toMatch(/^⠙ src\/config\/file-2\.ts\s+0\/0\/0\/1$/)
-    expect(rows[3]).toMatch(/^ {4}function load > @alint-js\/plugin-example\/inline-miniature-normalizer \(\d+\.\ds, ~\?\)$/)
-    expect(rows[4]).toBe('  1 file queued')
-    expect(rows[5]).toBe('')
-    expect(rows[6]).toMatch(/^\d+\.\ds -> ~\? \| 0 tokens -> ~\? tokens \| 1 queued \/ 0 cached \/ 0 warn \/ 0 error$/)
+    expect(reporter.getRows()).toEqual([
+      '⠋ src/one.ts > file > rule/1 (1.0s)',
+      '⠋ src/three.ts > file > rule/3 (0.2s)',
+      '',
+      '2 running / 1 queued / 0 cached / 0 warn / 0 error / 0 failed / 0 tokens',
+    ])
   })
 
-  it('updates completed warning and token totals in the footer', () => {
-    const reporter = createSummaryProgressReporter({
-      color: false,
-      columns: 120,
-      cwd: '/repo',
-      spinnerFrames: ['⠋'],
-    })
-    const path = {
-      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 3, total: 1 },
-      rule: { id: 'company/problem', index: 1, total: 1 },
-      target: { index: 1, kind: 'file' as const, total: 1 },
+  it('limits rows, reports hidden jobs, and preserves the footer', () => {
+    const reporter = createReporter(4)
+    const jobs = [job(1), job(2), job(3)]
+
+    reporter.onRunStart?.({ jobsTotal: jobs.length })
+    for (const running of jobs) {
+      reporter.onJobQueued?.({ job: running })
+      reporter.onJobStart?.({ job: running })
     }
 
-    reporter.onRunStart?.({
-      files: [path.file],
-      filesTotal: 1,
-      planned: 3,
-      rulesTotal: 1,
-      startedAt: 0,
+    expect(reporter.getRows()).toEqual([
+      '⠋ src/1.ts > file > rule/1 (0.0s)',
+      '    └─ … 2 more running jobs hidden',
+      '',
+      '3 running / 0 queued / 0 cached / 0 warn / 0 error / 0 failed / 0 tokens',
+    ])
+  })
+
+  it('keeps a one-row terminal within height and renders nothing at zero rows', () => {
+    const oneRow = createReporter(1)
+    const zeroRows = createReporter(0)
+
+    for (const reporter of [oneRow, zeroRows]) {
+      reporter.onRunStart?.({ jobsTotal: 1 })
+      reporter.onJobQueued?.({ job: job(1) })
+      reporter.onJobStart?.({ job: job(1) })
+    }
+
+    expect(oneRow.getRows()).toEqual(['1 running / 0 queued / 0 cached / 0 warn / 0 error / 0 failed / 0 tokens'])
+    expect(zeroRows.getRows()).toEqual([])
+  })
+
+  it('removes jobs for every terminal transition and uses final run counts', () => {
+    const reporter = createReporter()
+    const terminalStates = ['cached', 'cancelled', 'completed', 'failed', 'skipped'] as const
+
+    reporter.onRunStart?.({ jobsTotal: terminalStates.length })
+    terminalStates.forEach((state, index) => {
+      const current = job(index + 1)
+      reporter.onJobQueued?.({ job: current })
+      reporter.onJobStart?.({ job: current })
+      reporter.onJobEnd?.({ cache: state === 'cached' ? 'hit' : 'miss', job: current, state })
     })
-    reporter.onFileStart?.({ file: path.file, startedAt: 0 })
-    reporter.onRuleStart?.({ path, startedAt: 1000 })
-    reporter.onDiagnostic?.({
-      diagnostic: {
-        filePath: path.file.path,
-        message: 'Problem found',
-        ruleId: 'company/problem',
-        severity: 'warn',
-      },
-      diagnostics: [
-        {
-          filePath: path.file.path,
-          message: 'Problem found',
-          ruleId: 'company/problem',
-          severity: 'warn',
-        },
-      ],
-      path,
-    })
-    reporter.onRuleEnd?.({
-      cache: 'miss',
-      endedAt: 2000,
-      path,
-      startedAt: 1000,
-      state: 'completed',
-    })
-    reporter.onUsage?.({
-      path,
-      record: {
-        inputTokens: 10,
-        modelId: 'local',
-        outputTokens: 2,
-        providerId: 'provider',
-        ruleId: 'company/problem',
-        totalTokens: 12,
-      },
-      total: {
-        inputTokens: 10,
-        outputTokens: 2,
-        records: [],
-        totalTokens: 12,
-      },
-    })
+
+    expect(reporter.getRows().join('\n')).not.toContain('rule/')
+
     reporter.onRunEnd?.({
-      cached: 0,
-      completed: 1,
-      diagnostics: [
-        {
-          filePath: path.file.path,
-          message: 'Problem found',
-          ruleId: 'company/problem',
-          severity: 'warn',
-        },
-      ],
-      endedAt: 6000,
-      errored: 0,
-      planned: 3,
-      skipped: 0,
-      startedAt: 0,
-      usage: {
-        inputTokens: 10,
-        outputTokens: 2,
-        records: [],
-        totalTokens: 12,
-      },
+      diagnostics: [],
+      execution: counts({ cached: 1, cancelled: 1, completed: 1, failed: 1, planned: 5, skipped: 1 }),
+      usage: { inputTokens: 2, outputTokens: 3, records: [], totalTokens: 5 },
     })
-
-    expect(reporter.getRows().at(-1)).toBe('6.0s -> ~18.0s | 12 tokens -> ~36 tokens | 0 queued / 0 cached / 1 warn / 0 error')
+    expect(reporter.getRows().at(-1)).toBe('0 running / 0 queued / 1 cached / 0 warn / 0 error / 1 failed / 5 tokens')
   })
 
-  it('clears active nested rows when rule target and file end', () => {
-    const reporter = createSummaryProgressReporter({
-      color: false,
-      columns: 100,
-      cwd: '/repo',
-      spinnerFrames: ['⠋'],
-    })
-    const path = {
-      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 1 },
-      rule: { id: 'company/problem', index: 1, total: 1 },
-      target: { index: 1, kind: 'function' as const, name: 'load', total: 1 },
-    }
+  it('accumulates diagnostics and finite usage tokens', () => {
+    const reporter = createReporter()
+    const current = job(1)
 
-    reporter.onRunStart?.({ files: [path.file], filesTotal: 1, planned: 1, rulesTotal: 1, startedAt: 0 })
-    reporter.onFileStart?.({ file: path.file, startedAt: 0 })
-    reporter.onTargetStart?.({ path, startedAt: 0 })
-    reporter.onRuleStart?.({ path, startedAt: 0 })
-    expect(reporter.getRows()[1]).toContain('function load > company/problem')
+    reporter.onRunStart?.({ jobsTotal: 1 })
+    reporter.onJobQueued?.({ job: current })
+    reporter.onDiagnostic?.({ diagnostic: { filePath: current.inputPath, message: 'warned', ruleId: current.ruleId, severity: 'warn' }, job: current })
+    reporter.onDiagnostic?.({ diagnostic: { filePath: current.inputPath, message: 'errored', ruleId: current.ruleId, severity: 'error' }, job: current })
+    reporter.onUsage?.({ job: current, record: { inputTokens: 3, modelId: 'model', outputTokens: 4, providerId: 'provider', ruleId: current.ruleId, totalTokens: 7 } })
+    reporter.onUsage?.({ job: current, record: { inputTokens: Number.NaN, modelId: 'model', outputTokens: 2, providerId: 'provider', ruleId: current.ruleId } })
 
-    reporter.onRuleEnd?.({ cache: 'miss', path, state: 'completed' })
-    expect(reporter.getRows().join('\n')).not.toContain('company/problem')
-
-    reporter.onTargetEnd?.({ path })
-    reporter.onFileEnd?.({ file: path.file })
-    expect(reporter.getRows()[0]).toMatch(/^⠋ alint\s+1\/0\/0\/1$/)
+    expect(reporter.getRows().at(-1)).toBe('0 running / 1 queued / 0 cached / 1 warn / 1 error / 0 failed / 7 tokens')
   })
 
-  it('keeps rows within configured columns and truncates with ellipsis', () => {
-    const reporter = createSummaryProgressReporter({
-      color: false,
-      columns: 42,
-      cwd: '/repo',
-      spinnerFrames: ['⠋'],
-    })
-    const path = {
-      file: { index: 1, path: '/repo/packages/example/src/deep/file.ts', planned: 1, total: 1 },
-      rule: { id: '@alint-js/plugin-example/very-long-rule-name', index: 1, total: 1 },
-      target: { index: 1, kind: 'function' as const, name: 'load', total: 1 },
-    }
+  it('preserves width-safe grapheme and ANSI truncation and semantic color', () => {
+    const current = job(1, '/repo/\u001B[31m中文目录😀😀😀😀😀\u001B[39m/文件.ts', 'function', '解析中文😀')
+    current.ruleId = '\u001B[31m规则😀😀😀😀😀😀😀😀\u001B[39m'
+    const reporter = createSummaryProgressReporter({ color: false, columns: 32, cwd: '/repo', spinnerFrames: ['⠋'] })
 
-    reporter.onRunStart?.({ files: [path.file], filesTotal: 1, planned: 1, rulesTotal: 1, startedAt: 0 })
-    reporter.onFileStart?.({ file: path.file, startedAt: 0 })
-    reporter.onRuleStart?.({ path, startedAt: 0 })
+    reporter.onRunStart?.({ jobsTotal: 1 })
+    reporter.onJobQueued?.({ job: current })
+    reporter.onJobStart?.({ job: current })
 
     const rows = reporter.getRows()
+    expect(rows.every(row => fastStringWidth(row) <= 32)).toBe(true)
+    expect(rows[0]).not.toMatch(/\u001B(?:\[[0-9;]*)?$/)
+    expect(rows[0]).not.toMatch(/[\uD800-\uDBFF]$/)
+    expect(rows[0]).toContain('\u001B[0m…')
 
-    expect(rows[0].length).toBeLessThanOrEqual(42)
-    expect(rows[0]).toContain('…')
-    expect(rows[1].length).toBeLessThanOrEqual(42)
-    expect(rows[1]).toContain('…')
-  })
+    const colored = createSummaryProgressReporter({ color: true, columns: 120, cwd: '/repo', spinnerFrames: ['⠋'] })
+    colored.onRunStart?.({ jobsTotal: 1 })
+    colored.onJobQueued?.({ job: current })
+    colored.onJobStart?.({ job: current })
+    colored.onDiagnostic?.({ diagnostic: { filePath: current.inputPath, message: 'failure', ruleId: current.ruleId, severity: 'error' }, job: current })
 
-  it('colors progress rows by semantic segment instead of tinting the whole row', () => {
-    const reporter = createSummaryProgressReporter({
-      color: true,
-      columns: 120,
-      cwd: '/repo',
-      spinnerFrames: ['⠋'],
-    })
-    const path = {
-      file: { index: 1, path: '/repo/src/setup/toml.ts', planned: 1, total: 1 },
-      rule: { id: '@alint-js/plugin-example/inline-miniature-normalizer', index: 1, total: 1 },
-      target: { index: 1, kind: 'file' as const, total: 1 },
-    }
-
-    reporter.onRunStart?.({ files: [path.file], filesTotal: 1, planned: 1, rulesTotal: 1, startedAt: 0 })
-    reporter.onFileStart?.({ file: path.file, startedAt: 0 })
-    reporter.onTargetStart?.({ path, startedAt: 0 })
-    reporter.onRuleStart?.({ path, startedAt: 0 })
-    reporter.onRuleEnd?.({ cache: 'miss', path, state: 'errored' })
-    reporter.onDiagnostic?.({
-      diagnostic: {
-        filePath: path.file.path,
-        message: 'Failure found',
-        ruleId: 'company/problem',
-        severity: 'error',
-      },
-      diagnostics: [
-        {
-          filePath: path.file.path,
-          message: 'Problem found',
-          ruleId: 'company/problem',
-          severity: 'warn',
-        },
-        {
-          filePath: path.file.path,
-          message: 'Failure found',
-          ruleId: 'company/problem',
-          severity: 'error',
-        },
-      ],
-      path,
-    })
-    reporter.onUsage?.({
-      record: {
-        inputTokens: 0,
-        modelId: 'local',
-        outputTokens: 0,
-        providerId: 'provider',
-        ruleId: 'company/problem',
-        totalTokens: 42,
-      },
-      total: {
-        inputTokens: 0,
-        outputTokens: 0,
-        records: [],
-        totalTokens: 42,
-      },
-    })
-
-    const rows = reporter.getRows()
-    const firstRow = rows[0]!
-    const footer = rows.at(-1)!
-
-    expect(stripAnsi(firstRow)).toContain('src/setup/toml.ts')
-    expect(firstRow).toContain('\u001B[36m⠋')
-    expect(firstRow).toContain('\u001B[31m0/0/1/1')
-    expect(footer).toContain('\u001B[33m1 warn')
-    expect(footer).toContain('\u001B[31m1 error')
-    expect(footer).toContain('\u001B[36m42 tokens')
+    expect(colored.getRows()[0]).toContain('\u001B[36m⠋')
+    expect(colored.getRows().at(-1)).toContain('\u001B[31m1 error')
   })
 
   it('resets the spinner frame on run start', () => {
-    const reporter = createSummaryProgressReporter({
-      color: false,
-      columns: 80,
-      cwd: '/repo',
-      spinnerFrames: ['⠋', '⠙'],
-    })
-
+    const reporter = createReporter()
     reporter.tick()
-    reporter.onRunStart?.({ filesTotal: 1, planned: 1, rulesTotal: 1 })
+    reporter.onRunStart?.({ jobsTotal: 1 })
+    reporter.onJobQueued?.({ job: job(1) })
+    reporter.onJobStart?.({ job: job(1) })
 
-    expect(reporter.getRows()[0].startsWith('⠋ ')).toBe(true)
+    expect(reporter.getRows()[0]?.startsWith('⠋ ')).toBe(true)
   })
 })

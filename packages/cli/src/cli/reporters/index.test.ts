@@ -48,9 +48,12 @@ function createResult(): RunResult {
       : diagnostic),
     execution: {
       cached: 214,
+      cancelled: 0,
       completed: 1,
-      errored: 0,
+      failed: 0,
       planned: 215,
+      queued: 0,
+      running: 0,
       skipped: 0,
     },
     usage: {
@@ -144,9 +147,12 @@ describe('reporters', () => {
       diagnostics: [],
       execution: {
         cached: 215,
+        cancelled: 0,
         completed: 0,
-        errored: 0,
+        failed: 0,
         planned: 215,
+        queued: 0,
+        running: 0,
         skipped: 0,
       },
       usage: {

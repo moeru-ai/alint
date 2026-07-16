@@ -1,7 +1,8 @@
 export interface RunRuleCounts {
   cached: number
+  cancelled: number
   completed: number
-  errored: number
+  failed: number
   planned: number
 }
 

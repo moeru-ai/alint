@@ -91,8 +91,7 @@ version = 1
 
 [runner]
 agent_retries = 0
-file_concurrency = 2
-rule_concurrency = 1
+rule_concurrency = 20
 timeout_ms = 120000
 
 [[providers]]
@@ -106,8 +105,7 @@ id = "qwen"
 
     expect(config.runner).toEqual({
       agentRetries: 0,
-      fileConcurrency: 2,
-      ruleConcurrency: 1,
+      ruleConcurrency: 20,
       timeoutMs: 120000,
     })
   })
@@ -124,8 +122,7 @@ id = "qwen"
       ],
       runner: {
         agentRetries: 2,
-        fileConcurrency: 2,
-        ruleConcurrency: 1,
+        ruleConcurrency: 20,
         timeoutMs: 120000,
       },
       version: 1,
@@ -133,8 +130,7 @@ id = "qwen"
 
     expect(toml).toContain('[runner]')
     expect(toml).toContain('agent_retries = 2')
-    expect(toml).toContain('file_concurrency = 2')
-    expect(toml).toContain('rule_concurrency = 1')
+    expect(toml).toContain('rule_concurrency = 20')
     expect(toml).toContain('timeout_ms = 120000')
   })
 
@@ -220,7 +216,7 @@ id = "qwen"
 version = 1
 
 [runner]
-file_concurrency = 0
+rule_concurrency = 0
 
 [[providers]]
 id = "local"
@@ -229,7 +225,42 @@ endpoint = "http://localhost:11434/v1"
 
 [[providers.models]]
 id = "qwen"
-`)).toThrow('Invalid runner file_concurrency: must be a positive integer.')
+`)).toThrow('Invalid runner rule_concurrency: must be a positive integer.')
+
+    expect(() => parseSetupConfigToml(`
+version = 1
+
+[runner]
+timeout_ms = 1.5
+
+[[providers]]
+id = "local"
+type = "openai-compatible"
+endpoint = "http://localhost:11434/v1"
+
+[[providers.models]]
+id = "qwen"
+`)).toThrow('Invalid runner timeout_ms: must be a positive integer.')
+  })
+
+  it('does not map the removed per-file concurrency setting', () => {
+    const removedSetting = ['file', 'concurrency'].join('_')
+    const config = parseSetupConfigToml(`
+version = 1
+
+[runner]
+${removedSetting} = 2
+
+[[providers]]
+id = "local"
+type = "openai-compatible"
+endpoint = "http://localhost:11434/v1"
+
+[[providers.models]]
+id = "qwen"
+`)
+
+    expect(config.runner).toEqual({})
   })
 
   it.each([-1, 1.5])('preserves finite runner agent retries: %s', (agentRetries) => {

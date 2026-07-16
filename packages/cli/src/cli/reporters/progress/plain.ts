@@ -1,7 +1,7 @@
 import type {
   Diagnostic,
+  JobStartPayload,
   ProgressReporter,
-  RuleStartPayload,
   RunEndPayload,
   RunStartPayload,
 } from '@alint-js/core'
@@ -14,24 +14,23 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
   const writeLine = (line: string) => options.write(`${line}\n`)
 
   return {
-    onRuleStart: (payload: RuleStartPayload) => {
-      const target = payload.path.target.name
-        ? `${payload.path.target.kind} ${payload.path.target.name}`
-        : payload.path.target.kind
+    onJobStart: (payload: JobStartPayload) => {
+      const target = payload.job.target.name
+        ? `${payload.job.target.kind} ${payload.job.target.name}`
+        : payload.job.target.kind
 
-      writeLine(`scan ${payload.path.file.path} > ${target} > ${payload.path.rule.id}`)
+      writeLine(`scan ${payload.job.inputPath} > ${target} > ${payload.job.ruleId}`)
     },
     onRunEnd: (payload: RunEndPayload) => {
       const warnCount = countDiagnostics(payload.diagnostics, 'warn')
       const errorCount = countDiagnostics(payload.diagnostics, 'error')
-      const state = payload.errored > 0 ? 'failed' : 'finished'
-      const cached = payload.cached > 0 ? `, ${payload.cached} cached` : ''
-      const errored = payload.errored > 0 ? `, ${payload.errored} errored` : ''
+      const state = payload.execution.failed > 0 ? 'failed' : 'finished'
+      const { cached, cancelled, completed, failed, skipped } = payload.execution
 
-      writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens${cached}${errored}`)
+      writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens, ${completed} completed, ${cached} cached, ${failed} failed, ${cancelled} cancelled, ${skipped} skipped`)
     },
     onRunStart: (payload: RunStartPayload) => {
-      writeLine(`alint started: ${payload.filesTotal} files, ${payload.rulesTotal} rules, ${payload.planned} planned executions`)
+      writeLine(`alint started: ${payload.jobsTotal} queued jobs`)
     },
   }
 }

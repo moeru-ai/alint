@@ -1,4 +1,4 @@
-import type { RunEndPayload } from '@alint-js/core'
+import type { JobStartPayload, RunEndPayload } from '@alint-js/core'
 
 import { describe, expect, it } from 'vitest'
 
@@ -6,46 +6,41 @@ import { createStatsCollector, mergeProgressReporters, resolveStatsWrite } from 
 
 const EMPTY_USAGE = { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 }
 
-function runEnd(overrides: Partial<RunEndPayload> = {}): RunEndPayload {
-  return { cached: 0, completed: 0, diagnostics: [], errored: 0, planned: 0, skipped: 0, usage: EMPTY_USAGE, ...overrides }
-}
-
 describe('resolveStatsWrite', () => {
-  it('writes to the default stats dir by default', () => {
-    const target = resolveStatsWrite(undefined, { XDG_CONFIG_HOME: '/x' })
-
-    expect(target?.dir).toBe('/x/alint/stats')
-    expect(target?.retentionMonths).toBeUndefined()
+  it('uses the default stats directory', () => {
+    expect(resolveStatsWrite(undefined, { XDG_CONFIG_HOME: '/x' })).toEqual({
+      dir: '/x/alint/stats',
+      retentionMonths: undefined,
+    })
   })
 
-  it('does not write in CI', () => {
+  it('does not write in CI or when disabled', () => {
     expect(resolveStatsWrite(undefined, { CI: 'true', XDG_CONFIG_HOME: '/x' })).toBeUndefined()
-  })
-
-  it('does not write when stats is disabled by flag or config', () => {
     expect(resolveStatsWrite(false, { XDG_CONFIG_HOME: '/x' })).toBeUndefined()
-  })
-
-  it('does not write when a config table sets enabled = false', () => {
     expect(resolveStatsWrite({ enabled: false }, { XDG_CONFIG_HOME: '/x' })).toBeUndefined()
   })
 
   it('honors a custom location and retention', () => {
-    const target = resolveStatsWrite({ location: '/custom', retentionMonths: 3 }, { XDG_CONFIG_HOME: '/x' })
-
-    expect(target?.dir).toBe('/custom')
-    expect(target?.retentionMonths).toBe(3)
+    expect(resolveStatsWrite({ location: '/custom', retentionMonths: 3 }, {})).toEqual({
+      dir: '/custom',
+      retentionMonths: 3,
+    })
   })
 })
 
 describe('createStatsCollector', () => {
-  it('captures rule counts and duration from run payloads', () => {
+  it('captures final counts and duration', () => {
     const collector = createStatsCollector()
+    collector.reporter.onRunStart?.({
+      jobsTotal: 5,
+      startedAt: 1000,
+    })
+    collector.reporter.onRunEnd?.(runEnd({
+      endedAt: 1500,
+      execution: counts({ cached: 1, cancelled: 1, completed: 1, failed: 2, planned: 5 }),
+    }))
 
-    collector.reporter.onRunStart?.({ filesTotal: 1, planned: 3, rulesTotal: 3, startedAt: 1000 })
-    collector.reporter.onRunEnd?.(runEnd({ cached: 1, completed: 2, endedAt: 1500, planned: 3 }))
-
-    expect(collector.counts).toEqual({ cached: 1, completed: 2, errored: 0, planned: 3 })
+    expect(collector.counts).toEqual({ cached: 1, cancelled: 1, completed: 1, failed: 2, planned: 5 })
     expect(collector.durationMs()).toBe(500)
   })
 
@@ -55,25 +50,92 @@ describe('createStatsCollector', () => {
 })
 
 describe('mergeProgressReporters', () => {
-  it('returns the sole present reporter, or undefined when neither', () => {
+  it('returns the sole reporter or undefined', () => {
     const reporter = { onRunStart: () => {} }
-
     expect(mergeProgressReporters(undefined, reporter)).toBe(reporter)
-    expect(mergeProgressReporters(reporter, undefined)).toBe(reporter)
-    expect(mergeProgressReporters(undefined, undefined)).toBeUndefined()
+    expect(mergeProgressReporters()).toBeUndefined()
   })
 
-  it('fans a payload out to both reporters', () => {
-    let baseCalls = 0
-    let extraCalls = 0
+  it('fans payloads out to both reporters', () => {
+    const events: string[] = []
     const merged = mergeProgressReporters(
-      { onRunEnd: () => void (baseCalls += 1) },
-      { onRunEnd: () => void (extraCalls += 1) },
+      { onRunEnd: () => events.push('base') },
+      { onRunEnd: () => events.push('extra') },
     )
 
     merged?.onRunEnd?.(runEnd())
 
-    expect(baseCalls).toBe(1)
-    expect(extraCalls).toBe(1)
+    expect(events).toEqual(['base', 'extra'])
+  })
+
+  it('isolates a failed consumer while the other receives current and later events', () => {
+    const cause = new Error('UI failed')
+    const baseEvents: string[] = []
+    const extraEvents: string[] = []
+    const merged = mergeProgressReporters(
+      {
+        onJobStart: () => {
+          baseEvents.push('job:start')
+          throw cause
+        },
+        onRunEnd: () => baseEvents.push('run:end'),
+      },
+      {
+        onJobStart: () => extraEvents.push('job:start'),
+        onRunEnd: () => extraEvents.push('run:end'),
+      },
+    )
+
+    merged?.onJobStart?.(jobStart())
+
+    expect(() => merged?.onRunEnd?.(runEnd())).toThrow(cause)
+    expect(baseEvents).toEqual(['job:start'])
+    expect(extraEvents).toEqual(['job:start', 'run:end'])
+  })
+
+  it('normalizes one nullish consumer failure after delivering to both', () => {
+    const events: string[] = []
+    const merged = mergeProgressReporters(
+      {
+        onRunEnd: () => {
+          events.push('base')
+          throwValue(null)
+        },
+      },
+      { onRunEnd: () => events.push('extra') },
+    )
+
+    expect(() => merged?.onRunEnd?.(runEnd())).toThrow(new Error('Unknown progress reporter error.'))
+    expect(events).toEqual(['base', 'extra'])
   })
 })
+
+function counts(overrides: Partial<RunEndPayload['execution']>): RunEndPayload['execution'] {
+  return { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0, queued: 0, running: 0, skipped: 0, ...overrides }
+}
+
+function jobStart(): JobStartPayload {
+  return {
+    job: {
+      id: 'job:0',
+      index: 0,
+      inputPath: '/repo/a.ts',
+      ruleId: 'rule/a',
+      target: { identity: 'file:0', kind: 'file' },
+      total: 1,
+    },
+  }
+}
+
+function runEnd(overrides: Partial<RunEndPayload> = {}): RunEndPayload {
+  return {
+    diagnostics: [],
+    execution: counts({}),
+    usage: EMPTY_USAGE,
+    ...overrides,
+  }
+}
+
+function throwValue(value: unknown): never {
+  throw value
+}

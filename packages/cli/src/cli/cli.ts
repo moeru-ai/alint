@@ -35,12 +35,11 @@ export async function executeCli(argv: string[], io: CliIo): Promise<number> {
     .option('--no-cache', 'Disable cache for this run')
     .option('--cache-location <path>', 'Path to the alint cache file or directory')
     .option('-c, --config <path>', 'Path to alint config file')
-    .option('--file-concurrency <count>', 'Number of files to lint concurrently')
     .option('--format <format>', 'Reporter format', { default: 'stylish' })
     .option('--model <model>', 'Force a model override')
     .option('-l, --lang <language>', 'Ask model-backed rules to write diagnostics in this language')
     .option('--progress', 'Show run progress')
-    .option('--rule-concurrency <count>', 'Number of rules to run concurrently within a file')
+    .option('--rule-concurrency <count>', 'Maximum rule executions across the entire run')
     .option('--no-stats', 'Do not record run stats for this run')
     .option('--timeout-ms <ms>', 'Rule execution timeout in milliseconds')
     .version(packageJson.version) // To keep `-v` and `--version` visible in `alint --help` output.

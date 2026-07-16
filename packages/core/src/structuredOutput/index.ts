@@ -6,9 +6,8 @@ import type { GenericSchema, InferOutput } from 'valibot'
 import type { RuleContext } from '../dsl/types'
 import type { ResolvedModel } from '../models/types'
 
-import { setTimeout as delay } from 'node:timers/promises'
-
 import { errorMessageFrom } from '@moeru/std/error'
+import { sleepWithAbort } from '@moeru/std/sleep'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
@@ -102,6 +101,7 @@ export async function generateStructured<Schema extends GenericSchema>(
     let response: GenerateTextResult
 
     try {
+      options.signal?.throwIfAborted()
       response = await generateText({
         abortSignal: options.signal,
         baseURL: options.model.provider.endpoint,
@@ -123,7 +123,6 @@ export async function generateStructured<Schema extends GenericSchema>(
       // A cancelled call is not a model failure, so surface the abort instead of logging it as
       // one and retrying it.
       options.signal?.throwIfAborted()
-
       const callError = `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`
 
       previousError = isRetriableHttpError(error) ? undefined : callError
@@ -133,7 +132,7 @@ export async function generateStructured<Schema extends GenericSchema>(
         throw error
       }
 
-      await delay(retryDelay(attempt), undefined, { signal: options.signal })
+      await sleepWithAbort(retryDelay(attempt), options.signal)
       continue
     }
 
@@ -152,7 +151,7 @@ export async function generateStructured<Schema extends GenericSchema>(
       throw new InvalidStructuredOutputError(`Invalid structured model response: ${previousError}`)
     }
 
-    await delay(retryDelay(attempt), undefined, { signal: options.signal })
+    await sleepWithAbort(retryDelay(attempt), options.signal)
   }
 
   throw new InvalidStructuredOutputError('Model did not return a valid structured result')

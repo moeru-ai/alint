@@ -17,6 +17,7 @@ export interface CliProgressReporterOptions {
   columns: number
   cwd: string
   isTty: boolean
+  rows?: number
   write: (chunk: string) => void
 }
 
@@ -33,6 +34,7 @@ export function createCliProgressReporter(options: CliProgressReporterOptions): 
     color: options.color,
     columns: options.columns,
     cwd: options.cwd,
+    rows: options.rows,
     spinnerFrames: cliSpinners.dots.frames,
   })
   const renderer = createTtyProgressRenderer<ReturnType<typeof globalThis.setInterval>>({
@@ -63,20 +65,16 @@ function createRenderingProgressReporter(
       summary.onDiagnostic?.(payload)
       renderer.render()
     },
-    onFileEnd: (payload) => {
-      summary.onFileEnd?.(payload)
+    onJobEnd: (payload) => {
+      summary.onJobEnd?.(payload)
       renderer.render()
     },
-    onFileStart: (payload) => {
-      summary.onFileStart?.(payload)
+    onJobQueued: (payload) => {
+      summary.onJobQueued?.(payload)
       renderer.render()
     },
-    onRuleEnd: (payload) => {
-      summary.onRuleEnd?.(payload)
-      renderer.render()
-    },
-    onRuleStart: (payload) => {
-      summary.onRuleStart?.(payload)
+    onJobStart: (payload) => {
+      summary.onJobStart?.(payload)
       renderer.render()
     },
     onRunEnd: (payload) => {
@@ -86,14 +84,6 @@ function createRenderingProgressReporter(
     onRunStart: (payload) => {
       summary.onRunStart?.(payload)
       renderer.start()
-    },
-    onTargetEnd: (payload) => {
-      summary.onTargetEnd?.(payload)
-      renderer.render()
-    },
-    onTargetStart: (payload) => {
-      summary.onTargetStart?.(payload)
-      renderer.render()
     },
     onUsage: (payload) => {
       summary.onUsage?.(payload)

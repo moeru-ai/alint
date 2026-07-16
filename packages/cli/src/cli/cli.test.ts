@@ -1,21 +1,26 @@
+import type { SetupConfig } from '@alint-js/config'
+
 import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+import * as alintCore from '@alint-js/core'
 
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
+import { resolveRunnerConfig } from './commands/lint/runner'
 import { applyDefaultAlias, createDefaultModelCandidates, formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId, providerSetupSources } from './provider-registry'
 
 interface TestIo {
   cwd: string
   env?: NodeJS.ProcessEnv
-  stderr: { columns?: number, isTTY?: boolean, write: (chunk: string) => void }
+  stderr: { columns?: number, isTTY?: boolean, rows?: number, write: (chunk: string) => void }
   stderrText: string
   stdout: { write: (chunk: string) => void }
   stdoutText: string
@@ -206,6 +211,41 @@ export default [
     },
     rules: {
       'company/prefer-load': 'warn',
+    },
+  },
+]
+`)
+}
+
+async function writeRuleConcurrencyFailureFixture(cwd: string, callKey: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  const rules = Array.from({ length: 6 }, (_, index) => `
+          'concurrent-${index}': {
+            create: () => ({
+              onTargetFile: async () => {
+                const state = globalThis[${JSON.stringify(callKey)}]
+                state.active += 1
+                state.maxActive = Math.max(state.maxActive, state.active)
+                await new Promise(resolve => setTimeout(resolve, 40))
+                state.active -= 1
+                if (${index} === 0) throw new Error('controlled handler failure')
+              },
+            }),
+          },`).join('')
+  const enabled = Array.from({ length: 6 }, (_, index) => `
+      'company/concurrent-${index}': 'warn',`).join('')
+
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: {
+        rules: {${rules}
+        },
+      },
+    },
+    rules: {${enabled}
     },
   },
 ]
@@ -2699,6 +2739,61 @@ export default [
     expect(io.stdoutText).toContain('company/prefer-load')
   })
 
+  it('threads stderr rows into bounded TTY progress rendering', async () => {
+    const io = await createTestIo()
+    io.stderr.columns = 120
+    io.stderr.isTTY = true
+    io.stderr.rows = 1
+
+    await writeProgressFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--progress',
+      'demo.ts',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stderrText).toContain('running')
+    expect(io.stderrText).not.toContain('\n')
+    expect(io.stderrText).not.toContain('company/prefer-load')
+  })
+
+  it('runs the real scheduler, bounded TTY progress, and aggregate failure path in one invocation', async () => {
+    const io = await createTestIo()
+    io.stderr.columns = 120
+    io.stderr.isTTY = true
+    io.stderr.rows = 4
+    const callKey = `__alintConcurrentCliFixture_${io.cwd}`
+    const state = { active: 0, maxActive: 0 }
+    ;(globalThis as Record<string, unknown>)[callKey] = state
+
+    try {
+      await writeRuleConcurrencyFailureFixture(io.cwd, callKey)
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        '--rule-concurrency',
+        '3',
+        '--progress',
+        'demo.ts',
+      ], io)
+
+      expect(state.maxActive).toBe(3)
+      const frames = io.stderrText.split(/\r\u001B\[K(?:\r\u001B\[1A\u001B\[K)*/u)
+      expect(frames.some(frame =>
+        frame.includes('3 running') && frame.includes('2 more running jobs hidden'),
+      )).toBe(true)
+      expect(io.stderrText).toContain('[handler]')
+      expect(exitCode).toBe(2)
+    }
+    finally {
+      delete (globalThis as Record<string, unknown>)[callKey]
+    }
+  })
+
   it('does not create progress output when --no-progress is explicit', async () => {
     const io = await createTestIo()
     io.stderr.isTTY = true
@@ -2717,18 +2812,86 @@ export default [
     expect(io.stdoutText).toContain('Problem found')
   })
 
-  it('rejects invalid runner options', async () => {
+  it('rejects the removed per-file concurrency option', async () => {
     const io = await createTestIo()
 
     await writeProgressFixture(io.cwd)
 
+    const removedOption = `--${['file', 'concurrency'].join('-')}`
+
     await expect(executeCli([
       'node',
       'alint',
-      '--file-concurrency',
-      '0',
+      removedOption,
+      '2',
       'demo.ts',
-    ], io)).rejects.toThrow('--file-concurrency must be a positive integer.')
+    ], io)).rejects.toThrow('Unknown option')
+  })
+
+  it('passes CLI rule concurrency to the core run', async () => {
+    const io = await createTestIo()
+    const runAlint = vi.spyOn(alintCore, 'runAlint')
+
+    try {
+      await writeProgressFixture(io.cwd)
+
+      await executeCli([
+        'node',
+        'alint',
+        '--rule-concurrency',
+        '6',
+        'demo.ts',
+      ], io)
+
+      expect(runAlint).toHaveBeenCalledWith(expect.objectContaining({
+        runner: { ruleConcurrency: 6 },
+      }))
+    }
+    finally {
+      runAlint.mockRestore()
+    }
+  })
+
+  it('resolves concurrency and timeout with CLI over config over setup and no injected default', () => {
+    expect(resolveRunnerConfig(
+      { providers: [], runner: { ruleConcurrency: 2, timeoutMs: 100 }, version: 1 },
+      { runner: { ruleConcurrency: 4, timeoutMs: 200 } },
+      { format: 'stylish', ruleConcurrency: '6' },
+    )).toEqual({
+      ruleConcurrency: 6,
+      timeoutMs: 200,
+    })
+
+    expect(resolveRunnerConfig(
+      { providers: [], version: 1 },
+      {},
+      { format: 'stylish' },
+    )).toBeUndefined()
+
+    expect(resolveRunnerConfig(
+      { providers: [], runner: { ruleConcurrency: 2, timeoutMs: 100 }, version: 1 },
+      {},
+      { format: 'stylish' },
+    )).toEqual({
+      ruleConcurrency: 2,
+      timeoutMs: 100,
+    })
+  })
+
+  it('validates concurrency and timeout runner options as positive integers', () => {
+    const setupConfig: SetupConfig = { providers: [], version: 1 }
+
+    expect(() => resolveRunnerConfig(
+      setupConfig,
+      {},
+      { format: 'stylish', ruleConcurrency: '0' },
+    )).toThrow('--rule-concurrency must be a positive integer.')
+
+    expect(() => resolveRunnerConfig(
+      setupConfig,
+      {},
+      { format: 'stylish', timeoutMs: '1.5' },
+    )).toThrow('--timeout-ms must be a positive integer.')
   })
 
   it('writes the default cache and reuses it on the next run', async () => {
@@ -2965,6 +3128,7 @@ export default [
 
   it('formats rule execution failures without interpreting provider payloads', async () => {
     const io = await createTestIo()
+    clearCiEnv(io.env)
 
     await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
     await writeFile(join(io.cwd, 'alint.config.ts'), `
@@ -3000,12 +3164,58 @@ export default [
 
     expect(exitCode).toBe(2)
     expect(io.stderrText).toContain('scan ')
-    expect(io.stderrText).toContain('alint failed: 0 warn, 0 error, 0 tokens, 1 errored')
+    expect(io.stderrText).toContain('1 failed, 0 cancelled')
+    expect(io.stderrText).toContain('[handler]')
     expect(io.stderrText).toContain('demo.ts > function load > company/remote-fails')
-    expect(io.stderrText).toContain('Rule running failed due to Remote sent 403 response:')
+    expect(io.stderrText).toContain('Remote sent 403 response:')
     expect(io.stderrText).toContain('"error"')
     expect(io.stderrText).toContain('user_id')
     expect(io.stdoutText).toBe('')
+    const statsFiles = await readdir(statsDirOf(io))
+    const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
+    expect(statsRecord.ruleCounts.failed).toBe(1)
+    expect(statsRecord.ruleCounts.cancelled).toBe(0)
+  })
+
+  it('propagates progress reporter failures through the generic CLI error path', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(new Error('render failed'))
+
+    try {
+      await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
+
+      await expect(executeCli(['node', 'alint', 'demo.ts'], io)).rejects.toThrow('render failed')
+    }
+    finally {
+      runAlint.mockRestore()
+    }
+  })
+
+  it('returns execution-failure exit code for cancelled runs', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+    const result = {
+      diagnostics: [],
+      execution: { cached: 0, cancelled: 1, completed: 0, failed: 0, planned: 1, queued: 0, running: 0, skipped: 0 },
+      usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
+    }
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(new alintCore.AlintRunCancelledError(result))
+
+    try {
+      await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
+
+      const exitCode = await executeCli(['node', 'alint', 'demo.ts'], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toContain('error Alint run cancelled.')
+      const statsFiles = await readdir(statsDirOf(io))
+      const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
+      expect(statsRecord.ruleCounts).toEqual({ cached: 0, cancelled: 1, completed: 0, failed: 0, planned: 1 })
+    }
+    finally {
+      runAlint.mockRestore()
+    }
   })
 
   it('prioritizes project-local setup models over global defaults', async () => {

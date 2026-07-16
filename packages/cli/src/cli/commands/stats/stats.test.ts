@@ -22,7 +22,7 @@ async function seedStats(): Promise<{ cwd: string, io: TestIo }> {
 
   const run = {
     cwd,
-    ruleCounts: { cached: 0, completed: 1, errored: 0, planned: 1 },
+    ruleCounts: { cached: 0, cancelled: 0, completed: 1, failed: 0, planned: 1 },
     ts: Date.UTC(2026, 0, 10),
     usage: {
       inTok: 100,

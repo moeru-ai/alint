@@ -3,13 +3,9 @@ import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '
 import type { SourceTargetKind } from './source/types'
 
 export interface AlintRunFailure {
-  filePath?: string
+  job: ProgressJob
+  kind: 'cache-replay' | 'handler' | 'timeout'
   message: string
-  ruleId?: string
-  target?: {
-    kind: ProgressTargetKind
-    name?: string
-  }
 }
 
 export interface Diagnostic {
@@ -29,108 +25,82 @@ export interface Diagnostic {
 
 export interface DiagnosticProgressPayload {
   diagnostic: Diagnostic
-  diagnostics: Diagnostic[]
-  path?: ProgressPath
+  job: ProgressJob
 }
 
-export interface FileProgressPayload {
-  endedAt?: number
-  file: ProgressFilePath
-  startedAt?: number
+export interface ExecutionCounts {
+  cached: number
+  cancelled: number
+  completed: number
+  failed: number
+  planned: number
+  queued: number
+  running: number
+  /** Rules left unexecuted because they missed the cache under {@link RunOptions.cacheOnly}. */
+  skipped: number
 }
 
 export type InferenceUsageRecord = Omit<RuleInferenceUsageRecord, 'ruleId'> & {
   ruleId: string
 }
 
-export interface ProgressFilePath {
-  index: number
-  path: string
-  planned?: number
-  total: number
+export interface JobEndPayload extends JobStartPayload {
+  cache: 'hit' | 'miss'
+  endedAt?: number
+  failure?: AlintRunFailure
+  state: 'cached' | 'cancelled' | 'completed' | 'failed' | 'skipped'
 }
 
-export interface ProgressPath {
-  file: ProgressFilePath
-  rule: {
-    id: string
-    index: number
-    total: number
-  }
+export interface JobQueuedPayload {
+  job: ProgressJob
+}
+
+export interface JobStartPayload {
+  job: ProgressJob
+  startedAt?: number
+}
+
+export interface ProgressJob {
+  id: string
+  index: number
+  inputPath: string
+  ruleId: string
   target: {
-    index: number
+    identity: string
     kind: ProgressTargetKind
     name?: string
-    total: number
   }
+  total: number
 }
 
 export interface ProgressReporter {
   onDiagnostic?: (payload: DiagnosticProgressPayload) => void
-  onFileEnd?: (payload: FileProgressPayload) => void
-  onFileStart?: (payload: FileProgressPayload) => void
-  onRuleEnd?: (payload: RuleEndPayload) => void
-  onRuleStart?: (payload: RuleStartPayload) => void
+  onJobEnd?: (payload: JobEndPayload) => void
+  onJobQueued?: (payload: JobQueuedPayload) => void
+  onJobStart?: (payload: JobStartPayload) => void
   onRunEnd?: (payload: RunEndPayload) => void
   onRunStart?: (payload: RunStartPayload) => void
-  onTargetEnd?: (payload: TargetProgressPayload) => void
-  onTargetStart?: (payload: TargetProgressPayload) => void
   onUsage?: (payload: UsageProgressPayload) => void
 }
 
 export type ProgressTargetKind = SourceTargetKind
 
-export interface RuleEndPayload {
-  cache: 'hit' | 'miss'
-  endedAt?: number
-  path: ProgressPath
-  startedAt?: number
-  /**
-   * `skipped` only occurs under {@link RunOptions.cacheOnly}: the rule missed the cache and was
-   * never executed, so it produced no diagnostics. `cache` is still `'miss'` in that case.
-   */
-  state: 'completed' | 'errored' | 'skipped'
-}
-
-export interface RuleStartPayload {
-  path: ProgressPath
-  startedAt?: number
-}
-
 export interface RunEndPayload {
-  cached: number
-  completed: number
   diagnostics: Diagnostic[]
   endedAt?: number
-  errored: number
-  planned: number
-  /** Rules left unexecuted because they missed the cache under {@link RunOptions.cacheOnly}. Always 0 otherwise. */
-  skipped: number
+  execution: ExecutionCounts
   startedAt?: number
   usage: RunUsage
 }
 
-export interface RunExecution {
-  cached: number
-  completed: number
-  errored: number
-  planned: number
-  /** Rules left unexecuted because they missed the cache under {@link RunOptions.cacheOnly}. Always 0 otherwise. */
-  skipped: number
-}
+export type RunExecution = ExecutionCounts
 
 export type RunnerOptions = RunnerConfig
 
 export interface RunOptions {
   /**
    * Return only diagnostics that are already cached, without calling any model.
-   *
-   * Rules that miss the cache are skipped instead of executed, and the run leaves the cache
-   * file untouched. Read {@link RunExecution.skipped} to see how many rules a full run would
-   * still have to execute.
-   *
-   * Intended for callers that want to show known results for free, such as an editor
-   * displaying diagnostics on file open.
+   * Rules that miss the cache are skipped, and the cache remains read-only.
    */
   cacheOnly?: boolean
   config?: AlintConfig
@@ -155,15 +125,12 @@ export interface RunOptions {
 
 export interface RunResult {
   diagnostics: Diagnostic[]
-  execution?: RunExecution
+  execution: ExecutionCounts
   usage: RunUsage
 }
 
 export interface RunStartPayload {
-  files?: ProgressFilePath[]
-  filesTotal: number
-  planned: number
-  rulesTotal: number
+  jobsTotal: number
   startedAt?: number
 }
 
@@ -182,14 +149,7 @@ export interface RunUsageTotals {
   totalTokens: number
 }
 
-export interface TargetProgressPayload {
-  endedAt?: number
-  path: ProgressPath
-  startedAt?: number
-}
-
 export interface UsageProgressPayload {
-  path?: ProgressPath
+  job: ProgressJob
   record: InferenceUsageRecord
-  total: RunUsage
 }

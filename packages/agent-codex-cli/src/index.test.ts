@@ -93,6 +93,19 @@ describe('createCodexCliAdapter', () => {
     await expect(adapter(createRequest())).resolves.toEqual({ answer: 'ok', usage: undefined })
   })
 
+  it('passes the request signal to the Codex turn', async () => {
+    const controller = new AbortController()
+    const adapter = createCodexCliAdapter({
+      run: async (request) => {
+        expect(request.turnOptions.signal).toBe(controller.signal)
+
+        return { finalResponse: 'ok', items: [], usage: null }
+      },
+    })
+
+    await adapter(createRequest({ signal: controller.signal }))
+  })
+
   it('rejects alint tools because Codex CLI uses its own tool runtime', async () => {
     const adapter = createCodexCliAdapter({
       run: async () => {

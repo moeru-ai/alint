@@ -28,7 +28,7 @@ catalogs:
       specifier: ^0.1.0-beta.18
       version: 0.1.0-beta.20
     '@moeru/std':
-      specifier: ^0.1.0-beta.18
+      specifier: ^0.1.0-beta.20
       version: 0.1.0-beta.20
     '@openai/codex-sdk':
       specifier: ^0.144.3
@@ -93,6 +93,12 @@ catalogs:
     eslint-plugin-oxlint:
       specifier: ^1.73.0
       version: 1.73.0
+    fast-string-truncated-width:
+      specifier: ^3.0.3
+      version: 3.0.3
+    fast-string-width:
+      specifier: ^3.0.2
+      version: 3.0.2
     gitignore-fs:
       specifier: ^2.2.3
       version: 2.2.3
@@ -207,7 +213,6 @@ catalogs:
       version: 4.1.10
 
 overrides:
-  typescript: ^6.0.3
   array-flatten: npm:@nolyfill/array-flatten@^1.0.44
   axios: npm:feaxios@^0.0.23
   is-core-module: npm:@nolyfill/is-core-module@^1.0.39
@@ -217,6 +222,7 @@ overrides:
   safer-buffer: npm:@nolyfill/safer-buffer@^1.0.44
   side-channel: npm:@nolyfill/side-channel@^1.0.44
   string.prototype.matchall: npm:@nolyfill/string.prototype.matchall@^1.0.44
+  typescript: ^6.0.3
 
 importers:
 
@@ -381,6 +387,12 @@ importers:
       cli-spinners:
         specifier: 'catalog:'
         version: 3.4.0
+      fast-string-truncated-width:
+        specifier: 'catalog:'
+        version: 3.0.3
+      fast-string-width:
+        specifier: 'catalog:'
+        version: 3.0.2
       gitignore-fs:
         specifier: 'catalog:'
         version: 2.2.3

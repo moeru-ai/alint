@@ -18,8 +18,9 @@ export function createSourceExecutionPlans(
     }
 
     const filePlan: PreparedFileExecutionPlan = {
-      emitFileProgress: true,
-      fileIndex: fileOffset + 1,
+      id: `source:${preparedFile.file.path}`,
+      index: fileOffset + 1,
+      kind: 'source',
       path: preparedFile.file.path,
       planned: 0,
       preparedFile,
