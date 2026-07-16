@@ -23,6 +23,7 @@ export type {
   LanguageContext,
   LanguageDefinition,
   LineRange,
+  ModelRequirement,
   PluginDefinition,
   ProcessedSource,
   ProcessedSourceOrigin,
@@ -30,6 +31,8 @@ export type {
   ProcessorDefinition,
   ProcessorPostprocessContext,
   ProjectTarget,
+  ResolvedModel,
+  ResolvedProvider,
   RuleCacheConfig,
   RuleConfigEntry,
   RuleContext,
@@ -53,10 +56,19 @@ export type {
   Target,
 } from '@alint-js/core'
 export type {
-  ModelRequirement,
-  ResolvedModel,
-  ResolvedProvider,
-} from '@alint-js/core'
+  AgentAdapter,
+  AgentRequest,
+  AgentResult,
+  AgentTool,
+  AgentUsage,
+} from '@alint-js/core/agent'
+
+export {
+  defineTool,
+  isRetryableAgentError,
+  requireAgent,
+  RetryableAgentError,
+} from '@alint-js/core/agent'
 
 export function defineConfig(config: readonly AlintConfigInput[]): AlintConfig {
   return config
