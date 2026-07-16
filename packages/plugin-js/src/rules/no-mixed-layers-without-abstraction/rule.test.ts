@@ -9,6 +9,13 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionPrompt).toContain('relatedDeclarations')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('does not earn an abstraction')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('Do not require a fixed number of layers')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('at least two responsibilities')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('embedded in a consuming feature')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('report every primary declaration')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('a focused integration module')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('a simple one-off external call')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('shallow wrappers')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Suppress a finding when the evidence does not establish a reusable missing boundary')
 
     const normalizedPrompt = mixedLayersWithoutAbstractionPrompt.toLowerCase()
     for (const triggerTerm of [
@@ -18,6 +25,7 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
       'websocket',
       'formatter',
       'context builder',
+      'context-builder',
     ]) {
       expect(normalizedPrompt).not.toContain(triggerTerm)
     }
