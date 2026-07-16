@@ -20,7 +20,6 @@ export {
 } from './rules/inline-miniature-normalizer'
 export {
   createMixedLayerMessages,
-  createMixedLayersWithoutAbstractionRule,
   createMixedLayerToolParameters,
   mixedLayerFindingSchema,
   mixedLayerResponseSchema,

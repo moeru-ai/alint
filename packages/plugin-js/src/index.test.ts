@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { examplePlugin } from './index'
+import * as pluginJs from './index'
 
 describe('examplePlugin', () => {
   it('exports the recommended example rules', () => {
@@ -13,13 +13,17 @@ describe('examplePlugin', () => {
       'no-trivial-wrapper-stack',
       'no-vacuous-function',
     ]
-    const ruleIds = Object.keys(examplePlugin.rules ?? {})
+    const ruleIds = Object.keys(pluginJs.examplePlugin.rules ?? {})
 
     expect(ruleIds).toEqual(expectedRuleIds)
-    expect(examplePlugin.configs?.recommended).toEqual([
+    expect(pluginJs.examplePlugin.configs?.recommended).toEqual([
       {
         rules: Object.fromEntries(expectedRuleIds.map(ruleId => [`example/${ruleId}`, 'warn'])),
       },
     ])
+  })
+
+  it('keeps rule-construction test seams out of the public package API', () => {
+    expect(pluginJs).not.toHaveProperty('createMixedLayersWithoutAbstractionRule')
   })
 })
