@@ -351,7 +351,7 @@ export function reportMixedLayerFindings(
           line: finding.line,
         },
       },
-      message: finding.message,
+      message: formatMixedLayerMessage(finding),
     })
   }
 }
@@ -384,6 +384,13 @@ export function selectReportedMixedLayerFindings(
   }
 
   return selectedFindings
+}
+
+function formatMixedLayerMessage(finding: MixedLayerFinding): string {
+  return [
+    finding.message,
+    `Suggestion: ${finding.suggestion}`,
+  ].join('\n')
 }
 
 function renderMixedLayerDraft(findings: readonly MixedLayerFinding[]): string {
