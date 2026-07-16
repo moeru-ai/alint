@@ -16,7 +16,7 @@ This package demonstrates the public plugin and rule DSL from `@alint-js/plugin`
 
 Each rule requests the configured model through its rule context, uses structured output to validate model findings, and reports accepted findings as source diagnostics.
 
-`example/no-mixed-layers-without-abstraction` makes three model calls per uncached target file. Complementary data-flow and ownership perspectives improve candidate recall and boundary checks; the final pass explicitly reports or suppresses each candidate after checking source coverage, cluster membership, conflicts, and duplicates.
+`example/no-mixed-layers-without-abstraction` runs three sequential model-generation stages per uncached target file, with each stage subject to normal structured-output retries. Complementary data-flow and ownership perspectives improve candidate recall and boundary checks; the final stage reports or suppresses each candidate, trading additional inference cost and latency for more conservative findings.
 
 ## How to use
 
