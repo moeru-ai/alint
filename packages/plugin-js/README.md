@@ -48,14 +48,16 @@ You can also use the bundled recommended config:
 ```ts
 import examplePlugin from '@alint-js/plugin-js'
 
-export default [
+import { defineConfig } from '@alint-js/cli'
+
+export default defineConfig([
   {
     plugins: {
       example: examplePlugin,
     },
   },
-  ...examplePlugin.configs.recommended,
-]
+  examplePlugin.configs?.recommended ?? [],
+])
 ```
 
 ## When to use

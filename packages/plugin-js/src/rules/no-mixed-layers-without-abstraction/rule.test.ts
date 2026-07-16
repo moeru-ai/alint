@@ -1,11 +1,15 @@
-import type { RuleContext } from '@alint-js/plugin'
+import type { GenerateStructuredOptions } from '@alint-js/core/structured-output'
+import type { FileTarget, RuleContext } from '@alint-js/plugin'
+
+import type { MixedLayerFinding } from './rule'
 
 import { getDescription, safeParse } from 'valibot'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { mixedLayersWithoutAbstractionPrompt } from './prompt'
 import {
   createMixedLayerMessages,
+  createMixedLayersWithoutAbstractionRule,
   createMixedLayerToolParameters,
   mixedLayerFindingSchema,
   mixedLayerResponseSchema,
@@ -13,6 +17,23 @@ import {
   normalizeMixedLayerFindings,
   reportMixedLayerFindings,
 } from './rule'
+
+function createFileTarget(source: string): FileTarget {
+  const file = {
+    language: 'typescript',
+    lines: source.split('\n'),
+    path: '/repo/source.ts',
+    text: source,
+  }
+
+  return {
+    file,
+    identity: 'file:source.ts',
+    kind: 'file',
+    language: file.language,
+    text: source,
+  }
+}
 
 function createReportContext() {
   const diagnostics: Parameters<RuleContext['report']>[0][] = []
@@ -23,28 +44,33 @@ function createReportContext() {
   return { context, diagnostics }
 }
 
-function createRuleContext(): RuleContext {
-  return {
+function createRuleContext() {
+  const diagnostics: Parameters<RuleContext['report']>[0][] = []
+  const model: Awaited<ReturnType<RuleContext['model']>> = {
+    aliases: [],
+    capabilities: ['tool-call'],
+    id: 'model',
+    name: 'model',
+    params: {},
+    provider: {
+      endpoint: 'http://localhost:11434/v1',
+      headers: {},
+      id: 'provider',
+      type: 'openai-compatible',
+    },
+  }
+  const signal = new AbortController().signal
+  const context: RuleContext = {
     cwd: '/repo',
     id: 'example/no-mixed-layers-without-abstraction',
     localId: 'no-mixed-layers-without-abstraction',
     logger: { debug: () => {} },
     metering: { recordUsage: () => {} },
-    model: async () => ({
-      aliases: [],
-      capabilities: ['tool-call'],
-      id: 'model',
-      name: 'model',
-      params: {},
-      provider: {
-        endpoint: 'http://localhost:11434/v1',
-        headers: {},
-        id: 'provider',
-        type: 'openai-compatible',
-      },
-    }),
-    report: () => {},
+    model: async () => model,
+    outputLanguage: 'Simplified Chinese',
+    report: diagnostic => diagnostics.push(diagnostic),
     settings: {},
+    signal,
     src: {
       getText: target => target.text,
       readFile: async filePath => ({
@@ -71,12 +97,14 @@ function createRuleContext(): RuleContext {
       }),
     },
   }
+
+  return { context, diagnostics, model, signal }
 }
 
-function finding(overrides: Partial<Parameters<typeof normalizeMixedLayerFindings>[0][number]> = {}) {
+function finding(overrides: Partial<MixedLayerFinding> = {}): MixedLayerFinding {
   return {
-    boundaryKind: 'data-adaptation' as const,
-    confidence: 'high' as const,
+    boundaryKind: 'data-adaptation',
+    confidence: 'high',
     declaration: 'interpretFrame',
     line: 2,
     message: 'interpretFrame makes a reusable external response contract inside the consumer.',
@@ -126,7 +154,8 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
 
 describe('mixedLayersWithoutAbstractionRule', () => {
   it('exposes only the file-target handler and versions its cache behavior', () => {
-    const handlers = mixedLayersWithoutAbstractionRule.create(createRuleContext())
+    const { context } = createRuleContext()
+    const handlers = mixedLayersWithoutAbstractionRule.create(context)
 
     expect(Object.keys(handlers)).toEqual(['onTargetFile'])
     expect(handlers.onTargetFile).toBeTypeOf('function')
@@ -134,6 +163,89 @@ describe('mixedLayersWithoutAbstractionRule', () => {
       mixedLayersWithoutAbstractionPrompt,
       'mixed-layer-findings-v1',
     ])
+  })
+
+  it('forwards runtime dependencies and reports only normalized findings', async () => {
+    const source = [
+      'const readFrame = transport.read',
+      'function interpretFrame() {}',
+      'const selected = interpretFrame()',
+    ].join('\n')
+    const generate = vi.fn(async (
+      _options: GenerateStructuredOptions<typeof mixedLayerResponseSchema>,
+    ): Promise<{ findings: MixedLayerFinding[] }> => ({
+      findings: [
+        finding(),
+        finding({ declaration: 'duplicateInterpretFrame', line: 2 }),
+        finding({ declaration: 'outsideSource', line: 9 }),
+      ],
+    }))
+    const { context, diagnostics, model, signal } = createRuleContext()
+    const handlers = createMixedLayersWithoutAbstractionRule(generate).create(context)
+
+    if (!handlers.onTargetFile) {
+      throw new TypeError('Expected a file-target handler')
+    }
+
+    await handlers.onTargetFile(createFileTarget(source))
+
+    expect(generate).toHaveBeenCalledTimes(1)
+    const call = generate.mock.calls[0]
+    if (!call) {
+      throw new TypeError('Expected structured generation options')
+    }
+
+    const [options] = call
+    expect(options.logger).toBe(context.logger)
+    expect(options.metering).toBe(context.metering)
+    expect(options.model).toBe(model)
+    expect(options.signal).toBe(signal)
+    expect(options.schema).toBe(mixedLayerResponseSchema)
+    expect(options.operation).toBe('mixed-layers-without-abstraction-judge')
+
+    const messages = options.createMessages()
+    expect(messages.at(-1)?.content).toContain('Write all human-readable finding messages and suggestions in this language: Simplified Chinese.')
+    expect(messages.at(-1)?.content).toContain('1 | const readFrame = transport.read')
+    expect(messages.at(-1)?.content).toContain('2 | function interpretFrame() {}')
+    expect(messages.at(-1)?.content).toContain('3 | const selected = interpretFrame()')
+    expect(diagnostics).toEqual([
+      {
+        evidence: {
+          boundaryKind: 'data-adaptation',
+          confidence: 'high',
+          declaration: 'interpretFrame',
+          relatedDeclarations: [
+            {
+              line: 1,
+              name: 'readFrame',
+              relationship: 'Move with interpretFrame behind the same external integration interface.',
+            },
+          ],
+          suggestion: 'Move readFrame and interpretFrame into a focused integration owner and expose interpreted frames.',
+        },
+        filePath: '/repo/source.ts',
+        loc: { start: { column: 0, line: 2 } },
+        message: 'interpretFrame makes a reusable external response contract inside the consumer.',
+      },
+    ])
+  })
+
+  it('propagates generation failures without reporting diagnostics', async () => {
+    const failure = new Error('generation failed')
+    const generate = vi.fn(async (
+      _options: GenerateStructuredOptions<typeof mixedLayerResponseSchema>,
+    ): Promise<{ findings: MixedLayerFinding[] }> => {
+      throw failure
+    })
+    const { context, diagnostics } = createRuleContext()
+    const handlers = createMixedLayersWithoutAbstractionRule(generate).create(context)
+
+    if (!handlers.onTargetFile) {
+      throw new TypeError('Expected a file-target handler')
+    }
+
+    await expect(handlers.onTargetFile(createFileTarget('const source = external.read()'))).rejects.toBe(failure)
+    expect(diagnostics).toEqual([])
   })
 })
 
