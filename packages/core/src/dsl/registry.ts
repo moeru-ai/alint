@@ -1,7 +1,15 @@
-import type { EffectiveAlintConfig } from '../config/config-array'
-import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
+import type { BaseIssue } from 'valibot'
 
-export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' | 'rules'>): RuleRegistry {
+import type { EffectiveAlintConfig } from '../config/config-array'
+import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleOptionsSchema, RuleRegistry, RuleSeverity } from './types'
+
+import { getDotPath, safeParse, tuple } from 'valibot'
+
+type RuleRegistryConfig = Pick<EffectiveAlintConfig, 'plugins'> & {
+  rules: Record<string, RuleConfigEntry<readonly unknown[]>>
+}
+
+export function buildRuleRegistry(config: RuleRegistryConfig): RuleRegistry {
   const rules = new Map<string, RuleDefinition>()
   const localIds = new Map<string, string>()
   const enabledRules: EnabledRule[] = []
@@ -26,7 +34,8 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
       throw new Error(`Unknown rule "${id}".`)
     }
 
-    const severity = normalizeSeverity(entry)
+    const normalizedEntry = normalizeRuleConfigEntry(entry)
+    const severity = normalizedEntry.severity
 
     if (severity === 'off') {
       continue
@@ -35,7 +44,7 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
     enabledRules.push({
       id,
       localId: localIds.get(id) ?? id,
-      options: normalizeOptions(entry),
+      options: parseRuleOptions(id, rule.options, normalizedEntry.options),
       rule,
       severity,
     })
@@ -47,22 +56,48 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
   }
 }
 
+function formatValibotIssues(issues: BaseIssue<unknown>[]): string {
+  return issues
+    .map((issue) => {
+      const path = getDotPath(issue)
+
+      return path === null ? issue.message : `"${path}": ${issue.message}`
+    })
+    .join('; ')
+}
+
 function isRuleConfigTuple(entry: RuleConfigEntry<readonly unknown[]>): entry is readonly [RuleSeverity, ...readonly unknown[]] {
   return Array.isArray(entry)
 }
 
-function normalizeOptions(entry: RuleConfigEntry<readonly unknown[]>): readonly unknown[] {
+function normalizeRuleConfigEntry(entry: RuleConfigEntry<readonly unknown[]>): { options: readonly unknown[], severity: RuleSeverity } {
   if (isRuleConfigTuple(entry)) {
-    return entry.slice(1)
+    const [severity = 'warn', ...options] = entry
+
+    return { options, severity }
   }
 
-  return []
+  return { options: [], severity: entry ?? 'warn' }
 }
 
-function normalizeSeverity(entry: RuleConfigEntry<readonly unknown[]>): RuleSeverity {
-  if (isRuleConfigTuple(entry)) {
-    return entry[0] ?? 'warn'
+function parseRuleOptions(
+  id: string,
+  schema: RuleOptionsSchema | undefined,
+  options: readonly unknown[],
+): readonly unknown[] {
+  if (!schema) {
+    if (options.length > 0) {
+      throw new TypeError(`Rule "${id}" does not accept options.`)
+    }
+
+    return []
   }
 
-  return entry ?? 'warn'
+  const result = safeParse(tuple(schema), options)
+
+  if (!result.success) {
+    throw new TypeError(`Invalid options for rule "${id}": ${formatValibotIssues(result.issues)}`)
+  }
+
+  return result.output
 }
