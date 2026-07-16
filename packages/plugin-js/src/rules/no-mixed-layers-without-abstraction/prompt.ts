@@ -49,6 +49,8 @@ Finding granularity:
 - relatedDeclarations may cue supporting declarations and cooperation, movement, or call relationships between primary findings, but must not replace a primary finding for an independently owned operation, adaptation, or policy.
 - Do not replace declaration findings with one file-level summary.
 - Each suggestion must name the declarations that belong together, the focused owner they should form, and the lower-level knowledge its interface should remove from the consumer.
+- Each suggestion must be directly actionable from the warning text alone. Include: a proposed owner name, the public operation or result shape it should expose, the caller-side rewrite, and the migration grouping for related declarations.
+- Do not merely restate that layers are mixed. Say what code should move or stay, what the consumer should call afterward, and what lower-level concepts the consumer should stop knowing.
 - Use relatedDeclarations to cue declarations that should move together, call through the proposed boundary, or stop depending on each other directly.
 
 Do not report:
