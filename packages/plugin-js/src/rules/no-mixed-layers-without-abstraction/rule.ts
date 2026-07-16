@@ -3,11 +3,11 @@ import type { JsonSchema } from '@valibot/to-json-schema'
 import type { InferOutput } from 'valibot'
 
 import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, toolParametersFromSchema } from '@alint-js/core/structured-output'
-import { array, description, number, object, picklist, pipe, string } from 'valibot'
+import { array, description, number, picklist, pipe, strictObject, string } from 'valibot'
 
 import { mixedLayersWithoutAbstractionPrompt } from './prompt'
 
-const relatedDeclarationSchema = object({
+const relatedDeclarationSchema = strictObject({
   line: pipe(
     number(),
     description('Left-column line number for a declaration related to the primary finding.'),
@@ -23,7 +23,7 @@ const relatedDeclarationSchema = object({
 })
 
 export const mixedLayerFindingSchema = pipe(
-  object({
+  strictObject({
     boundaryKind: pipe(
       picklist([
         'external-access',
@@ -63,7 +63,7 @@ export const mixedLayerFindingSchema = pipe(
 )
 
 export const mixedLayerResponseSchema = pipe(
-  object({
+  strictObject({
     findings: pipe(
       array(mixedLayerFindingSchema),
       description('All declaration-level findings. Return an empty array when the file has no qualifying missing boundary.'),

@@ -1,6 +1,6 @@
 import type { RuleContext } from '@alint-js/plugin'
 
-import { getDescription } from 'valibot'
+import { getDescription, safeParse } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import { mixedLayersWithoutAbstractionPrompt } from './prompt'
@@ -8,6 +8,7 @@ import {
   createMixedLayerMessages,
   createMixedLayerToolParameters,
   mixedLayerFindingSchema,
+  mixedLayerResponseSchema,
   normalizeMixedLayerFindings,
   reportMixedLayerFindings,
 } from './rule'
@@ -78,6 +79,7 @@ describe('mixed layer structured findings', () => {
     const findings = parameters.properties?.findings
 
     expect(parameters.additionalProperties).toBe(false)
+    expect(parameters.required).toEqual(['findings'])
     expect(typeof findings).toBe('object')
 
     if (typeof findings !== 'object' || Array.isArray(findings.items) || typeof findings.items !== 'object') {
@@ -85,6 +87,15 @@ describe('mixed layer structured findings', () => {
     }
 
     expect(findings.items.additionalProperties).toBe(false)
+    expect(findings.items.required).toEqual([
+      'boundaryKind',
+      'confidence',
+      'declaration',
+      'line',
+      'message',
+      'relatedDeclarations',
+      'suggestion',
+    ])
     const relationships = findings.items.properties?.relatedDeclarations
     expect(typeof relationships).toBe('object')
 
@@ -93,7 +104,34 @@ describe('mixed layer structured findings', () => {
     }
 
     expect(relationships.items.additionalProperties).toBe(false)
+    expect(relationships.items.required).toEqual(['line', 'name', 'relationship'])
     expect(getDescription(mixedLayerFindingSchema)).toContain('declaration-level warning')
+  })
+
+  it('rejects unknown properties at every response level', () => {
+    const validFinding = finding()
+    const rootResult = safeParse(mixedLayerResponseSchema, {
+      findings: [validFinding],
+      unknownProperty: true,
+    })
+    const findingResult = safeParse(mixedLayerResponseSchema, {
+      findings: [{ ...validFinding, unknownProperty: true }],
+    })
+    const relatedDeclarationResult = safeParse(mixedLayerResponseSchema, {
+      findings: [
+        {
+          ...validFinding,
+          relatedDeclarations: validFinding.relatedDeclarations.map(relatedDeclaration => ({
+            ...relatedDeclaration,
+            unknownProperty: true,
+          })),
+        },
+      ],
+    })
+
+    expect(rootResult.success).toBe(false)
+    expect(findingResult.success).toBe(false)
+    expect(relatedDeclarationResult.success).toBe(false)
   })
 
   it('builds retry-aware numbered messages with output language instructions', () => {
