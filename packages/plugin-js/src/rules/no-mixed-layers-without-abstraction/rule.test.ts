@@ -208,7 +208,7 @@ describe('mixedLayersWithoutAbstractionRule', () => {
     ): Promise<{ findings: MixedLayerFinding[] }> => ({
       findings: [
         finding(),
-        finding({ declaration: 'duplicateInterpretFrame', line: 2 }),
+        finding({ message: 'Duplicate finding for the same declaration.' }),
         finding({ declaration: 'outsideSource', line: 9 }),
       ],
     }))
@@ -357,7 +357,7 @@ describe('mixed layer structured findings', () => {
     expect(messages[2]?.content).toContain('2 | const result = readFrame()')
   })
 
-  it('deduplicates primary lines and removes invalid related declaration lines', () => {
+  it('deduplicates primary declaration identities and removes invalid related declaration lines', () => {
     const normalized = normalizeMixedLayerFindings(
       [
         finding({
@@ -367,18 +367,20 @@ describe('mixed layer structured findings', () => {
             { line: 9, name: 'outside', relationship: 'Invalid line.' },
           ],
         }),
-        finding({ declaration: 'duplicateLine', line: 2 }),
+        finding({ message: 'Duplicate finding for the same declaration.' }),
+        finding({ declaration: 'selectFrames', line: 2 }),
         finding({ declaration: 'fractionalLine', line: 1.5 }),
         finding({ declaration: 'outsideSource', line: 9 }),
       ],
       'const readFrame = transport.read\nconst result = readFrame()\n',
     )
 
-    expect(normalized).toHaveLength(1)
+    expect(normalized).toHaveLength(2)
     expect(normalized[0]?.declaration).toBe('interpretFrame')
     expect(normalized[0]?.relatedDeclarations).toEqual([
       { line: 1, name: 'readFrame', relationship: 'Move with the adapter.' },
     ])
+    expect(normalized[1]?.declaration).toBe('selectFrames')
   })
 
   it('reports every accepted primary declaration with relationship evidence', () => {

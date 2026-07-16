@@ -170,15 +170,16 @@ export function normalizeMixedLayerFindings(
   source: string,
 ): MixedLayerFinding[] {
   const lineCount = source.split('\n').length
-  const seenFindingLines = new Set<number>()
+  const seenFindingIdentities = new Set<string>()
   const normalized: MixedLayerFinding[] = []
 
   for (const finding of findings) {
-    if (!validLine(finding.line, lineCount) || seenFindingLines.has(finding.line)) {
+    const identity = `${finding.line}:${finding.declaration}`
+    if (!validLine(finding.line, lineCount) || seenFindingIdentities.has(identity)) {
       continue
     }
 
-    seenFindingLines.add(finding.line)
+    seenFindingIdentities.add(identity)
     const seenRelationships = new Set<string>()
     const relatedDeclarations = finding.relatedDeclarations.filter((related) => {
       if (!validLine(related.line, lineCount)) {
