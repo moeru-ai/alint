@@ -1,10 +1,3 @@
-import type {
-  AlintConfig,
-  AlintConfigInput,
-  PluginDefinition,
-  RuleDefinition,
-} from '@alint-js/core'
-
 export type {
   AlintConfig,
   AlintConfigExtends,
@@ -55,6 +48,7 @@ export type {
   SourceText,
   Target,
 } from '@alint-js/core'
+
 export type {
   AgentAdapter,
   AgentRequest,
@@ -69,15 +63,4 @@ export {
   requireAgent,
   RetryableAgentError,
 } from '@alint-js/core/agent'
-
-export function defineConfig(config: readonly AlintConfigInput[]): AlintConfig {
-  return config
-}
-
-export function definePlugin(plugin: PluginDefinition): PluginDefinition {
-  return plugin
-}
-
-export function defineRule(rule: RuleDefinition): RuleDefinition {
-  return rule
-}
+export { defineConfig, definePlugin, defineRule } from '@alint-js/core/dsl'

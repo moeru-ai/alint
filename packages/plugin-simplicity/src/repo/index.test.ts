@@ -9,7 +9,7 @@ import { helpersIn, repoIndexFor, twinsOf } from './index'
 const FIXTURES = resolve(import.meta.dirname, '../../fixtures')
 
 /** A fresh `src` per call: the index is memoized per run, and each test is a run. */
-function createContext(): RuleContext {
+function createContext(): RuleContext<readonly []> {
   return {
     cwd: FIXTURES,
     id: 'simplicity/no-duplicated-helper',
@@ -19,6 +19,7 @@ function createContext(): RuleContext {
     model: () => {
       throw new Error('unused')
     },
+    options: [],
     report: () => {},
     settings: {},
     src: {

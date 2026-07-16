@@ -46,7 +46,7 @@ function createResolvedModel(): ResolvedModel {
   }
 }
 
-function createRuleContext(): RuleContext {
+function createRuleContext(): RuleContext<readonly []> {
   return {
     cwd: '/repo',
     id: 'python/semantic-boundary',
@@ -58,6 +58,7 @@ function createRuleContext(): RuleContext {
       recordUsage: () => {},
     },
     model: async () => createResolvedModel(),
+    options: [],
     report: () => {},
     settings: {},
     src: {

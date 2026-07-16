@@ -165,7 +165,7 @@ describe('basic-structured declarative preset', () => {
   })
 })
 
-function createRuleContext(): RuleContext {
+function createRuleContext(): RuleContext<readonly []> {
   return {
     cwd: '/repo',
     id: 'declarative/semantic-boundary',
@@ -185,6 +185,7 @@ function createRuleContext(): RuleContext {
         type: 'openai-compatible' as const,
       },
     })),
+    options: [],
     report: vi.fn(),
     settings: {},
     src: {

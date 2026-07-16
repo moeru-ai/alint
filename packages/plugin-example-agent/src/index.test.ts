@@ -30,7 +30,7 @@ function createResolvedModel(): ResolvedModel {
   }
 }
 
-function createRuleContext(agent?: AgentAdapter): RuleContext {
+function createRuleContext(agent?: AgentAdapter): RuleContext<readonly []> {
   return {
     agent,
     cwd: '/repo',
@@ -43,6 +43,7 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
       recordUsage: () => {},
     },
     model: async () => createResolvedModel(),
+    options: [],
     report: () => {},
     settings: {},
     src: {

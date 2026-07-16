@@ -22,7 +22,7 @@ interface Finding {
 }
 
 interface Run {
-  contextFor: (settings?: Record<string, unknown>) => RuleContext
+  contextFor: (settings?: Record<string, unknown>) => RuleContext<readonly []>
   cwd: string
   debug: string[]
   diagnostics: DiagnosticDescriptor[]
