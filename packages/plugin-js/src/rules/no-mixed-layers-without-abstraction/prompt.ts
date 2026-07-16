@@ -71,6 +71,24 @@ Do not key findings on exact function names, vendor names, protocol names, or di
 Return warnings only. Suppress a finding when the evidence does not establish a reusable missing boundary. Use medium or low confidence for a visible smell whose intended ownership remains uncertain.
 `.trim()
 
+export const mixedLayersWithoutAbstractionCoveragePerspective = `
+Use the coverage and data-flow perspective for this draft.
+
+- Trace every external access entry point through reusable operations and adaptation to consumer policy.
+- Favor an exhaustive inventory of independently responsible declarations.
+- Do not merge declarations with separate reasons to change.
+- Cross-check the full numbered source before returning draft candidates.
+`.trim()
+
+export const mixedLayersWithoutAbstractionOwnershipPerspective = `
+Use the ownership and boundary perspective for this draft.
+
+- Map existing semantic boundaries before proposing a new owner.
+- You must reject recursive extraction that recreates an existing focused boundary.
+- Inspect parallel access, identity, discovery, and selection operations for omissions and cluster membership.
+- Actively challenge omissions and false positives before returning draft candidates.
+`.trim()
+
 export const mixedLayersWithoutAbstractionReviewPrompt = `
 You are the final reviewer for one JavaScript or TypeScript source file.
 

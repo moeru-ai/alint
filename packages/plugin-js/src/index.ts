@@ -27,6 +27,8 @@ export {
   mixedLayerResponseSchema,
   mixedLayerReviewDecisionSchema,
   mixedLayerReviewResponseSchema,
+  mixedLayersWithoutAbstractionCoveragePerspective,
+  mixedLayersWithoutAbstractionOwnershipPerspective,
   mixedLayersWithoutAbstractionPrompt,
   mixedLayersWithoutAbstractionReviewPrompt,
   mixedLayersWithoutAbstractionRule,

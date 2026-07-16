@@ -8,6 +8,8 @@ import { defineRule } from '@alint-js/plugin'
 import { array, description, number, picklist, pipe, strictObject, string } from 'valibot'
 
 import {
+  mixedLayersWithoutAbstractionCoveragePerspective,
+  mixedLayersWithoutAbstractionOwnershipPerspective,
   mixedLayersWithoutAbstractionPrompt,
   mixedLayersWithoutAbstractionReviewPrompt,
 } from './prompt'
@@ -126,8 +128,10 @@ export function createMixedLayersWithoutAbstractionRule(
   return defineRule({
     cacheKey: [
       mixedLayersWithoutAbstractionPrompt,
+      mixedLayersWithoutAbstractionCoveragePerspective,
+      mixedLayersWithoutAbstractionOwnershipPerspective,
       mixedLayersWithoutAbstractionReviewPrompt,
-      'mixed-layer-findings-v4',
+      'mixed-layer-findings-v5',
     ],
     create: (ctx) => {
       /**
@@ -148,8 +152,8 @@ export function createMixedLayersWithoutAbstractionRule(
        * - `createSourceTargetExecution` in `packages/core/src/core/targets/source.ts`
        *
        * Downstream:
-       * - {@link generateStructured} -> first draft sample
-       * - {@link generateStructured} -> second draft sample
+       * - {@link generateStructured} -> coverage and data-flow draft
+       * - {@link generateStructured} -> ownership and boundary draft
        * - {@link generateStructured} -> final report or suppress decisions
        * - {@link selectReportedMixedLayerFindings} -> reportable findings
        * - {@link reportMixedLayerFindings} -> `RuleContext.report`
@@ -160,6 +164,7 @@ export function createMixedLayersWithoutAbstractionRule(
         const firstDraft = await dependencies.generateDraft({
           createMessages: retryFeedback => createMixedLayerMessages(
             source,
+            mixedLayersWithoutAbstractionCoveragePerspective,
             retryFeedback,
             ctx.outputLanguage,
           ),
@@ -173,6 +178,7 @@ export function createMixedLayersWithoutAbstractionRule(
         const secondDraft = await dependencies.generateDraft({
           createMessages: retryFeedback => createMixedLayerMessages(
             source,
+            mixedLayersWithoutAbstractionOwnershipPerspective,
             retryFeedback,
             ctx.outputLanguage,
           ),
@@ -218,6 +224,7 @@ export const mixedLayersWithoutAbstractionRule = createMixedLayersWithoutAbstrac
 
 export function createMixedLayerMessages(
   source: string,
+  perspective: string,
   retryFeedback: string | undefined,
   outputLanguage?: string,
 ) {
@@ -237,6 +244,7 @@ export function createMixedLayerMessages(
     {
       content: [
         formatOutputLanguageInstruction(outputLanguage),
+        `Draft perspective:\n\n${perspective}`,
         `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
       ].filter(Boolean).join('\n\n'),
       role: 'user' as const,
@@ -268,7 +276,9 @@ export function createMixedLayerReviewMessages(
       content: [
         formatOutputLanguageInstruction(outputLanguage),
         `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
+        `Draft sample 1 perspective:\n\n${mixedLayersWithoutAbstractionCoveragePerspective}`,
         `Draft sample 1 (candidate recall only):\n\n${renderMixedLayerDraft(firstDraftFindings)}`,
+        `Draft sample 2 perspective:\n\n${mixedLayersWithoutAbstractionOwnershipPerspective}`,
         `Draft sample 2 (candidate recall only):\n\n${renderMixedLayerDraft(secondDraftFindings)}`,
       ].filter(Boolean).join('\n\n'),
       role: 'user' as const,
@@ -349,9 +359,31 @@ export function reportMixedLayerFindings(
 export function selectReportedMixedLayerFindings(
   decisions: readonly MixedLayerReviewDecision[],
 ): MixedLayerFinding[] {
-  return decisions
-    .filter(decision => decision.decision === 'report')
-    .map(decision => decision.finding)
+  const groupedDecisions = new Map<string, MixedLayerReviewDecision[]>()
+
+  for (const decision of decisions) {
+    const identity = JSON.stringify([
+      decision.finding.line,
+      decision.finding.declaration,
+    ])
+    const group = groupedDecisions.get(identity) ?? []
+    group.push(decision)
+    groupedDecisions.set(identity, group)
+  }
+
+  const selectedFindings: MixedLayerFinding[] = []
+  for (const group of groupedDecisions.values()) {
+    if (group.some(decision => decision.decision === 'suppress')) {
+      continue
+    }
+
+    const firstReport = group.find(decision => decision.decision === 'report')
+    if (firstReport) {
+      selectedFindings.push(firstReport.finding)
+    }
+  }
+
+  return selectedFindings
 }
 
 function renderMixedLayerDraft(findings: readonly MixedLayerFinding[]): string {

@@ -1,4 +1,6 @@
 export {
+  mixedLayersWithoutAbstractionCoveragePerspective,
+  mixedLayersWithoutAbstractionOwnershipPerspective,
   mixedLayersWithoutAbstractionPrompt,
   mixedLayersWithoutAbstractionReviewPrompt,
 } from './prompt'

@@ -7,7 +7,7 @@ Model-backed JavaScript and TypeScript review rules for `alint`.
 This package demonstrates the public plugin and rule DSL from `@alint-js/plugin`. It exports `examplePlugin`, including a `recommended` config, with these rules in registry order:
 
 - `example/inline-miniature-normalizer` reports clusters of local helpers that form a private reader or narrowing toolkit.
-- `example/no-mixed-layers-without-abstraction` samples declaration-level findings twice, then independently decides which candidates to report for consuming features that own independently reusable external-integration responsibilities without a stable interface.
+- `example/no-mixed-layers-without-abstraction` drafts declaration-level findings from complementary data-flow and ownership perspectives, then independently decides which candidates to report for consuming features that own independently reusable external-integration responsibilities without a stable interface.
 - `example/no-private-schema-toolkit` reports clusters of local helpers that form an ad hoc schema or payload-normalization toolkit.
 - `example/no-redundant-binding` reports local bindings that only rename an unchanged value or reference without adding a useful boundary.
 - `example/no-redundant-jsdoc` reports JSDoc that mostly restates the documented declaration, signature, or implementation.
@@ -16,7 +16,7 @@ This package demonstrates the public plugin and rule DSL from `@alint-js/plugin`
 
 Each rule requests the configured model through its rule context, uses structured output to validate model findings, and reports accepted findings as source diagnostics.
 
-`example/no-mixed-layers-without-abstraction` makes three model calls per uncached target file. Two independent samples improve candidate recall; the final pass explicitly reports or suppresses each candidate after checking source coverage, ownership boundaries, cluster membership, and duplicates.
+`example/no-mixed-layers-without-abstraction` makes three model calls per uncached target file. Complementary data-flow and ownership perspectives improve candidate recall and boundary checks; the final pass explicitly reports or suppresses each candidate after checking source coverage, cluster membership, conflicts, and duplicates.
 
 ## How to use
 

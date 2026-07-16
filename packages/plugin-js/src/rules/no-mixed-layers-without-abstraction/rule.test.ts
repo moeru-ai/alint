@@ -10,6 +10,8 @@ import { getDescription, safeParse } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  mixedLayersWithoutAbstractionCoveragePerspective,
+  mixedLayersWithoutAbstractionOwnershipPerspective,
   mixedLayersWithoutAbstractionPrompt,
   mixedLayersWithoutAbstractionReviewPrompt,
 } from './prompt'
@@ -227,6 +229,8 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionReviewPrompt).toContain('duplicate or overlapping class-and-method or declaration findings')
 
     for (const prompt of [
+      mixedLayersWithoutAbstractionCoveragePerspective,
+      mixedLayersWithoutAbstractionOwnershipPerspective,
       mixedLayersWithoutAbstractionPrompt,
       mixedLayersWithoutAbstractionReviewPrompt,
     ]) {
@@ -244,6 +248,22 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
       }
     }
   })
+
+  it('defines complementary generalized draft perspectives', () => {
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).toContain('coverage and data-flow perspective')
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).toContain('every external access entry point')
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).toContain('reusable operations and adaptation to consumer policy')
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).toContain('exhaustive inventory of independently responsible declarations')
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).toContain('separate reasons to change')
+
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('ownership and boundary perspective')
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('existing semantic boundaries')
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('reject recursive extraction')
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('parallel access, identity, discovery, and selection operations')
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('cluster membership')
+    expect(mixedLayersWithoutAbstractionOwnershipPerspective).toContain('challenge omissions and false positives')
+    expect(mixedLayersWithoutAbstractionCoveragePerspective).not.toBe(mixedLayersWithoutAbstractionOwnershipPerspective)
+  })
 })
 
 describe('mixedLayersWithoutAbstractionRule', () => {
@@ -255,8 +275,10 @@ describe('mixedLayersWithoutAbstractionRule', () => {
     expect(handlers.onTargetFile).toBeTypeOf('function')
     expect(mixedLayersWithoutAbstractionRule.cacheKey).toEqual([
       mixedLayersWithoutAbstractionPrompt,
+      mixedLayersWithoutAbstractionCoveragePerspective,
+      mixedLayersWithoutAbstractionOwnershipPerspective,
       mixedLayersWithoutAbstractionReviewPrompt,
-      'mixed-layer-findings-v4',
+      'mixed-layer-findings-v5',
     ])
   })
 
@@ -342,6 +364,9 @@ describe('mixedLayersWithoutAbstractionRule', () => {
       throw new TypeError('Expected two draft calls and one review call')
     }
 
+    const draftMessagesByIndex: ReturnType<
+      GenerateStructuredOptions<typeof mixedLayerResponseSchema>['createMessages']
+    >[] = []
     for (const [index, call] of [firstDraftCall, secondDraftCall].entries()) {
       const [draftOptions] = call
       expect(draftOptions.logger).toBe(context.logger)
@@ -352,11 +377,15 @@ describe('mixedLayersWithoutAbstractionRule', () => {
       expect(draftOptions.operation).toBe(`mixed-layers-without-abstraction-draft-${index + 1}`)
 
       const draftMessages = draftOptions.createMessages()
+      draftMessagesByIndex.push(draftMessages)
       expect(draftMessages.at(-1)?.content).toContain('Write all human-readable finding messages and suggestions in this language: Simplified Chinese.')
       expect(draftMessages.at(-1)?.content).toContain('1 | const readFrame = transport.read')
       expect(draftMessages.at(-1)?.content).toContain('2 | function interpretFrame() {}')
       expect(draftMessages.at(-1)?.content).toContain('3 | const selected = interpretFrame()')
     }
+    expect(draftMessagesByIndex[0]).not.toEqual(draftMessagesByIndex[1])
+    expect(draftMessagesByIndex[0]?.at(-1)?.content).toContain(mixedLayersWithoutAbstractionCoveragePerspective)
+    expect(draftMessagesByIndex[1]?.at(-1)?.content).toContain(mixedLayersWithoutAbstractionOwnershipPerspective)
 
     const [reviewOptions] = reviewCall
     expect(reviewOptions.logger).toBe(context.logger)
@@ -373,6 +402,10 @@ describe('mixedLayersWithoutAbstractionRule', () => {
     expect(reviewMessages.at(-1)?.content).toContain('2 | function interpretFrame() {}')
     expect(reviewMessages.at(-1)?.content).toContain('Draft sample 1 (candidate recall only):')
     expect(reviewMessages.at(-1)?.content).toContain('Draft sample 2 (candidate recall only):')
+    expect(reviewMessages.at(-1)?.content).toContain('Draft sample 1 perspective:')
+    expect(reviewMessages.at(-1)?.content).toContain('Draft sample 2 perspective:')
+    expect(reviewMessages.at(-1)?.content).toContain(mixedLayersWithoutAbstractionCoveragePerspective)
+    expect(reviewMessages.at(-1)?.content).toContain(mixedLayersWithoutAbstractionOwnershipPerspective)
     expect(reviewMessages.at(-1)?.content).toContain(JSON.stringify({ findings: firstDraftFindings }, null, 2))
     expect(reviewMessages.at(-1)?.content).toContain(JSON.stringify({ findings: secondDraftFindings }, null, 2))
     expect(diagnostics.map(diagnostic => diagnostic.message)).not.toContain('First draft external access finding.')
@@ -594,6 +627,7 @@ describe('mixed layer structured findings', () => {
   it('builds retry-aware numbered messages with output language instructions', () => {
     const messages = createMixedLayerMessages(
       'const readFrame = transport.read\nconst result = readFrame()\n',
+      mixedLayersWithoutAbstractionCoveragePerspective,
       'Return the required tool object.',
       'Simplified Chinese',
     )
@@ -602,8 +636,20 @@ describe('mixed layer structured findings', () => {
     expect(messages[0]?.content).toBe(mixedLayersWithoutAbstractionPrompt)
     expect(messages[1]).toEqual({ content: 'Return the required tool object.', role: 'user' })
     expect(messages[2]?.content).toContain('Write all human-readable finding messages and suggestions in this language: Simplified Chinese.')
+    expect(messages[2]?.content).toContain('Draft perspective:')
+    expect(messages[2]?.content).toContain(mixedLayersWithoutAbstractionCoveragePerspective)
     expect(messages[2]?.content).toContain('1 | const readFrame = transport.read')
     expect(messages[2]?.content).toContain('2 | const result = readFrame()')
+
+    const ownershipMessages = createMixedLayerMessages(
+      'const readFrame = transport.read\nconst result = readFrame()\n',
+      mixedLayersWithoutAbstractionOwnershipPerspective,
+      'Return the required tool object.',
+      'Simplified Chinese',
+    )
+
+    expect(ownershipMessages).not.toEqual(messages)
+    expect(ownershipMessages[2]?.content).toContain(mixedLayersWithoutAbstractionOwnershipPerspective)
   })
 
   it('builds review messages with numbered source and two stable labeled drafts', () => {
@@ -637,6 +683,10 @@ describe('mixed layer structured findings', () => {
     expect(messages[2]?.content).toContain('2 | const result = readFrame()')
     expect(messages[2]?.content).toContain('Draft sample 1 (candidate recall only):')
     expect(messages[2]?.content).toContain('Draft sample 2 (candidate recall only):')
+    expect(messages[2]?.content).toContain('Draft sample 1 perspective:')
+    expect(messages[2]?.content).toContain('Draft sample 2 perspective:')
+    expect(messages[2]?.content).toContain(mixedLayersWithoutAbstractionCoveragePerspective)
+    expect(messages[2]?.content).toContain(mixedLayersWithoutAbstractionOwnershipPerspective)
     expect(messages[2]?.content).toContain(JSON.stringify({ findings: firstDraftFindings }, null, 2))
     expect(messages[2]?.content).toContain(JSON.stringify({ findings: secondDraftFindings }, null, 2))
   })
@@ -656,6 +706,43 @@ describe('mixed layer structured findings', () => {
       }),
       decision(reportFinding),
     ])).toEqual([reportFinding])
+  })
+
+  it('keeps the first report when duplicate decisions both report', () => {
+    const firstReport = finding({ message: 'First report.' })
+    const secondReport = finding({ message: 'Second report.' })
+
+    expect(selectReportedMixedLayerFindings([
+      decision(firstReport),
+      decision(secondReport),
+    ])).toEqual([firstReport])
+  })
+
+  it('selects nothing when duplicate decisions both suppress', () => {
+    const suppressedFinding = finding()
+
+    expect(selectReportedMixedLayerFindings([
+      decision(suppressedFinding, { decision: 'suppress' }),
+      decision(suppressedFinding, { decision: 'suppress' }),
+    ])).toEqual([])
+  })
+
+  it('selects nothing when a report is followed by a suppress conflict', () => {
+    const conflictedFinding = finding()
+
+    expect(selectReportedMixedLayerFindings([
+      decision(conflictedFinding),
+      decision(conflictedFinding, { decision: 'suppress' }),
+    ])).toEqual([])
+  })
+
+  it('selects nothing when a suppress is followed by a report conflict', () => {
+    const conflictedFinding = finding()
+
+    expect(selectReportedMixedLayerFindings([
+      decision(conflictedFinding, { decision: 'suppress' }),
+      decision(conflictedFinding),
+    ])).toEqual([])
   })
 
   it('deduplicates primary declaration identities and removes invalid related declaration lines', () => {
