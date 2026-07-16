@@ -7,7 +7,7 @@ Model-backed JavaScript and TypeScript review rules for `alint`.
 This package demonstrates the public plugin and rule DSL from `@alint-js/plugin`. It exports `examplePlugin`, including a `recommended` config, with these rules in registry order:
 
 - `example/inline-miniature-normalizer` reports clusters of local helpers that form a private reader or narrowing toolkit.
-- `example/no-mixed-layers-without-abstraction` reports declarations that make a consuming feature own independently reusable external-integration responsibilities without a stable interface between them.
+- `example/no-mixed-layers-without-abstraction` drafts declaration-level findings, then independently reviews them to report consuming features that own independently reusable external-integration responsibilities without a stable interface.
 - `example/no-private-schema-toolkit` reports clusters of local helpers that form an ad hoc schema or payload-normalization toolkit.
 - `example/no-redundant-binding` reports local bindings that only rename an unchanged value or reference without adding a useful boundary.
 - `example/no-redundant-jsdoc` reports JSDoc that mostly restates the documented declaration, signature, or implementation.
@@ -15,6 +15,8 @@ This package demonstrates the public plugin and rule DSL from `@alint-js/plugin`
 - `example/no-vacuous-function` reports functions whose shallow implementation does not earn a separate runtime boundary.
 
 Each rule requests the configured model through its rule context, uses structured output to validate model findings, and reports accepted findings as source diagnostics.
+
+`example/no-mixed-layers-without-abstraction` makes two model calls per target file. The second pass checks source coverage, ownership boundaries, cluster membership, and duplicate findings before anything is reported.
 
 ## How to use
 

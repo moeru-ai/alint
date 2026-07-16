@@ -1,6 +1,10 @@
-export { mixedLayersWithoutAbstractionPrompt } from './prompt'
+export {
+  mixedLayersWithoutAbstractionPrompt,
+  mixedLayersWithoutAbstractionReviewPrompt,
+} from './prompt'
 export {
   createMixedLayerMessages,
+  createMixedLayerReviewMessages,
   createMixedLayerToolParameters,
   mixedLayerFindingSchema,
   mixedLayerResponseSchema,

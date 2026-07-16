@@ -7,7 +7,10 @@ import { formatOutputLanguageInstruction, formatSourceWithLineNumbers, generateS
 import { defineRule } from '@alint-js/plugin'
 import { array, description, number, picklist, pipe, strictObject, string } from 'valibot'
 
-import { mixedLayersWithoutAbstractionPrompt } from './prompt'
+import {
+  mixedLayersWithoutAbstractionPrompt,
+  mixedLayersWithoutAbstractionReviewPrompt,
+} from './prompt'
 
 const relatedDeclarationSchema = strictObject({
   line: pipe(
@@ -84,7 +87,11 @@ export function createMixedLayersWithoutAbstractionRule(
   generate: GenerateMixedLayerResponse = generateStructured,
 ) {
   return defineRule({
-    cacheKey: [mixedLayersWithoutAbstractionPrompt, 'mixed-layer-findings-v2'],
+    cacheKey: [
+      mixedLayersWithoutAbstractionPrompt,
+      mixedLayersWithoutAbstractionReviewPrompt,
+      'mixed-layer-findings-v3',
+    ],
     create: (ctx) => {
       /**
        * Reviews one file target for integration responsibilities that lack a stable owner.
@@ -94,18 +101,22 @@ export function createMixedLayersWithoutAbstractionRule(
        * `createSourceTargetExecution`
        *   -> `RuleHandlers.onTargetFile`
        *     -> {@link onTargetFile}
+       *       -> `mixed-layers-without-abstraction-draft`
+       *         -> `mixed-layers-without-abstraction-review`
+       *           -> {@link reportMixedLayerFindings}
        *
        * Upstream:
        * - `createSourceTargetExecution` in `packages/core/src/core/targets/source.ts`
        *
        * Downstream:
-       * - {@link generateStructured}
+       * - {@link generateStructured} -> draft findings
+       * - {@link generateStructured} -> complete replacement review
        * - {@link reportMixedLayerFindings} -> `RuleContext.report`
        */
       async function onTargetFile(target: FileTarget): Promise<void> {
         const model = await ctx.model()
         const source = ctx.src.getText(target)
-        const { findings } = await generate({
+        const draft = await generate({
           createMessages: retryFeedback => createMixedLayerMessages(
             source,
             retryFeedback,
@@ -114,7 +125,21 @@ export function createMixedLayersWithoutAbstractionRule(
           logger: ctx.logger,
           metering: ctx.metering,
           model,
-          operation: 'mixed-layers-without-abstraction-judge',
+          operation: 'mixed-layers-without-abstraction-draft',
+          schema: mixedLayerResponseSchema,
+          signal: ctx.signal,
+        })
+        const review = await generate({
+          createMessages: retryFeedback => createMixedLayerReviewMessages(
+            source,
+            draft.findings,
+            retryFeedback,
+            ctx.outputLanguage,
+          ),
+          logger: ctx.logger,
+          metering: ctx.metering,
+          model,
+          operation: 'mixed-layers-without-abstraction-review',
           schema: mixedLayerResponseSchema,
           signal: ctx.signal,
         })
@@ -122,7 +147,7 @@ export function createMixedLayersWithoutAbstractionRule(
         reportMixedLayerFindings(
           ctx,
           target.file.path,
-          normalizeMixedLayerFindings(findings, source),
+          normalizeMixedLayerFindings(review.findings, source),
         )
       }
 
@@ -155,6 +180,36 @@ export function createMixedLayerMessages(
       content: [
         formatOutputLanguageInstruction(outputLanguage),
         `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
+      ].filter(Boolean).join('\n\n'),
+      role: 'user' as const,
+    },
+  ]
+}
+
+export function createMixedLayerReviewMessages(
+  source: string,
+  draftFindings: readonly MixedLayerFinding[],
+  retryFeedback: string | undefined,
+  outputLanguage?: string,
+) {
+  return [
+    {
+      content: mixedLayersWithoutAbstractionReviewPrompt,
+      role: 'system' as const,
+    },
+    ...(retryFeedback
+      ? [
+          {
+            content: retryFeedback,
+            role: 'user' as const,
+          },
+        ]
+      : []),
+    {
+      content: [
+        formatOutputLanguageInstruction(outputLanguage),
+        `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
+        `Draft findings (advisory only):\n\n${renderMixedLayerDraft(draftFindings)}`,
       ].filter(Boolean).join('\n\n'),
       role: 'user' as const,
     },
@@ -225,6 +280,24 @@ export function reportMixedLayerFindings(
       message: finding.message,
     })
   }
+}
+
+function renderMixedLayerDraft(findings: readonly MixedLayerFinding[]): string {
+  return JSON.stringify({
+    findings: findings.map(finding => ({
+      boundaryKind: finding.boundaryKind,
+      confidence: finding.confidence,
+      declaration: finding.declaration,
+      line: finding.line,
+      message: finding.message,
+      relatedDeclarations: finding.relatedDeclarations.map(related => ({
+        line: related.line,
+        name: related.name,
+        relationship: related.relationship,
+      })),
+      suggestion: finding.suggestion,
+    })),
+  }, null, 2)
 }
 
 function validLine(line: number, lineCount: number): boolean {
