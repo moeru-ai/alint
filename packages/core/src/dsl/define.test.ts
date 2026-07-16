@@ -144,7 +144,6 @@ describe('define helpers', () => {
       {
         plugins: { demo: plugin },
         rules: {
-          // @ts-expect-error configured rule options must match the runtime Valibot tuple length.
           'demo/review': ['warn'],
         },
       },

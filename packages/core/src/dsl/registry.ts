@@ -1,9 +1,9 @@
-import type { BaseIssue } from 'valibot'
+import type { BaseIssue, GenericSchema, InferOutput } from 'valibot'
 
 import type { EffectiveAlintConfig } from '../config/config-array'
 import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleOptionsSchema, RuleRegistry, RuleSeverity } from './types'
 
-import { getDotPath, safeParse, tuple } from 'valibot'
+import { getDotPath, safeParse } from 'valibot'
 
 type RuleRegistryConfig = Pick<EffectiveAlintConfig, 'plugins'> & {
   rules: Record<string, RuleConfigEntry<readonly unknown[]>>
@@ -56,12 +56,14 @@ export function buildRuleRegistry(config: RuleRegistryConfig): RuleRegistry {
   }
 }
 
-function formatValibotIssues(issues: BaseIssue<unknown>[]): string {
+function formatRuleOptionIssues(index: number, issues: BaseIssue<unknown>[]): string {
   return issues
     .map((issue) => {
       const path = getDotPath(issue)
 
-      return path === null ? issue.message : `"${path}": ${issue.message}`
+      return path === null
+        ? `"${index}": ${issue.message}`
+        : `"${index}.${path}": ${issue.message}`
     })
     .join('; ')
 }
@@ -80,6 +82,29 @@ function normalizeRuleConfigEntry(entry: RuleConfigEntry<readonly unknown[]>): {
   return { options: [], severity: entry ?? 'warn' }
 }
 
+function parseRuleOption<Schema extends GenericSchema>(
+  id: string,
+  index: number,
+  schema: Schema,
+  value: unknown,
+): InferOutput<Schema> {
+  const result = safeParse(schema, value)
+
+  if (result.success) {
+    return result.output
+  }
+
+  if (value === undefined) {
+    const emptyObjectResult = safeParse(schema, {})
+
+    if (emptyObjectResult.success) {
+      return emptyObjectResult.output
+    }
+  }
+
+  throw new TypeError(`Invalid options for rule "${id}": ${formatRuleOptionIssues(index, result.issues)}`)
+}
+
 function parseRuleOptions(
   id: string,
   schema: RuleOptionsSchema | undefined,
@@ -93,11 +118,9 @@ function parseRuleOptions(
     return []
   }
 
-  const result = safeParse(tuple(schema), options)
-
-  if (!result.success) {
-    throw new TypeError(`Invalid options for rule "${id}": ${formatValibotIssues(result.issues)}`)
+  if (options.length > schema.length) {
+    throw new TypeError(`Invalid options for rule "${id}": Unexpected option at index ${schema.length}.`)
   }
 
-  return result.output
+  return schema.map((optionSchema, index) => parseRuleOption(id, index, optionSchema, options[index]))
 }

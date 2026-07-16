@@ -164,6 +164,40 @@ describe('rule registry', () => {
     ])
   })
 
+  it('normalizes omitted rule options with schema defaults', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn'],
+      },
+    })
+
+    expect(registry.enabledRules).toEqual([
+      {
+        id: 'company/review',
+        localId: 'review',
+        options: [{ maxLines: 10 }],
+        rule,
+        severity: 'warn',
+      },
+    ])
+  })
+
   it('rejects invalid rule options before enabling a rule', () => {
     const rule = defineRule({
       create: () => ({}),
@@ -203,5 +237,29 @@ describe('rule registry', () => {
         'company/review': ['warn', { maxLines: 10 }],
       },
     })).toThrow('Rule "company/review" does not accept options.')
+  })
+
+  it('rejects extra rule options beyond the options schema', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    expect(() => buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn', {}, { extra: true }],
+      },
+    })).toThrow('Invalid options for rule "company/review": Unexpected option at index 1.')
   })
 })

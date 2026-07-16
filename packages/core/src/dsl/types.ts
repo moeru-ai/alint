@@ -115,7 +115,7 @@ export type RuleCacheConfig = boolean | { level?: 'target' }
 export type RuleConfigEntry<
   Options extends readonly unknown[] = readonly [],
 >
-  = | readonly [RuleSeverity, ...Options]
+  = | readonly [RuleSeverity, ...Partial<Options>]
     | RuleSeverity
 
 export interface RuleContext<
