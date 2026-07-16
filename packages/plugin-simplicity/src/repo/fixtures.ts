@@ -27,6 +27,7 @@ export function createFixtureContext(overrides: Partial<RuleContext> = {}): Rule
       params: {},
       provider: { endpoint: 'http://127.0.0.1:0/v1', headers: {}, id: 'test-provider', type: 'openai-compatible' },
     }),
+    options: [],
     report: () => {},
     settings: {},
     // A fresh object per context: the index is memoized on `src`, and one context is one run.

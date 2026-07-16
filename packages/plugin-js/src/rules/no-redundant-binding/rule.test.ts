@@ -37,6 +37,7 @@ function createContext() {
         type: 'openai-compatible',
       },
     }),
+    options: [],
     report: diagnostic => diagnostics.push(diagnostic),
     settings: {},
     src: {

@@ -1,3 +1,4 @@
+import { number, object, optional } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import { defineConfig, definePlugin, defineRule } from './define'
@@ -77,5 +78,85 @@ describe('define helpers', () => {
     const [item] = defineConfig([{ plugins: { demo: plugin } }])
 
     expect(item).not.toHaveProperty('rules')
+  })
+
+  it('infers rule options from valibot schemas in rule contexts', () => {
+    const rule = defineRule({
+      create: (context) => {
+        const [options] = context.options
+        const maxLines: number = options.maxLines
+
+        // @ts-expect-error maxLines is a number after Valibot parsing.
+        const invalidMaxLines: string = options.maxLines
+
+        return {
+          onTargetWith: () => {
+            expect(maxLines).toBeTypeOf('number')
+            expect(invalidMaxLines).toBeTypeOf('number')
+          },
+        }
+      },
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    expect(rule.options).toHaveLength(1)
+  })
+
+  it('infers same-item plugin rule names and rule option entries in defineConfig', () => {
+    const plugin = definePlugin({
+      rules: {
+        noOptions: defineRule({ create: () => ({}) }),
+        review: defineRule({
+          create: () => ({}),
+          options: [
+            object({
+              maxLines: optional(number(), 10),
+            }),
+          ],
+        }),
+      },
+    })
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          'demo/review': ['warn', { maxLines: 20 }],
+        },
+      },
+    ])
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          // @ts-expect-error known schema-less rules do not accept positional options.
+          'demo/noOptions': ['warn', { maxLines: 20 }],
+        },
+      },
+    ])
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          'demo/review': ['warn'],
+        },
+      },
+    ])
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          // @ts-expect-error maxLines must be a number.
+          'demo/review': ['warn', { maxLines: 'twenty' }],
+        },
+      },
+    ])
   })
 })

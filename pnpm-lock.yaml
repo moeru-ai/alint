@@ -522,6 +522,9 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+      valibot:
+        specifier: 'catalog:'
+        version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-example-agent:
     devDependencies:

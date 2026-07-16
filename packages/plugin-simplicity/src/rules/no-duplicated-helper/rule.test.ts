@@ -42,7 +42,7 @@ function createRun(
 
   return {
     agentRequests,
-    contextFor: (settings = {}) => createFixtureContext({
+    contextFor: (settings = {}): RuleContext => createFixtureContext({
       agent,
       cwd,
       logger: { debug: (...args) => void debug.push(args.join(' ')) },

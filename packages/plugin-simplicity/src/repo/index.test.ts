@@ -19,6 +19,7 @@ function createContext(): RuleContext {
     model: () => {
       throw new Error('unused')
     },
+    options: [],
     report: () => {},
     settings: {},
     src: {

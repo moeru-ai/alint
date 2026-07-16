@@ -1,3 +1,4 @@
+import { number, object, optional } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
 import { definePlugin, defineRule } from './define'
@@ -42,6 +43,7 @@ describe('rule registry', () => {
       {
         id: 'company/review',
         localId: 'review',
+        options: [],
         rule: reviewRule,
         severity: 'error',
       },
@@ -101,6 +103,7 @@ describe('rule registry', () => {
       {
         id: 'company/review',
         localId: 'review',
+        options: [],
         rule,
         severity: 'warn',
       },
@@ -125,5 +128,138 @@ describe('rule registry', () => {
       },
       rules: {},
     })).toThrow('Duplicate rule id "company/review/task".')
+  })
+
+  it('stores parsed rule options for enabled rules', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn', {}],
+      },
+    })
+
+    expect(registry.enabledRules).toEqual([
+      {
+        id: 'company/review',
+        localId: 'review',
+        options: [{ maxLines: 10 }],
+        rule,
+        severity: 'warn',
+      },
+    ])
+  })
+
+  it('normalizes omitted rule options with schema defaults', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    const registry = buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn'],
+      },
+    })
+
+    expect(registry.enabledRules).toEqual([
+      {
+        id: 'company/review',
+        localId: 'review',
+        options: [{ maxLines: 10 }],
+        rule,
+        severity: 'warn',
+      },
+    ])
+  })
+
+  it('rejects invalid rule options before enabling a rule', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    expect(() => buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn', { maxLines: 'ten' }],
+      },
+    })).toThrow('Invalid options for rule "company/review": "0.maxLines": Invalid type: Expected number but received "ten"')
+  })
+
+  it('rejects extra options for rules without an options schema', () => {
+    const rule = defineRule({ create: () => ({}) })
+
+    expect(() => buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn', { maxLines: 10 }],
+      },
+    })).toThrow('Rule "company/review" does not accept options.')
+  })
+
+  it('rejects extra rule options beyond the options schema', () => {
+    const rule = defineRule({
+      create: () => ({}),
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    expect(() => buildRuleRegistry({
+      plugins: {
+        company: definePlugin({
+          rules: {
+            review: rule,
+          },
+        }),
+      },
+      rules: {
+        'company/review': ['warn', {}, { extra: true }],
+      },
+    })).toThrow('Invalid options for rule "company/review": Unexpected option at index 1.')
   })
 })

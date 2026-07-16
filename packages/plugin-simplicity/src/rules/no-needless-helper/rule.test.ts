@@ -84,7 +84,7 @@ function createRun(cwd: string = FIXTURES_DIR): Run {
   const src = createFixtureContext().src
 
   return {
-    contextFor: (settings = {}) => createFixtureContext({
+    contextFor: (settings = {}): RuleContext => createFixtureContext({
       cwd,
       logger: { debug: (...args) => void debug.push(args.join(' ')) },
       model: () => Promise.resolve({

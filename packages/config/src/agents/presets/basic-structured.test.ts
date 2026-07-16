@@ -185,6 +185,7 @@ function createRuleContext(): RuleContext {
         type: 'openai-compatible' as const,
       },
     })),
+    options: [],
     report: vi.fn(),
     settings: {},
     src: {

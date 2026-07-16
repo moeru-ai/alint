@@ -1,7 +1,15 @@
-import type { EffectiveAlintConfig } from '../config/config-array'
-import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleRegistry, RuleSeverity } from './types'
+import type { BaseIssue, GenericSchema, InferOutput } from 'valibot'
 
-export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' | 'rules'>): RuleRegistry {
+import type { EffectiveAlintConfig } from '../config/config-array'
+import type { EnabledRule, RuleConfigEntry, RuleDefinition, RuleOptionsSchema, RuleRegistry, RuleSeverity } from './types'
+
+import { getDotPath, safeParse } from 'valibot'
+
+type RuleRegistryConfig = Pick<EffectiveAlintConfig, 'plugins'> & {
+  rules: Record<string, RuleConfigEntry<readonly unknown[]>>
+}
+
+export function buildRuleRegistry(config: RuleRegistryConfig): RuleRegistry {
   const rules = new Map<string, RuleDefinition>()
   const localIds = new Map<string, string>()
   const enabledRules: EnabledRule[] = []
@@ -26,7 +34,8 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
       throw new Error(`Unknown rule "${id}".`)
     }
 
-    const severity = normalizeSeverity(entry)
+    const normalizedEntry = normalizeRuleConfigEntry(entry)
+    const severity = normalizedEntry.severity
 
     if (severity === 'off') {
       continue
@@ -35,6 +44,7 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
     enabledRules.push({
       id,
       localId: localIds.get(id) ?? id,
+      options: parseRuleOptions(id, rule.options, normalizedEntry.options),
       rule,
       severity,
     })
@@ -46,10 +56,71 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
   }
 }
 
-function normalizeSeverity(entry: RuleConfigEntry): RuleSeverity {
-  if (Array.isArray(entry)) {
-    return entry[0] ?? 'warn'
+function formatRuleOptionIssues(index: number, issues: BaseIssue<unknown>[]): string {
+  return issues
+    .map((issue) => {
+      const path = getDotPath(issue)
+
+      return path === null
+        ? `"${index}": ${issue.message}`
+        : `"${index}.${path}": ${issue.message}`
+    })
+    .join('; ')
+}
+
+function isRuleConfigTuple(entry: RuleConfigEntry<readonly unknown[]>): entry is readonly [RuleSeverity, ...readonly unknown[]] {
+  return Array.isArray(entry)
+}
+
+function normalizeRuleConfigEntry(entry: RuleConfigEntry<readonly unknown[]>): { options: readonly unknown[], severity: RuleSeverity } {
+  if (isRuleConfigTuple(entry)) {
+    const [severity = 'warn', ...options] = entry
+
+    return { options, severity }
   }
 
-  return entry ?? 'warn'
+  return { options: [], severity: entry ?? 'warn' }
+}
+
+function parseRuleOption<Schema extends GenericSchema>(
+  id: string,
+  index: number,
+  schema: Schema,
+  value: unknown,
+): InferOutput<Schema> {
+  const result = safeParse(schema, value)
+
+  if (result.success) {
+    return result.output
+  }
+
+  if (value === undefined) {
+    const emptyObjectResult = safeParse(schema, {})
+
+    if (emptyObjectResult.success) {
+      return emptyObjectResult.output
+    }
+  }
+
+  throw new TypeError(`Invalid options for rule "${id}": ${formatRuleOptionIssues(index, result.issues)}`)
+}
+
+function parseRuleOptions(
+  id: string,
+  schema: RuleOptionsSchema | undefined,
+  options: readonly unknown[],
+): readonly unknown[] {
+  if (!schema) {
+    if (options.length > 0) {
+      throw new TypeError(`Rule "${id}" does not accept options.`)
+    }
+
+    return []
+  }
+
+  if (options.length > schema.length) {
+    throw new TypeError(`Invalid options for rule "${id}": Unexpected option at index ${schema.length}.`)
+  }
+
+  return schema.map((optionSchema, index) => parseRuleOption(id, index, optionSchema, options[index]))
 }

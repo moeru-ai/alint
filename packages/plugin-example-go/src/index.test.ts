@@ -48,6 +48,7 @@ function createRuleContext(): RuleContext {
       recordUsage: () => {},
     },
     model: async () => createResolvedModel(),
+    options: [],
     report: () => {},
     settings: {},
     src: {

@@ -3,7 +3,7 @@ import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/c
 import type { DirectoryPluginSpecifier, ParsedPluginSpecifier, ParsePluginSpecifierOptions, RegistryPluginSpecifier } from '../plugins/spec'
 
 import { extname } from 'pathe'
-import { array, boolean, looseObject, optional, parse, picklist, record, string, tuple, union, unknown } from 'valibot'
+import { array, boolean, looseObject, optional, parse, picklist, record, string, tupleWithRest, union, unknown } from 'valibot'
 
 import { getPluginSpecifierKey, parsePluginSpecifier } from '../plugins/spec'
 
@@ -59,7 +59,7 @@ interface StaticConfigWrapper {
 
 const filePatternSchema = union([string(), array(string())])
 const ruleSeveritySchema = picklist(['error', 'off', 'warn'])
-const ruleConfigEntrySchema = union([ruleSeveritySchema, tuple([ruleSeveritySchema])])
+const ruleConfigEntrySchema = union([ruleSeveritySchema, tupleWithRest([ruleSeveritySchema], unknown())])
 const staticConfigItemSchema = looseObject({
   agent: optional(unknown()),
   basePath: optional(string()),

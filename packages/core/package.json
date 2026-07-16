@@ -11,6 +11,10 @@
       "types": "./dist/agent.d.mts",
       "default": "./dist/agent.mjs"
     },
+    "./dsl": {
+      "types": "./dist/dsl.d.mts",
+      "default": "./dist/dsl.mjs"
+    },
     "./structured-output": {
       "types": "./dist/structured-output.d.mts",
       "default": "./dist/structured-output.mjs"
