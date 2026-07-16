@@ -110,6 +110,11 @@ export interface RunOptions {
   modelOverride?: string
   outputLanguage?: string
   progress?: ProgressReporter
+  /**
+   * Run project-scoped rules (`onTargetProject` and the project pass of `onTargetWith`).
+   * Defaults to `true`. Pass `false` for runs that target partial subsets of a project.
+   */
+  projectTargets?: boolean
   runner?: RunnerOptions
   setupConfig?: SetupConfig
   /**

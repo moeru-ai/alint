@@ -3489,4 +3489,131 @@ describe('runAlint', () => {
       expect(seen[0]?.aborted).toBe(false)
     })
   })
+
+  describe('projectTargets', () => {
+    it('skips the project pass when projectTargets is false', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-project-targets-off-'))
+      const filePath = join(root, 'demo.ts')
+      let projectCalls = 0
+      let fileCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: () => ({
+          onTargetFile: () => {
+            fileCalls += 1
+          },
+          onTargetProject: () => {
+            projectCalls += 1
+          },
+        }),
+      })
+
+      const result = await runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        projectTargets: false,
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(projectCalls).toBe(0)
+      // File-scoped work still runs; only the project pass is dropped.
+      expect(fileCalls).toBe(1)
+      // The skipped project execution must not inflate the planned count either.
+      expect(result.execution).toMatchObject({ completed: 1, planned: 1 })
+    })
+
+    it('runs the project pass by default', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-project-targets-default-'))
+      const filePath = join(root, 'demo.ts')
+      let projectCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: () => ({
+          onTargetProject: () => {
+            projectCalls += 1
+          },
+        }),
+      })
+
+      await runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(projectCalls).toBe(1)
+    })
+
+    it('drops only the project kind for an onTargetWith rule', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-project-targets-with-'))
+      const filePath = join(root, 'demo.txt')
+      const directoryPath = join(root, 'components')
+      const visited: string[] = []
+
+      await writeFile(filePath, 'demo\n')
+
+      const rule = defineRule({
+        cache: false,
+        create: () => ({
+          onTargetWith: (target) => {
+            visited.push(target.kind)
+          },
+        }),
+      })
+
+      await runAlint({
+        config: createConfig(
+          { review: rule },
+          { 'company/review': 'warn' },
+          {},
+          { language: 'text/plain' },
+        ),
+        cwd: root,
+        directories: [directoryPath],
+        files: [filePath],
+        projectTargets: false,
+        setupConfig: createSetupConfig(),
+      })
+
+      // Without projectTargets: false this is ['file', 'directory', 'project'].
+      expect(visited).toEqual(['file', 'directory'])
+    })
+
+    it('does not report project rules as skipped in a partial cacheOnly run', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-project-targets-cache-only-'))
+      const filePath = join(root, 'demo.ts')
+      const jobEndEvents: string[] = []
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      // A project-only rule can never be served from a per-file cache, so a passive editor
+      // pass must exclude it rather than count it forever as "needs a run".
+      const rule = defineRule({
+        create: () => ({
+          onTargetProject: () => {},
+        }),
+      })
+
+      const result = await runAlint({
+        cacheOnly: true,
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onJobEnd: payload => jobEndEvents.push(`${payload.job.target.kind}:${payload.state}`),
+        },
+        projectTargets: false,
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(jobEndEvents).toEqual([])
+      expect(result.execution).toMatchObject({ planned: 0, skipped: 0 })
+    })
+  })
 })

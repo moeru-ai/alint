@@ -179,7 +179,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       })
   const filePlans = createSourceExecutionPlans(files, cwd)
   const directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
-  const projectPlan = resolvedProjectConfig.ignored
+  const projectPlan = resolvedProjectConfig.ignored || options.projectTargets === false
     ? undefined
     : createProjectExecutionPlan({
         configHash: stableHash({ settings: projectConfig.settings }),
