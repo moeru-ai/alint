@@ -1,3 +1,5 @@
+import type { GenericSchema, InferInput, InferOutput } from 'valibot'
+
 import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig } from '../config/types'
 import type {
@@ -66,7 +68,8 @@ export interface DirectoryTarget {
 export interface EnabledRule {
   id: string
   localId: string
-  rule: RuleDefinition
+  options: readonly unknown[]
+  rule: RuleDefinition<any>
   severity: Exclude<RuleSeverity, 'off'>
 }
 
@@ -80,11 +83,13 @@ export interface LanguageDefinition {
   name: string
 }
 
-export interface PluginDefinition {
+export interface PluginDefinition<
+  Rules extends Record<string, RuleDefinition<any>> = Record<string, RuleDefinition<any>>,
+> {
   configs?: Record<string, AlintConfigInput>
   languages?: Record<string, LanguageDefinition>
   processors?: Record<string, ProcessorDefinition>
-  rules?: Record<string, RuleDefinition>
+  rules?: Rules
 }
 
 export interface ProcessorDefinition {
@@ -107,9 +112,15 @@ export interface ProjectTarget {
 
 export type RuleCacheConfig = boolean | { level?: 'target' }
 
-export type RuleConfigEntry = [RuleSeverity] | RuleSeverity
+export type RuleConfigEntry<
+  Options extends readonly unknown[] = readonly [],
+>
+  = | readonly [RuleSeverity, ...Partial<Options>]
+    | RuleSeverity
 
-export interface RuleContext {
+export interface RuleContext<
+  Options extends readonly unknown[] = readonly unknown[],
+> {
   agent?: AgentAdapter
   cwd: string
   id: string
@@ -121,6 +132,7 @@ export interface RuleContext {
     recordUsage: (usage: RuleInferenceUsageRecord) => void
   }
   model: (selector?: ModelRequirement | string) => Promise<ResolvedModel>
+  options: Options
   outputLanguage?: string
   report: (diagnostic: DiagnosticDescriptor) => void
   settings: Record<string, unknown>
@@ -134,13 +146,15 @@ export interface RuleContext {
   src: SourceRuntime
 }
 
-export interface RuleDefinition {
+export interface RuleDefinition<
+  OptionsSchema extends RuleOptionsSchema = [],
+> {
   cache?: RuleCacheConfig
   /** Additional stable rule inputs, such as imported prompts, that invalidate cached results when changed. */
   cacheKey?: unknown
-  create: (context: RuleContext) => RuleHandlers
-  // TODO: Add `meta.languages` so rules can opt into specific alint languages.
+  create: (context: RuleContext<RuleOptionsOutput<OptionsSchema>>) => RuleHandlers
   model?: ModelRequirement
+  options?: OptionsSchema
 }
 
 export type RuleHandlers = RuleSpecializedHandlers | RuleWithHandler
@@ -156,9 +170,17 @@ export interface RuleInferenceUsageRecord {
   totalTokens?: number
 }
 
+export type RuleOptionsInput<OptionsSchema extends RuleOptionsSchema>
+  = { readonly [Index in keyof OptionsSchema]: InferInput<OptionsSchema[Index]> }
+
+export type RuleOptionsOutput<OptionsSchema extends RuleOptionsSchema>
+  = { readonly [Index in keyof OptionsSchema]: InferOutput<OptionsSchema[Index]> }
+
+export type RuleOptionsSchema = readonly GenericSchema[]
+
 export interface RuleRegistry {
   enabledRules: EnabledRule[]
-  rules: Map<string, RuleDefinition>
+  rules: Map<string, RuleDefinition<any>>
 }
 
 export type RuleSeverity = 'error' | 'off' | 'warn'

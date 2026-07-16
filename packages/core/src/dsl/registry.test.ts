@@ -42,6 +42,7 @@ describe('rule registry', () => {
       {
         id: 'company/review',
         localId: 'review',
+        options: [],
         rule: reviewRule,
         severity: 'error',
       },
@@ -101,6 +102,7 @@ describe('rule registry', () => {
       {
         id: 'company/review',
         localId: 'review',
+        options: [],
         rule,
         severity: 'warn',
       },

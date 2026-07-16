@@ -35,6 +35,7 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
     enabledRules.push({
       id,
       localId: localIds.get(id) ?? id,
+      options: normalizeOptions(entry),
       rule,
       severity,
     })
@@ -46,8 +47,20 @@ export function buildRuleRegistry(config: Pick<EffectiveAlintConfig, 'plugins' |
   }
 }
 
-function normalizeSeverity(entry: RuleConfigEntry): RuleSeverity {
-  if (Array.isArray(entry)) {
+function isRuleConfigTuple(entry: RuleConfigEntry<readonly unknown[]>): entry is readonly [RuleSeverity, ...readonly unknown[]] {
+  return Array.isArray(entry)
+}
+
+function normalizeOptions(entry: RuleConfigEntry<readonly unknown[]>): readonly unknown[] {
+  if (isRuleConfigTuple(entry)) {
+    return entry.slice(1)
+  }
+
+  return []
+}
+
+function normalizeSeverity(entry: RuleConfigEntry<readonly unknown[]>): RuleSeverity {
+  if (isRuleConfigTuple(entry)) {
     return entry[0] ?? 'warn'
   }
 

@@ -357,6 +357,7 @@ function createRuleRuntimes(options: {
 
         return resolvedModel
       },
+      options: enabledRule.options,
       outputLanguage: options.options.outputLanguage,
       report: (descriptor) => {
         const state = executionState.getStore()
@@ -415,6 +416,7 @@ function createRuleRuntimes(options: {
         id: enabledRule.id,
         localId: enabledRule.localId,
         model: enabledRule.rule.model,
+        options: enabledRule.options,
         severity: enabledRule.severity,
       }),
     }
