@@ -119,7 +119,7 @@ export type RuleConfigEntry<
     | RuleSeverity
 
 export interface RuleContext<
-  Options extends readonly unknown[] = readonly unknown[],
+  Options extends readonly unknown[] = readonly [],
 > {
   agent?: AgentAdapter
   cwd: string

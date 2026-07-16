@@ -304,7 +304,7 @@ function createRuleRuntimes(options: {
           signal: combineAbortSignals(executionState.getStore()?.signal, request.signal),
         }), options.options.runner?.agentRetries)
       : undefined
-    const context: RuleContext = {
+    const context: RuleContext<readonly unknown[]> = {
       agent,
       cwd: options.cwd,
       id: enabledRule.id,

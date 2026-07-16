@@ -46,7 +46,7 @@ function createResolvedModel(): ResolvedModel {
   }
 }
 
-function createRuleContext(): RuleContext<[]> {
+function createRuleContext(): RuleContext {
   return {
     cwd: '/repo',
     id: 'python/semantic-boundary',

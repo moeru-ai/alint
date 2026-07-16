@@ -22,7 +22,7 @@ interface Finding {
 }
 
 interface Run {
-  contextFor: (settings?: Record<string, unknown>) => RuleContext<[]>
+  contextFor: (settings?: Record<string, unknown>) => RuleContext
   cwd: string
   debug: string[]
   diagnostics: DiagnosticDescriptor[]
@@ -84,7 +84,7 @@ function createRun(cwd: string = FIXTURES_DIR): Run {
   const src = createFixtureContext().src
 
   return {
-    contextFor: (settings = {}) => createFixtureContext({
+    contextFor: (settings = {}): RuleContext => createFixtureContext({
       cwd,
       logger: { debug: (...args) => void debug.push(args.join(' ')) },
       model: () => Promise.resolve({

@@ -165,7 +165,7 @@ describe('basic-structured declarative preset', () => {
   })
 })
 
-function createRuleContext(): RuleContext<[]> {
+function createRuleContext(): RuleContext {
   return {
     cwd: '/repo',
     id: 'declarative/semantic-boundary',
