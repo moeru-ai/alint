@@ -7,6 +7,7 @@ import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+import { number, object, optional } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
 
 import { requireAgent, RetryableAgentError } from '../agent'
@@ -270,6 +271,48 @@ describe('runAlint', () => {
     expect(observed[2]).toBeInstanceOf(AbortSignal)
     expect(observed[2]).not.toBe(controller.signal)
     expect(observed[2]?.aborted).toBe(false)
+  })
+
+  it('passes parsed rule options to rule contexts', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-rule-options-'))
+    await writeFile(join(root, 'source.txt'), 'hello\n', 'utf8')
+    const observedOptions: unknown[] = []
+    const rule = defineRule({
+      create: (context) => {
+        observedOptions.push(...context.options)
+
+        return {
+          onTargetFile: () => {},
+        }
+      },
+      options: [
+        object({
+          maxLines: optional(number(), 10),
+        }),
+      ],
+    })
+
+    await runAlint({
+      config: defineConfig([
+        {
+          files: ['source.txt'],
+          plugins: {
+            company: definePlugin({
+              rules: {
+                review: rule,
+              },
+            }),
+          },
+          rules: {
+            'company/review': ['warn', {}],
+          },
+        },
+      ]),
+      cwd: root,
+      files: ['source.txt'],
+    })
+
+    expect(observedOptions).toEqual([{ maxLines: 10 }])
   })
 
   it('runs explicit onTargetWith rules for .go through text/plain', async () => {
