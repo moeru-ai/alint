@@ -234,9 +234,6 @@ importers:
       '@alint-js/config':
         specifier: workspace:*
         version: link:packages/config
-      '@alint-js/core':
-        specifier: workspace:*
-        version: link:packages/core
       '@alint-js/plugin':
         specifier: workspace:*
         version: link:packages/plugin

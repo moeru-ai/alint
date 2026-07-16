@@ -1,6 +1,7 @@
+import jsPlugin from '@alint-js/plugin-js'
+
+import { defineConfig } from '@alint-js/cli'
 import { ignorePatternsAIAgents, ignorePatternsCommon } from '@alint-js/config'
-import { defineConfig } from '@alint-js/core'
-import { examplePlugin } from '@alint-js/plugin-example'
 
 export default defineConfig([
   {
@@ -21,7 +22,7 @@ export default defineConfig([
     extends: ['example/recommended'],
     files: ['**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts}'],
     plugins: {
-      example: examplePlugin,
+      js: jsPlugin,
     },
   },
 ])

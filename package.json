@@ -25,7 +25,6 @@
   "devDependencies": {
     "@alint-js/cli": "workspace:*",
     "@alint-js/config": "workspace:*",
-    "@alint-js/core": "workspace:*",
     "@alint-js/plugin": "workspace:*",
     "@alint-js/plugin-example-python": "workspace:*",
     "@alint-js/plugin-js": "workspace:*",

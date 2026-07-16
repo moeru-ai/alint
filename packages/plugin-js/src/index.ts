@@ -8,71 +8,27 @@ import { redundantJsdocRule } from './rules/no-redundant-jsdoc'
 import { trivialWrapperStackRule } from './rules/no-trivial-wrapper-stack'
 import { vacuousFunctionRule } from './rules/no-vacuous-function'
 
-export {
-  createJudgeMessages,
-  createReportFindingsToolParameters,
-  judgeFindingSchema,
-  judgeResponseSchema,
-} from './agents/judge'
-export {
-  inlineMiniatureNormalizerPrompt,
-  inlineMiniatureNormalizerRule,
-} from './rules/inline-miniature-normalizer'
-export {
-  createMixedLayerMessages,
-  createMixedLayerReviewMessages,
-  createMixedLayerReviewToolParameters,
-  createMixedLayerToolParameters,
-  mixedLayerFindingSchema,
-  mixedLayerResponseSchema,
-  mixedLayerReviewDecisionSchema,
-  mixedLayerReviewResponseSchema,
-  mixedLayersWithoutAbstractionCoveragePerspective,
-  mixedLayersWithoutAbstractionOwnershipPerspective,
-  mixedLayersWithoutAbstractionPrompt,
-  mixedLayersWithoutAbstractionReviewPrompt,
-  mixedLayersWithoutAbstractionRule,
-  normalizeMixedLayerFindings,
-  reportMixedLayerFindings,
-  selectReportedMixedLayerFindings,
-} from './rules/no-mixed-layers-without-abstraction'
-export type {
-  MixedLayerFinding,
-  MixedLayerReviewDecision,
-} from './rules/no-mixed-layers-without-abstraction'
-export {
-  privateSchemaToolkitPrompt,
-  privateSchemaToolkitRule,
-} from './rules/no-private-schema-toolkit'
-export {
-  redundantBindingPrompt,
-  redundantBindingRule,
-} from './rules/no-redundant-binding'
-export {
-  redundantJsdocPrompt,
-  redundantJsdocRule,
-} from './rules/no-redundant-jsdoc'
-export {
-  trivialWrapperStackPrompt,
-  trivialWrapperStackRule,
-} from './rules/no-trivial-wrapper-stack'
-export {
-  vacuousFunctionPrompt,
-  vacuousFunctionRule,
-} from './rules/no-vacuous-function'
+export { createJudgeMessages, createReportFindingsToolParameters, judgeFindingSchema, judgeResponseSchema } from './agents/judge'
+export { inlineMiniatureNormalizerRule } from './rules/inline-miniature-normalizer'
+export { mixedLayersWithoutAbstractionRule } from './rules/no-mixed-layers-without-abstraction'
+export { privateSchemaToolkitRule } from './rules/no-private-schema-toolkit'
+export { redundantBindingRule } from './rules/no-redundant-binding'
+export { redundantJsdocRule } from './rules/no-redundant-jsdoc'
+export { trivialWrapperStackRule } from './rules/no-trivial-wrapper-stack'
+export { vacuousFunctionRule } from './rules/no-vacuous-function'
 
-export const examplePlugin = definePlugin({
+export default definePlugin({
   configs: {
     recommended: [
       {
         rules: {
-          'example/inline-miniature-normalizer': 'warn',
-          'example/no-mixed-layers-without-abstraction': 'warn',
-          'example/no-private-schema-toolkit': 'warn',
-          'example/no-redundant-binding': 'warn',
-          'example/no-redundant-jsdoc': 'warn',
-          'example/no-trivial-wrapper-stack': 'warn',
-          'example/no-vacuous-function': 'warn',
+          'js/inline-miniature-normalizer': 'warn',
+          'js/no-mixed-layers-without-abstraction': 'warn',
+          'js/no-private-schema-toolkit': 'warn',
+          'js/no-redundant-binding': 'warn',
+          'js/no-redundant-jsdoc': 'warn',
+          'js/no-trivial-wrapper-stack': 'warn',
+          'js/no-vacuous-function': 'warn',
         },
       },
     ],
@@ -87,5 +43,3 @@ export const examplePlugin = definePlugin({
     'no-vacuous-function': vacuousFunctionRule,
   },
 })
-
-export default examplePlugin
