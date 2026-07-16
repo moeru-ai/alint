@@ -17,6 +17,12 @@ First determine whether all of these conditions are visible in the reviewed file
 - those responsibilities are embedded in a consuming feature or service
 - the consumer understands lower-level request, response, failure, or protocol details to complete its own work
 
+Before reporting, identify the focused owner the suggestion would create:
+- If that owner already exists in the reviewed source as a stable boundary whose callers do not need the lower-level knowledge, internal richness alone is not mixed ownership.
+- Multiple cohesive implementation steps inside that owner do not by themselves establish mixed ownership.
+- Suppress the finding when the suggestion would only rename, re-extract, or recreate that existing boundary, or move cohesive internals behind materially the same interface.
+- Still report when the existing boundary embeds a separate consuming workflow or policy, leaks lower-level details to callers, or owns responsibilities outside its promised boundary that can change or be reused independently.
+
 Reason from data flow rather than identifiers:
 external capability access -> low-level operations -> integration-level semantics -> interpretation or reshaping of external data -> consumer-specific selection, policy, or representation.
 

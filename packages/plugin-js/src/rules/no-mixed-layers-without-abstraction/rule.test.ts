@@ -136,6 +136,15 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionPrompt).toContain('a simple one-off external call')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('shallow wrappers')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('Suppress a finding when the evidence does not establish a reusable missing boundary')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('identify the focused owner the suggestion would create')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('already exists in the reviewed source as a stable boundary')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('callers do not need the lower-level knowledge')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Multiple cohesive implementation steps inside that owner do not by themselves establish mixed ownership')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('only rename, re-extract, or recreate that existing boundary')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('move cohesive internals behind materially the same interface')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('embeds a separate consuming workflow or policy')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('leaks lower-level details to callers')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('owns responsibilities outside its promised boundary that can change or be reused independently')
 
     const normalizedPrompt = mixedLayersWithoutAbstractionPrompt.toLowerCase()
     for (const triggerTerm of [
