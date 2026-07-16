@@ -18,7 +18,7 @@ const mockedVerifyRedundantBindings = vi.mocked(verifyRedundantBindings)
 
 function createContext() {
   const diagnostics: Parameters<RuleContext['report']>[0][] = []
-  const context: RuleContext<readonly []> = {
+  const context: RuleContext<[]> = {
     cwd: '/repo',
     id: 'example/no-redundant-binding',
     localId: 'no-redundant-binding',

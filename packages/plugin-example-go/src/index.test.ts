@@ -36,7 +36,7 @@ function createResolvedModel(): ResolvedModel {
   }
 }
 
-function createRuleContext(): RuleContext<readonly []> {
+function createRuleContext(): RuleContext<[]> {
   return {
     cwd: '/repo',
     id: 'go/responsibility-boundary',

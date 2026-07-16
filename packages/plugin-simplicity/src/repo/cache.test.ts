@@ -20,7 +20,7 @@ afterEach(async () => {
 })
 
 /** A fresh context is a fresh run: the cache is memoized on `src`. */
-function run(): RuleContext<readonly []> {
+function run(): RuleContext<[]> {
   return createFixtureContext({ cwd })
 }
 

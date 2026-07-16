@@ -30,7 +30,7 @@ function createResolvedModel(): ResolvedModel {
   }
 }
 
-function createRuleContext(agent?: AgentAdapter): RuleContext<readonly []> {
+function createRuleContext(agent?: AgentAdapter): RuleContext<[]> {
   return {
     agent,
     cwd: '/repo',

@@ -12,7 +12,7 @@ import { duplicatedHelperRule } from './rule'
 
 interface Run {
   agentRequests: AgentRequest[]
-  contextFor: (settings?: Record<string, unknown>) => RuleContext<readonly []>
+  contextFor: (settings?: Record<string, unknown>) => RuleContext<[]>
   cwd: string
   debug: string[]
   diagnostics: DiagnosticDescriptor[]

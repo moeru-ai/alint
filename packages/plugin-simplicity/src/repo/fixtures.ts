@@ -12,7 +12,7 @@ import { repoIndexFor } from './index'
  */
 export const FIXTURES_DIR = resolve(import.meta.dirname, '../../fixtures')
 
-export function createFixtureContext(overrides: Partial<RuleContext<readonly []>> = {}): RuleContext<readonly []> {
+export function createFixtureContext(overrides: Partial<RuleContext<[]>> = {}): RuleContext<[]> {
   return {
     cwd: FIXTURES_DIR,
     id: 'simplicity/no-duplicated-helper',
