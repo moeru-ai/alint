@@ -109,6 +109,7 @@ describe('define helpers', () => {
   it('infers same-item plugin rule names and rule option entries in defineConfig', () => {
     const plugin = definePlugin({
       rules: {
+        noOptions: defineRule({ create: () => ({}) }),
         review: defineRule({
           create: () => ({}),
           options: [
@@ -125,6 +126,26 @@ describe('define helpers', () => {
         plugins: { demo: plugin },
         rules: {
           'demo/review': ['warn', { maxLines: 20 }],
+        },
+      },
+    ])
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          // @ts-expect-error known schema-less rules do not accept positional options.
+          'demo/noOptions': ['warn', { maxLines: 20 }],
+        },
+      },
+    ])
+
+    defineConfig([
+      {
+        plugins: { demo: plugin },
+        rules: {
+          // @ts-expect-error configured rule options must match the runtime Valibot tuple length.
+          'demo/review': ['warn'],
         },
       },
     ])
