@@ -193,7 +193,7 @@ describe('mixedLayersWithoutAbstractionRule', () => {
     expect(handlers.onTargetFile).toBeTypeOf('function')
     expect(mixedLayersWithoutAbstractionRule.cacheKey).toEqual([
       mixedLayersWithoutAbstractionPrompt,
-      'mixed-layer-findings-v1',
+      'mixed-layer-findings-v2',
     ])
   })
 

@@ -84,7 +84,7 @@ export function createMixedLayersWithoutAbstractionRule(
   generate: GenerateMixedLayerResponse = generateStructured,
 ) {
   return defineRule({
-    cacheKey: [mixedLayersWithoutAbstractionPrompt, 'mixed-layer-findings-v1'],
+    cacheKey: [mixedLayersWithoutAbstractionPrompt, 'mixed-layer-findings-v2'],
     create: (ctx) => {
       /**
        * Reviews one file target for integration responsibilities that lack a stable owner.
