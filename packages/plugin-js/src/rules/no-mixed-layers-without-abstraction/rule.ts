@@ -77,20 +77,57 @@ export const mixedLayerResponseSchema = pipe(
   description('Report mixed-layer findings for one JavaScript or TypeScript file.'),
 )
 
-export type MixedLayerFinding = InferOutput<typeof mixedLayerFindingSchema>
+export const mixedLayerReviewDecisionSchema = strictObject({
+  decision: pipe(
+    picklist(['report', 'suppress']),
+    description('Whether this finding should produce a diagnostic. Use exactly report or suppress.'),
+  ),
+  finding: mixedLayerFindingSchema,
+  reason: pipe(
+    string(),
+    description('Explain why the source evidence requires reporting or suppressing this finding.'),
+  ),
+})
 
-type GenerateMixedLayerResponse = (
+export const mixedLayerReviewResponseSchema = pipe(
+  strictObject({
+    decisions: pipe(
+      array(mixedLayerReviewDecisionSchema),
+      description('Explicit report or suppress decisions for all draft candidates and reviewer-added declarations.'),
+    ),
+  }),
+  description('Make final report or suppress decisions for mixed-layer findings in one JavaScript or TypeScript file.'),
+)
+
+export type MixedLayerFinding = InferOutput<typeof mixedLayerFindingSchema>
+export type MixedLayerReviewDecision = InferOutput<typeof mixedLayerReviewDecisionSchema>
+
+type GenerateMixedLayerDraft = (
   options: GenerateStructuredOptions<typeof mixedLayerResponseSchema>,
 ) => Promise<InferOutput<typeof mixedLayerResponseSchema>>
 
+type GenerateMixedLayerReview = (
+  options: GenerateStructuredOptions<typeof mixedLayerReviewResponseSchema>,
+) => Promise<InferOutput<typeof mixedLayerReviewResponseSchema>>
+
+interface MixedLayerRuleDependencies {
+  generateDraft: GenerateMixedLayerDraft
+  generateReview: GenerateMixedLayerReview
+}
+
+const defaultMixedLayerRuleDependencies: MixedLayerRuleDependencies = {
+  generateDraft: generateStructured,
+  generateReview: generateStructured,
+}
+
 export function createMixedLayersWithoutAbstractionRule(
-  generate: GenerateMixedLayerResponse = generateStructured,
+  dependencies: MixedLayerRuleDependencies = defaultMixedLayerRuleDependencies,
 ) {
   return defineRule({
     cacheKey: [
       mixedLayersWithoutAbstractionPrompt,
       mixedLayersWithoutAbstractionReviewPrompt,
-      'mixed-layer-findings-v3',
+      'mixed-layer-findings-v4',
     ],
     create: (ctx) => {
       /**
@@ -101,22 +138,26 @@ export function createMixedLayersWithoutAbstractionRule(
        * `createSourceTargetExecution`
        *   -> `RuleHandlers.onTargetFile`
        *     -> {@link onTargetFile}
-       *       -> `mixed-layers-without-abstraction-draft`
-       *         -> `mixed-layers-without-abstraction-review`
-       *           -> {@link reportMixedLayerFindings}
+       *       -> `mixed-layers-without-abstraction-draft-1`
+       *         -> `mixed-layers-without-abstraction-draft-2`
+       *           -> `mixed-layers-without-abstraction-review`
+       *             -> {@link selectReportedMixedLayerFindings}
+       *               -> {@link reportMixedLayerFindings}
        *
        * Upstream:
        * - `createSourceTargetExecution` in `packages/core/src/core/targets/source.ts`
        *
        * Downstream:
-       * - {@link generateStructured} -> draft findings
-       * - {@link generateStructured} -> complete replacement review
+       * - {@link generateStructured} -> first draft sample
+       * - {@link generateStructured} -> second draft sample
+       * - {@link generateStructured} -> final report or suppress decisions
+       * - {@link selectReportedMixedLayerFindings} -> reportable findings
        * - {@link reportMixedLayerFindings} -> `RuleContext.report`
        */
       async function onTargetFile(target: FileTarget): Promise<void> {
         const model = await ctx.model()
         const source = ctx.src.getText(target)
-        const draft = await generate({
+        const firstDraft = await dependencies.generateDraft({
           createMessages: retryFeedback => createMixedLayerMessages(
             source,
             retryFeedback,
@@ -125,14 +166,28 @@ export function createMixedLayersWithoutAbstractionRule(
           logger: ctx.logger,
           metering: ctx.metering,
           model,
-          operation: 'mixed-layers-without-abstraction-draft',
+          operation: 'mixed-layers-without-abstraction-draft-1',
           schema: mixedLayerResponseSchema,
           signal: ctx.signal,
         })
-        const review = await generate({
+        const secondDraft = await dependencies.generateDraft({
+          createMessages: retryFeedback => createMixedLayerMessages(
+            source,
+            retryFeedback,
+            ctx.outputLanguage,
+          ),
+          logger: ctx.logger,
+          metering: ctx.metering,
+          model,
+          operation: 'mixed-layers-without-abstraction-draft-2',
+          schema: mixedLayerResponseSchema,
+          signal: ctx.signal,
+        })
+        const review = await dependencies.generateReview({
           createMessages: retryFeedback => createMixedLayerReviewMessages(
             source,
-            draft.findings,
+            firstDraft.findings,
+            secondDraft.findings,
             retryFeedback,
             ctx.outputLanguage,
           ),
@@ -140,14 +195,17 @@ export function createMixedLayersWithoutAbstractionRule(
           metering: ctx.metering,
           model,
           operation: 'mixed-layers-without-abstraction-review',
-          schema: mixedLayerResponseSchema,
+          schema: mixedLayerReviewResponseSchema,
           signal: ctx.signal,
         })
 
         reportMixedLayerFindings(
           ctx,
           target.file.path,
-          normalizeMixedLayerFindings(review.findings, source),
+          normalizeMixedLayerFindings(
+            selectReportedMixedLayerFindings(review.decisions),
+            source,
+          ),
         )
       }
 
@@ -188,7 +246,8 @@ export function createMixedLayerMessages(
 
 export function createMixedLayerReviewMessages(
   source: string,
-  draftFindings: readonly MixedLayerFinding[],
+  firstDraftFindings: readonly MixedLayerFinding[],
+  secondDraftFindings: readonly MixedLayerFinding[],
   retryFeedback: string | undefined,
   outputLanguage?: string,
 ) {
@@ -209,11 +268,16 @@ export function createMixedLayerReviewMessages(
       content: [
         formatOutputLanguageInstruction(outputLanguage),
         `Code with line numbers:\n\n${formatSourceWithLineNumbers(source)}`,
-        `Draft findings (advisory only):\n\n${renderMixedLayerDraft(draftFindings)}`,
+        `Draft sample 1 (candidate recall only):\n\n${renderMixedLayerDraft(firstDraftFindings)}`,
+        `Draft sample 2 (candidate recall only):\n\n${renderMixedLayerDraft(secondDraftFindings)}`,
       ].filter(Boolean).join('\n\n'),
       role: 'user' as const,
     },
   ]
+}
+
+export function createMixedLayerReviewToolParameters(): JsonSchema {
+  return toolParametersFromSchema(mixedLayerReviewResponseSchema)
 }
 
 export function createMixedLayerToolParameters(): JsonSchema {
@@ -280,6 +344,14 @@ export function reportMixedLayerFindings(
       message: finding.message,
     })
   }
+}
+
+export function selectReportedMixedLayerFindings(
+  decisions: readonly MixedLayerReviewDecision[],
+): MixedLayerFinding[] {
+  return decisions
+    .filter(decision => decision.decision === 'report')
+    .map(decision => decision.finding)
 }
 
 function renderMixedLayerDraft(findings: readonly MixedLayerFinding[]): string {
