@@ -68,6 +68,27 @@ describe('static config parsing', () => {
     ], { configFile: '/repo/alint.config.ts' })).not.toThrow()
   })
 
+  it('accepts static rule entries with positional options', () => {
+    const config = parseStaticConfig([
+      {
+        rules: {
+          'company/review': ['warn', { maxLines: 20 }],
+        },
+      },
+    ])
+
+    expect(config.groups).toEqual([
+      {
+        item: {
+          rules: {
+            'company/review': ['warn', { maxLines: 20 }],
+          },
+        },
+        plugins: [],
+      },
+    ])
+  })
+
   it('rejects static plugin specifiers without an exact package version while parsing', () => {
     expect(() => parseStaticConfig([
       { plugins: { python: '@alint-js/plugin-python' } },
