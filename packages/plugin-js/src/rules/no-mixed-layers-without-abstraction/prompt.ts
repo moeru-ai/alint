@@ -60,6 +60,12 @@ Do not report:
 - shallow wrappers that would add navigation without hiding knowledge
 - a missing abstraction inferred only from repository context that is not present
 
+Mandatory pre-return audit:
+- Owner-recursion audit: For every proposed finding, compare its proposed owner and interface with the reviewed source's existing public semantic boundary. If they are materially the same and callers already avoid lower-level knowledge, remove the finding. A focused owner that consumes an external mechanism to deliver its promised interface is not itself the consuming-feature smell.
+- Primary-coverage audit: Inventory every declaration in each qualifying cluster that independently owns external access, a reusable operation, adaptation or interpretation, or consumer policy. Each must appear exactly once as a primary finding; mentioning it only in relatedDeclarations is insufficient.
+- Cluster audit: Remove declarations that do not materially participate in that same missing-boundary flow.
+- Cross-cue primary declarations through findings and relatedDeclarations, but do not duplicate one declaration across findings.
+
 Do not key findings on exact function names, vendor names, protocol names, or directory names. The same responsibility flow should produce the same decision after identifiers and technologies are replaced.
 
 Return warnings only. Suppress a finding when the evidence does not establish a reusable missing boundary. Use medium or low confidence for a visible smell whose intended ownership remains uncertain.

@@ -157,6 +157,17 @@ describe('mixedLayersWithoutAbstractionPrompt', () => {
     expect(mixedLayersWithoutAbstractionPrompt).toContain('Do not report a declaration merely because it coexists in a source that otherwise qualifies')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('Its suggestion or relatedDeclarations must show how it belongs to that cluster')
     expect(mixedLayersWithoutAbstractionPrompt).toContain('move with another declaration, call through the boundary, or remove a direct dependency')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Mandatory pre-return audit:')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Owner-recursion audit:')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('compare its proposed owner and interface with the reviewed source\'s existing public semantic boundary')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('If they are materially the same and callers already avoid lower-level knowledge, remove the finding')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('A focused owner that consumes an external mechanism to deliver its promised interface is not itself the consuming-feature smell')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Primary-coverage audit:')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Inventory every declaration in each qualifying cluster that independently owns external access, a reusable operation, adaptation or interpretation, or consumer policy')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Each must appear exactly once as a primary finding; mentioning it only in relatedDeclarations is insufficient')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Cluster audit:')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Remove declarations that do not materially participate in that same missing-boundary flow')
+    expect(mixedLayersWithoutAbstractionPrompt).toContain('Cross-cue primary declarations through findings and relatedDeclarations, but do not duplicate one declaration across findings')
 
     const normalizedPrompt = mixedLayersWithoutAbstractionPrompt.toLowerCase()
     for (const triggerTerm of [
