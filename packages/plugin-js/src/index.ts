@@ -1,6 +1,7 @@
 import { definePlugin } from '@alint-js/plugin'
 
 import { inlineMiniatureNormalizerRule } from './rules/inline-miniature-normalizer'
+import { mixedLayersWithoutAbstractionRule } from './rules/no-mixed-layers-without-abstraction'
 import { privateSchemaToolkitRule } from './rules/no-private-schema-toolkit'
 import { redundantBindingRule } from './rules/no-redundant-binding'
 import { redundantJsdocRule } from './rules/no-redundant-jsdoc'
@@ -17,6 +18,28 @@ export {
   inlineMiniatureNormalizerPrompt,
   inlineMiniatureNormalizerRule,
 } from './rules/inline-miniature-normalizer'
+export {
+  createMixedLayerMessages,
+  createMixedLayerReviewMessages,
+  createMixedLayerReviewToolParameters,
+  createMixedLayerToolParameters,
+  mixedLayerFindingSchema,
+  mixedLayerResponseSchema,
+  mixedLayerReviewDecisionSchema,
+  mixedLayerReviewResponseSchema,
+  mixedLayersWithoutAbstractionCoveragePerspective,
+  mixedLayersWithoutAbstractionOwnershipPerspective,
+  mixedLayersWithoutAbstractionPrompt,
+  mixedLayersWithoutAbstractionReviewPrompt,
+  mixedLayersWithoutAbstractionRule,
+  normalizeMixedLayerFindings,
+  reportMixedLayerFindings,
+  selectReportedMixedLayerFindings,
+} from './rules/no-mixed-layers-without-abstraction'
+export type {
+  MixedLayerFinding,
+  MixedLayerReviewDecision,
+} from './rules/no-mixed-layers-without-abstraction'
 export {
   privateSchemaToolkitPrompt,
   privateSchemaToolkitRule,
@@ -44,6 +67,7 @@ export const examplePlugin = definePlugin({
       {
         rules: {
           'example/inline-miniature-normalizer': 'warn',
+          'example/no-mixed-layers-without-abstraction': 'warn',
           'example/no-private-schema-toolkit': 'warn',
           'example/no-redundant-binding': 'warn',
           'example/no-redundant-jsdoc': 'warn',
@@ -55,6 +79,7 @@ export const examplePlugin = definePlugin({
   },
   rules: {
     'inline-miniature-normalizer': inlineMiniatureNormalizerRule,
+    'no-mixed-layers-without-abstraction': mixedLayersWithoutAbstractionRule,
     'no-private-schema-toolkit': privateSchemaToolkitRule,
     'no-redundant-binding': redundantBindingRule,
     'no-redundant-jsdoc': redundantJsdocRule,
