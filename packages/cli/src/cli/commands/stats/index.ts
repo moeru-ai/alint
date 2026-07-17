@@ -12,6 +12,7 @@ export const stats = defineCommand({
     { description: 'Only include runs since this time (e.g. 7d, 24h, 2025-01)', flags: '--since <time>' },
     { description: 'Only include runs from this directory', flags: '--cwd <path>' },
     { description: 'Only include runs from the current directory', flags: '--here' },
+    { description: 'Render grouped rows as a bar chart', flags: '--chart' },
     { description: 'Output JSON', flags: '--json' },
   ],
 })

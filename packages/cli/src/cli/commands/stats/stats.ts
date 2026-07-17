@@ -1,6 +1,6 @@
 import type { RunnerConfig } from '@alint-js/config'
 
-import type { StatsDimension } from '../../stats'
+import type { StatsAggregate, StatsDimension } from '../../stats'
 import type { CliIo } from '../../types'
 import type { StatsCommandOptions } from './options'
 
@@ -10,6 +10,7 @@ import { errorMessageFrom } from '@moeru/std'
 import { createJsonlStatsStore } from '../../stats'
 import { loadMergedSetupConfig } from '../config/setup-config'
 import { resolveConfigRunner } from '../lint/runner'
+import { formatStatsChart } from './chart'
 import { formatStatsAggregate } from './format'
 
 const DIMENSIONS = new Set<StatsDimension>(['dir', 'model', 'operation', 'rule'])
@@ -32,9 +33,7 @@ export async function runStatsCommand(options: StatsCommandOptions, io: CliIo): 
       since: options.since,
     })
 
-    io.stdout.write(options.json === true
-      ? `${JSON.stringify(aggregate, null, 2)}\n`
-      : formatStatsAggregate(aggregate, { color: io.stdout.isTTY === true }))
+    io.stdout.write(render(aggregate, options, /* color */ io.stdout.isTTY === true))
 
     return 0
   }
@@ -55,6 +54,19 @@ function parseDimension(value: string | undefined): StatsDimension {
   }
 
   throw new Error(`Invalid --by "${value}": use rule, operation, model, or dir.`)
+}
+
+function render(aggregate: StatsAggregate, options: StatsCommandOptions, color: boolean): string {
+  // When `--json` and `--chart` both exist, `--json` wins.
+  if (options.json === true) {
+    return `${JSON.stringify(aggregate, null, 2)}\n`
+  }
+
+  if (options.chart === true) {
+    return formatStatsChart(aggregate, { color })
+  }
+
+  return formatStatsAggregate(aggregate, { color })
 }
 
 function statsLocation(stats: RunnerConfig['stats']): string | undefined {

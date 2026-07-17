@@ -6,9 +6,9 @@ export interface FormatStatsOptions {
   color?: boolean
 }
 
-const colors = createColors({ force: true })
+export const colors = createColors({ force: true })
 
-const DIMENSION_LABEL: Record<StatsDimension, string> = {
+export const DIMENSION_LABEL: Record<StatsDimension, string> = {
   dir: 'directory',
   model: 'model',
   operation: 'operation',
@@ -54,6 +54,6 @@ export function formatStatsAggregate(aggregate: StatsAggregate, options: FormatS
   return `${lines.join('\n')}\n`
 }
 
-function formatTokens(value: number): string {
+export function formatTokens(value: number): string {
   return value.toLocaleString('en-US')
 }

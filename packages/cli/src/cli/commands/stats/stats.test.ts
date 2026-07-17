@@ -79,4 +79,26 @@ describe('alint stats command', () => {
     expect(code).toBe(2)
     expect(io.stderrText).toContain('Invalid --by "bogus"')
   })
+
+  it('renders a bar chart with --chart', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--by', 'rule', '--chart'], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('█')
+    // The single seeded rule owns the whole run total.
+    expect(io.stdoutText).toContain('100.0%')
+  })
+
+  it('lets --json win over --chart', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--chart', '--json'], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).not.toContain('█')
+    const output = JSON.parse(io.stdoutText)
+    expect(output.dimension).toBe('model')
+  })
 })
