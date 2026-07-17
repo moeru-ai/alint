@@ -100,6 +100,53 @@ describe('createJsonlStatsStore', () => {
     expect(agg.rows[0].totalTok).toBe(240)
   })
 
+  it('aggregates rule durations and counts rules that ran without usage records', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    // r1 has a usage record (tokens) and a duration; r2 ran without inference,
+    // so it appears only through its duration entry.
+    await store.record(input('/p', {
+      ruleDurations: [{ durationMs: 400, ruleId: 'r1' }, { durationMs: 150, ruleId: 'r2' }],
+    }))
+    const agg = await store.query({ by: 'rule' })
+
+    expect(agg.totalDuration).toBe(550)
+
+    const r1 = agg.rows.find(row => row.key === 'r1')!
+    expect(r1.durationMs).toBe(400)
+    expect(r1.totalTok).toBe(120)
+    expect(r1.runs).toBe(1)
+
+    const r2 = agg.rows.find(row => row.key === 'r2')!
+    expect(r2.durationMs).toBe(150)
+    expect(r2.totalTok).toBe(0)
+    expect(r2.runs).toBe(1)
+  })
+
+  it('leaves duration undefined for runs recorded without duration data', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    await store.record(input('/p'))
+    const agg = await store.query({ by: 'rule' })
+
+    expect(agg.totalDuration).toBeUndefined()
+    expect(agg.rows[0].key).toBe('r1')
+    expect(agg.rows[0].durationMs).toBeUndefined()
+  })
+
+  it('does not attach duration to non-rule dimensions', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    await store.record(input('/p', { ruleDurations: [{ durationMs: 400, ruleId: 'r1' }] }))
+    const agg = await store.query({ by: 'model' })
+
+    expect(agg.totalDuration).toBeUndefined()
+    expect(agg.rows[0].durationMs).toBeUndefined()
+  })
+
   it('falls back to rule id when grouping by operation on untagged records', async () => {
     const dir = await tmp()
     const store = createJsonlStatsStore({ dir })

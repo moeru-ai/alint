@@ -1,7 +1,7 @@
 import type { RunnerConfig } from '@alint-js/config'
-import type { ProgressReporter, RunEndPayload, RunResult, RunStartPayload } from '@alint-js/core'
+import type { JobEndPayload, ProgressReporter, RunEndPayload, RunResult, RunStartPayload } from '@alint-js/core'
 
-import type { RunRuleCounts } from '../../stats'
+import type { RuleDuration, RunRuleCounts } from '../../stats'
 
 import { getStatsDir } from '@alint-js/config'
 
@@ -11,6 +11,7 @@ export interface StatsCollector {
   counts: RunRuleCounts
   durationMs: () => number | undefined
   reporter: ProgressReporter
+  ruleDurations: () => RuleDuration[] | undefined
 }
 
 interface StatsWriteTarget {
@@ -22,11 +23,23 @@ export function createStatsCollector(): StatsCollector {
   const counts: RunRuleCounts = { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0 }
   let startedAt: number | undefined
   let endedAt: number | undefined
+  // Busy-time per rule, summed over its jobs. Jobs run concurrently, so this is
+  // attributed compute time, not wall-clock, and can exceed the run duration.
+  const ruleMs = new Map<string, number>()
 
   return {
     counts,
     durationMs: () => (startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : undefined),
     reporter: {
+      onJobEnd: (payload: JobEndPayload) => {
+        if (payload.startedAt === undefined || payload.endedAt === undefined) {
+          return
+        }
+
+        const elapsed = Math.max(payload.endedAt - payload.startedAt, 0)
+
+        ruleMs.set(payload.job.ruleId, (ruleMs.get(payload.job.ruleId) ?? 0) + elapsed)
+      },
       onRunEnd: (payload: RunEndPayload) => {
         counts.cached = payload.execution.cached
         counts.cancelled = payload.execution.cancelled
@@ -39,6 +52,11 @@ export function createStatsCollector(): StatsCollector {
         startedAt = payload.startedAt
       },
     },
+    // Undefined rather than an empty array when nothing ran, so a no-op run does
+    // not persist an empty field.
+    ruleDurations: () => (ruleMs.size === 0
+      ? undefined
+      : [...ruleMs].map(([ruleId, durationMs]) => ({ durationMs, ruleId }))),
   }
 }
 
@@ -147,6 +165,7 @@ export async function writeRunStats(
         failed: result.execution.failed,
         planned: result.execution.planned,
       },
+      ruleDurations: collector.ruleDurations(),
       usage: result.usage,
     }))
   }

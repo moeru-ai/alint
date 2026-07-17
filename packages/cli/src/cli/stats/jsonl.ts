@@ -40,7 +40,7 @@ function accumulate(
   outTok: number,
   totalTok: number,
   countRun: boolean,
-): void {
+): StatsGroupRow {
   const row = rows.get(key) ?? { inTok: 0, key, outTok: 0, runs: 0, totalTok: 0 }
 
   row.inTok += inTok
@@ -52,6 +52,8 @@ function accumulate(
   }
 
   rows.set(key, row)
+
+  return row
 }
 
 function isEnoent(error: unknown): boolean {
@@ -105,6 +107,7 @@ async function query(dir: string, filter: StatsQuery, now: () => number): Promis
   let totalIn = 0
   let totalOut = 0
   let totalTok = 0
+  let totalDuration: number | undefined
 
   for (const run of runs) {
     if (since !== undefined && run.ts < since) {
@@ -133,11 +136,24 @@ async function query(dir: string, filter: StatsQuery, now: () => number): Promis
       accumulate(rows, key, usageRecord.inTok, usageRecord.outTok, usageRecord.totalTok, !seenKeys.has(key))
       seenKeys.add(key)
     }
+
+    if (dimension !== 'rule') {
+      continue
+    }
+
+    for (const { durationMs, ruleId } of run.ruleDurations ?? []) {
+      const row = accumulate(rows, ruleId, 0, 0, 0, !seenKeys.has(ruleId))
+
+      seenKeys.add(ruleId)
+      row.durationMs = (row.durationMs ?? 0) + durationMs
+      totalDuration = (totalDuration ?? 0) + durationMs
+    }
   }
 
   return {
     dimension,
     rows: [...rows.values()].sort((left, right) => right.totalTok - left.totalTok),
+    totalDuration,
     totalIn,
     totalOut,
     totalRuns,

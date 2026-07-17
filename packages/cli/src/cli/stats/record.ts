@@ -1,11 +1,12 @@
 import type { InferenceUsageRecord, RunUsage } from '@alint-js/core'
 
-import type { RunRuleCounts, RunStatInput, StatsUsageRecord } from './types'
+import type { RuleDuration, RunRuleCounts, RunStatInput, StatsUsageRecord } from './types'
 
 export interface CreateRunStatInput {
   cwd: string
   durationMs?: number
   ruleCounts: RunRuleCounts
+  ruleDurations?: RuleDuration[]
   usage: RunUsage
 }
 
@@ -14,6 +15,7 @@ export function createRunStat(input: CreateRunStatInput): RunStatInput {
     cwd: input.cwd,
     durationMs: input.durationMs,
     ruleCounts: input.ruleCounts,
+    ruleDurations: input.ruleDurations,
     usage: {
       inTok: input.usage.inputTokens,
       outTok: input.usage.outputTokens,

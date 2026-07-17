@@ -13,6 +13,7 @@ export const stats = defineCommand({
     { description: 'Only include runs from this directory', flags: '--cwd <path>' },
     { description: 'Only include runs from the current directory', flags: '--here' },
     { description: 'Render grouped rows as a bar chart', flags: '--chart' },
+    { description: 'Rank by tokens, runs, or duration (duration needs --by rule)', flags: '--metric <metric>' },
     { description: 'Output JSON', flags: '--json' },
   ],
 })

@@ -5,6 +5,7 @@ export { createRunStat } from './record'
 export type { CreateRunStatInput } from './record'
 export { parseSince } from './since'
 export type {
+  RuleDuration,
   RunRuleCounts,
   RunStat,
   RunStatInput,

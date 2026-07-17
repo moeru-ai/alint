@@ -1,7 +1,7 @@
 import type { StatsAggregate } from '../../stats'
 import type { FormatStatsOptions } from './format'
 
-import { colors, DIMENSION_LABEL, formatTokens } from './format'
+import { colors, DIMENSION_LABEL, formatMetric, METRIC_LABEL, metricValue, sortRows, summaryLine } from './format'
 
 const BAR_WIDTH = 32
 
@@ -11,11 +11,8 @@ const PARTIAL_BLOCKS = ['', '▏', '▎', '▍', '▌', '▋', '▊', '▉']
 export function formatStatsChart(aggregate: StatsAggregate, options: FormatStatsOptions = {}): string {
   const paint = (text: string, style: (value: string) => string): string =>
     options.color === true ? style(text) : text
-  const runLabel = aggregate.totalRuns === 1 ? 'run' : 'runs'
-  const lines = [
-    `${aggregate.totalRuns} ${runLabel} — ${formatTokens(aggregate.totalIn)} in / ${formatTokens(aggregate.totalOut)} out / ${paint(`${formatTokens(aggregate.totalTok)} total`, colors.cyan)}`,
-    '',
-  ]
+  const metric = options.metric ?? 'tokens'
+  const lines = [summaryLine(aggregate, paint), '']
 
   if (aggregate.rows.length === 0) {
     lines.push('No stats recorded yet.')
@@ -23,20 +20,25 @@ export function formatStatsChart(aggregate: StatsAggregate, options: FormatStats
     return `${lines.join('\n')}\n`
   }
 
-  const maxTok = Math.max(...aggregate.rows.map(row => row.totalTok))
+  const rows = sortRows(aggregate.rows, metric)
+
+  const maxValue = Math.max(...rows.map(row => metricValue(row, metric)))
+  const columnTotal = rows.reduce((sum, row) => sum + metricValue(row, metric), 0)
   const label = DIMENSION_LABEL[aggregate.dimension]
-  const keyWidth = Math.max(label.length, ...aggregate.rows.map(row => row.key.length))
-  const values = aggregate.rows.map(row => formatTokens(row.totalTok))
-  const valueWidth = Math.max('total'.length, ...values.map(value => value.length))
+  const valueLabel = METRIC_LABEL[metric]
+  const keyWidth = Math.max(label.length, ...rows.map(row => row.key.length))
+  const values = rows.map(row => formatMetric(row, metric))
+  const valueWidth = Math.max(valueLabel.length, ...values.map(value => value.length))
 
   lines.push(paint(
-    `${label.padEnd(keyWidth)}  ${' '.repeat(BAR_WIDTH)}  ${'total'.padStart(valueWidth)}  share`,
+    `${label.padEnd(keyWidth)}  ${' '.repeat(BAR_WIDTH)}  ${valueLabel.padStart(valueWidth)}  share`,
     colors.bold,
   ))
 
-  aggregate.rows.forEach((row, index) => {
-    const bar = renderBar(maxTok === 0 ? 0 : row.totalTok / maxTok)
-    const share = aggregate.totalTok === 0 ? 0 : (row.totalTok / aggregate.totalTok) * 100
+  rows.forEach((row, index) => {
+    const value = metricValue(row, metric)
+    const bar = renderBar(maxValue === 0 ? 0 : value / maxValue)
+    const share = columnTotal === 0 ? 0 : (value / columnTotal) * 100
 
     lines.push(
       `${row.key.padEnd(keyWidth)}  ${paint(bar, colors.cyan)}  ${values[index].padStart(valueWidth)}  ${share.toFixed(1).padStart(5)}%`,

@@ -73,4 +73,42 @@ describe('formatStatsChart', () => {
     expect(row).toContain('0.0%')
     expect(row).not.toContain('NaN')
   })
+
+  it('ranks by run count when the metric is runs', () => {
+    const output = formatStatsChart(aggregate({
+      rows: [
+        { inTok: 0, key: 'r1', outTok: 0, runs: 2, totalTok: 999 },
+        { inTok: 0, key: 'r2', outTok: 0, runs: 8, totalTok: 1 },
+      ],
+      totalRuns: 10,
+      totalTok: 1000,
+    }), { metric: 'runs' })
+    const [, , header, first] = output.split('\n')
+
+    expect(header).toContain('runs')
+    // r2 (8 runs) outranks r1 (2 runs) even though r1 has more tokens.
+    expect(first.startsWith('r2')).toBe(true)
+    expect(first).toContain('█'.repeat(32))
+    expect(first).toContain('80.0%')
+  })
+
+  it('renders duration and an em dash for rows without a sample', () => {
+    const output = formatStatsChart(aggregate({
+      rows: [
+        { durationMs: 2000, inTok: 0, key: 'slow', outTok: 0, runs: 1, totalTok: 10 },
+        { inTok: 0, key: 'legacy', outTok: 0, runs: 1, totalTok: 10 },
+      ],
+      totalDuration: 2000,
+      totalRuns: 1,
+      totalTok: 20,
+    }), { metric: 'duration' })
+    const slow = output.split('\n').find(line => line.startsWith('slow')) ?? ''
+    const legacy = output.split('\n').find(line => line.startsWith('legacy')) ?? ''
+
+    expect(slow).toContain('2.0s')
+    expect(slow).toContain('100.0%')
+    expect(legacy).toContain('—')
+    // Total busy-time surfaces in the summary line.
+    expect(output).toContain('2.0s time')
+  })
 })

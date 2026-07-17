@@ -23,6 +23,7 @@ async function seedStats(): Promise<{ cwd: string, io: TestIo }> {
   const run = {
     cwd,
     ruleCounts: { cached: 0, cancelled: 0, completed: 1, failed: 0, planned: 1 },
+    ruleDurations: [{ durationMs: 300, ruleId: 'r1' }],
     ts: Date.UTC(2026, 0, 10),
     usage: {
       inTok: 100,
@@ -100,5 +101,33 @@ describe('alint stats command', () => {
     expect(io.stdoutText).not.toContain('█')
     const output = JSON.parse(io.stdoutText)
     expect(output.dimension).toBe('model')
+  })
+
+  it('shows the recorded rule duration with --metric duration', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--by', 'rule', '--metric', 'duration'], io)
+
+    expect(code).toBe(0)
+    // 300ms recorded for the seeded rule renders as 0.3s in the time column.
+    expect(io.stdoutText).toContain('0.3s')
+  })
+
+  it('rejects --metric duration outside the rule dimension', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--by', 'model', '--metric', 'duration'], io)
+
+    expect(code).toBe(2)
+    expect(io.stderrText).toContain('only available with --by rule')
+  })
+
+  it('reports an invalid --metric', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--metric', 'bogus'], io)
+
+    expect(code).toBe(2)
+    expect(io.stderrText).toContain('Invalid --metric "bogus"')
   })
 })
