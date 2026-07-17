@@ -180,6 +180,8 @@ describe('runAlint', () => {
         index: 1,
         inputPath: filePath,
         ruleId: 'company/first',
+        ruleIndex: 1,
+        ruleTotal: 1,
         target: {
           identity: 'file:demo.txt',
           kind: 'file',
@@ -191,6 +193,8 @@ describe('runAlint', () => {
         index: 2,
         inputPath: filePath,
         ruleId: 'company/second',
+        ruleIndex: 1,
+        ruleTotal: 1,
         target: {
           identity: 'file:demo.txt',
           kind: 'file',
@@ -206,6 +210,46 @@ describe('runAlint', () => {
       'start:2',
       'end:1:completed',
       'end:2:completed',
+    ])
+  })
+
+  it('emits rule-level progress metadata on queued jobs', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-rule-progress-metadata-'))
+    const firstPath = join(root, 'first.txt')
+    const secondPath = join(root, 'second.txt')
+    const jobs: Array<{ index: number, ruleId: string, ruleIndex: number, ruleTotal: number, total: number }> = []
+
+    await writeFile(firstPath, 'first\n')
+    await writeFile(secondPath, 'second\n')
+
+    const one = defineRule({ create: () => ({ onTargetFile: () => {} }) })
+    const two = defineRule({ create: () => ({ onTargetFile: () => {} }) })
+
+    await runAlint({
+      config: createConfig(
+        { one, two },
+        { 'company/one': 'warn', 'company/two': 'warn' },
+        {},
+        { language: 'text/plain' },
+      ),
+      files: [firstPath, secondPath],
+      progress: {
+        onJobQueued: ({ job }) => jobs.push({
+          index: job.index,
+          ruleId: job.ruleId,
+          ruleIndex: job.ruleIndex,
+          ruleTotal: job.ruleTotal,
+          total: job.total,
+        }),
+      },
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(jobs).toEqual([
+      { index: 1, ruleId: 'company/one', ruleIndex: 1, ruleTotal: 2, total: 4 },
+      { index: 2, ruleId: 'company/two', ruleIndex: 1, ruleTotal: 2, total: 4 },
+      { index: 3, ruleId: 'company/one', ruleIndex: 2, ruleTotal: 2, total: 4 },
+      { index: 4, ruleId: 'company/two', ruleIndex: 2, ruleTotal: 2, total: 4 },
     ])
   })
 
@@ -1272,6 +1316,105 @@ describe('runAlint', () => {
     finally {
       vi.useRealTimers()
     }
+  })
+
+  it('emits job retry progress for retryable configured agent failures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-job-retry-progress-'))
+    const filePath = join(root, 'demo.txt')
+    const events: string[] = []
+    let calls = 0
+
+    await writeFile(filePath, 'hello\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFile: async () => {
+          await ctx.agent!({
+            instructions: 'review',
+            model: await ctx.model(),
+            prompt: 'review',
+            tools: [],
+          })
+        },
+      }),
+    })
+
+    await runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+        {},
+        {
+          agent: async () => {
+            calls += 1
+            if (calls < 3)
+              throw new RetryableAgentError(`retry ${calls}`)
+            return { answer: 'ok' }
+          },
+          language: 'text/plain',
+        },
+      ),
+      files: [filePath],
+      progress: {
+        onJobRetry: payload => events.push(`${payload.job.ruleId}:${payload.attempt}/${payload.maxAttempts}`),
+      },
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(events).toEqual([
+      'company/review:1/3',
+      'company/review:2/3',
+    ])
+  })
+
+  it('propagates a retry progress reporter exception raised during a handler', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-job-retry-progress-failure-'))
+    const filePath = join(root, 'demo.txt')
+    const sentinel = new Error('retry reporter failed')
+    let calls = 0
+
+    await writeFile(filePath, 'hello\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFile: async () => {
+          await ctx.agent!({
+            instructions: 'review',
+            model: await ctx.model(),
+            prompt: 'review',
+            tools: [],
+          })
+        },
+      }),
+    })
+
+    let runError: unknown
+    try {
+      await runAlint({
+        config: createConfig(
+          { review: rule },
+          { 'company/review': 'warn' },
+          {},
+          {
+            agent: async () => {
+              calls += 1
+              if (calls === 1)
+                throw new RetryableAgentError('retry once')
+              return { answer: 'ok' }
+            },
+            language: 'text/plain',
+          },
+        ),
+        files: [filePath],
+        progress: { onJobRetry: () => { throw sentinel } },
+        setupConfig: createSetupConfig(),
+      })
+    }
+    catch (error) {
+      runError = error
+    }
+
+    expect(runError).toBe(sentinel)
   })
 
   it('does not retry an ordinary configured agent error', async () => {

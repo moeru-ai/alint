@@ -55,6 +55,13 @@ export interface JobQueuedPayload {
   job: ProgressJob
 }
 
+export interface JobRetryPayload {
+  attempt: number
+  job: ProgressJob
+  maxAttempts: number
+  startedAt?: number
+}
+
 export interface JobStartPayload {
   job: ProgressJob
   startedAt?: number
@@ -65,6 +72,8 @@ export interface ProgressJob {
   index: number
   inputPath: string
   ruleId: string
+  ruleIndex: number
+  ruleTotal: number
   target: {
     identity: string
     kind: ProgressTargetKind
@@ -77,6 +86,7 @@ export interface ProgressReporter {
   onDiagnostic?: (payload: DiagnosticProgressPayload) => void
   onJobEnd?: (payload: JobEndPayload) => void
   onJobQueued?: (payload: JobQueuedPayload) => void
+  onJobRetry?: (payload: JobRetryPayload) => void
   onJobStart?: (payload: JobStartPayload) => void
   onRunEnd?: (payload: RunEndPayload) => void
   onRunStart?: (payload: RunStartPayload) => void

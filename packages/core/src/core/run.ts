@@ -302,7 +302,24 @@ function createRuleRuntimes(options: {
       ? withAgentRetry(request => options.effectiveAgent!({
           ...request,
           signal: combineAbortSignals(executionState.getStore()?.signal, request.signal),
-        }), options.options.runner?.agentRetries)
+        }), options.options.runner?.agentRetries, {
+          onRetry: ({ attempt, maxAttempts }) => {
+            const state = executionState.getStore()
+            if (!state)
+              return
+            const startedAt = Date.now()
+            try {
+              options.progress?.onJobRetry?.({ attempt, job: state.job, maxAttempts, startedAt })
+            }
+            catch (cause) {
+              if (!state.reporterFailed) {
+                state.reporterCause = cause
+                state.reporterFailed = true
+              }
+              throw cause
+            }
+          },
+        })
       : undefined
     const context: RuleContext<readonly unknown[]> = {
       agent,

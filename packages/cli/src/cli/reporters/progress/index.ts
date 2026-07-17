@@ -73,6 +73,10 @@ function createRenderingProgressReporter(
       summary.onJobQueued?.(payload)
       renderer.render()
     },
+    onJobRetry: (payload) => {
+      summary.onJobRetry?.(payload)
+      renderer.render()
+    },
     onJobStart: (payload) => {
       summary.onJobStart?.(payload)
       renderer.render()

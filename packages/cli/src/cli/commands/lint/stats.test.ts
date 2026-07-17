@@ -68,6 +68,19 @@ describe('mergeProgressReporters', () => {
     expect(events).toEqual(['base', 'extra'])
   })
 
+  it('forwards retry progress to both reporters', () => {
+    const events: string[] = []
+    const payload = { attempt: 1, job: jobStart().job, maxAttempts: 3 }
+    const merged = mergeProgressReporters(
+      { onJobRetry: retry => events.push(`base:${retry.attempt}/${retry.maxAttempts}`) },
+      { onJobRetry: retry => events.push(`extra:${retry.job.ruleId}`) },
+    )
+
+    merged?.onJobRetry?.(payload)
+
+    expect(events).toEqual(['base:1/3', 'extra:rule/a'])
+  })
+
   it('isolates a failed consumer while the other receives current and later events', () => {
     const cause = new Error('UI failed')
     const baseEvents: string[] = []
@@ -121,6 +134,8 @@ function jobStart(): JobStartPayload {
       index: 0,
       inputPath: '/repo/a.ts',
       ruleId: 'rule/a',
+      ruleIndex: 1,
+      ruleTotal: 1,
       target: { identity: 'file:0', kind: 'file' },
       total: 1,
     },

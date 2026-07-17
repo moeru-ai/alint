@@ -42,12 +42,25 @@ class CacheReplayProcessingError {
 export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
   const jobs: RuleJob[] = []
   const total = plans.reduce((sum, plan) => sum + plan.planned, 0)
+  const ruleTotals = new Map<string, number>()
+  const ruleIndexes = new Map<string, number>()
+
+  for (const plan of plans) {
+    for (const target of plan.targets) {
+      for (const execution of target.executions) {
+        const ruleId = execution.runtime.enabledRule.id
+        ruleTotals.set(ruleId, (ruleTotals.get(ruleId) ?? 0) + 1)
+      }
+    }
+  }
 
   for (const plan of plans) {
     for (const target of plan.targets) {
       for (const execution of target.executions) {
         const ruleId = execution.runtime.enabledRule.id
         const index = jobs.length + 1
+        const ruleIndex = (ruleIndexes.get(ruleId) ?? 0) + 1
+        ruleIndexes.set(ruleId, ruleIndex)
         jobs.push({
           execution,
           job: {
@@ -55,6 +68,8 @@ export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
             index,
             inputPath: plan.path,
             ruleId,
+            ruleIndex,
+            ruleTotal: ruleTotals.get(ruleId) ?? 0,
             target: {
               identity: target.identity,
               kind: target.kind,

@@ -26,6 +26,8 @@ function failure(
       index,
       inputPath: planPath,
       ruleId,
+      ruleIndex: index + 1,
+      ruleTotal: 1,
       target: { identity: `target-${index}`, kind: targetKind, name: targetName },
       total: 3,
     },
@@ -41,25 +43,58 @@ describe('formatRunError', () => {
     failure(2, 'cache-replay', '.', 'project', 'rule/c', 'invalid cached diagnostic'),
   ]
 
-  it('formats every rule failure in planned order', () => {
+  it('groups rule failures by rule and keeps targets in planned order', () => {
     const error = new AlintRunError('3 rule executions failed', EMPTY_RESULT, { failures })
 
     expect(formatRunError(error, false)).toBe([
       'error 3 rule executions failed',
-      '  [handler] src/a.ts > function parse > rule/a: boom',
-      '  [timeout] src/b.ts > file > rule/b: Rule execution timed out after 100ms.',
-      '  [cache-replay] . > project > rule/c: invalid cached diagnostic',
+      '',
+      'Failed Rules 3',
+      '',
+      'FAIL rule/a 1 target',
+      '  src/a.ts > function parse',
+      '    [handler] boom',
+      '',
+      'FAIL rule/b 1 target',
+      '  src/b.ts > file',
+      '    [timeout] Rule execution timed out after 100ms.',
+      '',
+      'FAIL rule/c 1 target',
+      '  . > project',
+      '    [cache-replay] invalid cached diagnostic',
       '',
     ].join('\n'))
   })
 
-  it('colors only the error label and prints each failure once', () => {
+  it('counts failed rule groups and keeps repeated rule targets in planned order', () => {
+    const error = new AlintRunError('2 rule executions failed', EMPTY_RESULT, {
+      failures: [
+        failure(2, 'handler', 'src/later.ts', 'file', 'rule/a', 'later target failed'),
+        failure(1, 'handler', 'src/earlier.ts', 'file', 'rule/a', 'earlier target failed'),
+      ],
+    })
+
+    expect(formatRunError(error, false)).toBe([
+      'error 2 rule executions failed',
+      '',
+      'Failed Rules 1',
+      '',
+      'FAIL rule/a 2 targets',
+      '  src/earlier.ts > file',
+      '    [handler] earlier target failed',
+      '  src/later.ts > file',
+      '    [handler] later target failed',
+      '',
+    ].join('\n'))
+  })
+
+  it('renders FAIL as a red-background label when color is enabled', () => {
     const error = new AlintRunError('1 rule execution failed.', EMPTY_RESULT, { failures: failures.slice(0, 1) })
     const output = formatRunError(error, true)
 
-    expect(output).toContain('\u001B[31merror\u001B[39m 1 rule execution failed.')
-    expect(output.match(/\[handler\]/g)).toHaveLength(1)
-    expect(output).toContain('src/a.ts > function parse > rule/a: boom')
+    expect(output).toContain('\u001B[41m\u001B[1m FAIL \u001B[22m\u001B[49m rule/a 1 target')
+    expect(output).toContain('src/a.ts > function parse')
+    expect(output).toContain('[handler] boom')
   })
 })
 

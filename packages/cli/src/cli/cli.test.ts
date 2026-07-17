@@ -2755,7 +2755,8 @@ export default [
     ], io)
 
     expect(exitCode).toBe(0)
-    expect(io.stderrText).toContain('running')
+    expect(io.stderrText).toContain('/')
+    expect(io.stderrText).toContain('->')
     expect(io.stderrText).not.toContain('\n')
     expect(io.stderrText).not.toContain('company/prefer-load')
   })
@@ -2784,7 +2785,7 @@ export default [
       expect(state.maxActive).toBe(3)
       const frames = io.stderrText.split(/\r\u001B\[K(?:\r\u001B\[1A\u001B\[K)*/u)
       expect(frames.some(frame =>
-        frame.includes('3 running') && frame.includes('2 more running jobs hidden'),
+        frame.includes('3 more running') && frame.includes('3 concurrency'),
       )).toBe(true)
       expect(io.stderrText).toContain('[handler]')
       expect(exitCode).toBe(2)
@@ -3196,9 +3197,9 @@ export default [
     plugins: {
       company: {
         rules: {
-        'remote-fails': {
+        review: {
           create: () => ({
-            onTargetFunction: (target) => {
+            onTargetFile: () => {
               throw new Error('Remote sent 403 response: {"error":{"message":"The request is prohibited due to a violation of provider Terms Of Service.","code":403},"user_id":"secret"}')
             },
           }),
@@ -3207,7 +3208,7 @@ export default [
     },
     },
     rules: {
-      'company/remote-fails': 'warn',
+      'company/review': 'warn',
     },
   },
 ]
@@ -3223,8 +3224,10 @@ export default [
     expect(exitCode).toBe(2)
     expect(io.stderrText).toContain('scan ')
     expect(io.stderrText).toContain('1 failed, 0 cancelled')
-    expect(io.stderrText).toContain('[handler]')
-    expect(io.stderrText).toContain('demo.ts > function load > company/remote-fails')
+    expect(io.stderrText).toContain('Failed Rules 1')
+    expect(io.stderrText).toContain('FAIL company/review 1 target')
+    expect(io.stderrText).toContain('demo.ts > file')
+    expect(io.stderrText).toContain('[handler] Remote sent 403 response:')
     expect(io.stderrText).toContain('Remote sent 403 response:')
     expect(io.stderrText).toContain('"error"')
     expect(io.stderrText).toContain('user_id')

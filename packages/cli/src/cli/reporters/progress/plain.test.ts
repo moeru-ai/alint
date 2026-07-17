@@ -24,6 +24,8 @@ const JOB: ProgressJob = {
   index: 1,
   inputPath: 'src/input.ts',
   ruleId: 'company/require-title',
+  ruleIndex: 1,
+  ruleTotal: 1,
   target: { identity: 'function:loadConfig', kind: 'function', name: 'loadConfig' },
   total: 2,
 }
@@ -96,13 +98,17 @@ describe('createCliProgressReporter', () => {
       rows: 10,
       write: chunk => chunks.push(chunk),
     })
-    const current = { ...JOB, inputPath: '/repo/src/input.ts' }
+    const current = { ...JOB, inputPath: '/repo/src/input.ts', ruleId: 'rule/current' }
 
     progress.reporter.onRunStart?.({ jobsTotal: 1 })
     progress.reporter.onJobQueued?.({ job: current })
     progress.reporter.onJobStart?.({ job: current })
+    expect(progress.reporter.onJobRetry).toBeTypeOf('function')
+    expect(() => progress.reporter.onJobRetry?.({ attempt: 1, job: current, maxAttempts: 3 })).not.toThrow()
 
-    expect(chunks.join('\n')).toContain('⠋ src/input.ts > function loadConfig > company/require-title')
+    expect(chunks.join('\n')).toContain('⠋ rule/current 0/1 0% [░░░░░░░░░░] eta ? 1 running')
+    expect(chunks.join('\n')).toContain('   └─ src/input.ts > function loadConfig 1/3 retrying elapsed 0.0s')
+    expect(chunks.join('')).toContain('rule/current')
     progress.dispose()
     vi.useRealTimers()
   })

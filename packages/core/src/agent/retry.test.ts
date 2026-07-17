@@ -43,6 +43,35 @@ describe('retryableAgentError', () => {
 })
 
 describe('withAgentRetry', () => {
+  it('reports each retry attempt before replaying a retryable invocation', async () => {
+    vi.useFakeTimers()
+    const retryEvents: Array<{ attempt: number, maxAttempts: number }> = []
+    let calls = 0
+    const adapter: AgentAdapter = async () => {
+      calls += 1
+      if (calls < 3)
+        throw new RetryableAgentError(`attempt ${calls}`)
+      return { answer: 'ok' }
+    }
+
+    const result = withAgentRetry(adapter, 2, {
+      onRetry: payload => retryEvents.push({
+        attempt: payload.attempt,
+        maxAttempts: payload.maxAttempts,
+      }),
+    })(request)
+
+    expect(retryEvents).toEqual([])
+    await vi.advanceTimersByTimeAsync(500)
+    expect(retryEvents).toEqual([{ attempt: 1, maxAttempts: 3 }])
+    await vi.advanceTimersByTimeAsync(1000)
+    await expect(result).resolves.toEqual({ answer: 'ok' })
+    expect(retryEvents).toEqual([
+      { attempt: 1, maxAttempts: 3 },
+      { attempt: 2, maxAttempts: 3 },
+    ])
+  })
+
   it('retries a whole invocation twice by default with exponential backoff until it succeeds', async () => {
     vi.useFakeTimers()
     let calls = 0

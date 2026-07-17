@@ -87,6 +87,9 @@ export function mergeProgressReporters(
     onJobQueued: (payload) => {
       deliverBoth(reporter => reporter.onJobQueued?.(payload))
     },
+    onJobRetry: (payload) => {
+      deliverBoth(reporter => reporter.onJobRetry?.(payload))
+    },
     onJobStart: (payload) => {
       deliverBoth(reporter => reporter.onJobStart?.(payload))
     },

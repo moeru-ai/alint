@@ -7,6 +7,8 @@ import fastStringWidth from 'fast-string-width'
 
 import { createColors } from 'tinyrainbow'
 
+import { formatMiniBar } from './bar'
+
 const colors = createColors({ force: true })
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 
@@ -26,15 +28,33 @@ export interface SummaryProgressReporterOptions {
 type JobLifecycle = 'cached' | 'cancelled' | 'completed' | 'failed' | 'queued' | 'running' | 'skipped'
 
 interface JobState {
+  endedAt?: number
   job: ProgressJob
+  retry?: { attempt: number, maxAttempts: number, startedAt?: number }
   startedAt?: number
   state: JobLifecycle
 }
 
+interface RuleGroup {
+  cached: number
+  cancelled: number
+  completed: number
+  failed: number
+  firstJobIndex: number
+  jobs: JobState[]
+  planned: number
+  ruleId: string
+  skipped: number
+  terminalDurationMs: number
+}
+
 interface SummaryState {
+  cachedTokens: number
   diagnostics: Diagnostic[]
   execution: ExecutionCounts
   jobs: Map<string, JobState>
+  jobTokens: Map<string, number>
+  runStartedAt?: number
   spinnerIndex: number
   totalTokens: number
 }
@@ -50,8 +70,15 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
     },
     onJobEnd: (payload) => {
       const current = state.jobs.get(payload.job.id)
+      if (payload.state === 'cached' && current?.state !== 'cached') {
+        const cachedTokens = state.jobTokens.get(payload.job.id) ?? 0
+        state.totalTokens = Math.max(state.totalTokens - cachedTokens, 0)
+        state.cachedTokens += cachedTokens
+      }
       state.jobs.set(payload.job.id, {
+        endedAt: payload.endedAt ?? now(),
         job: payload.job,
+        retry: current?.retry,
         startedAt: payload.startedAt ?? current?.startedAt,
         state: payload.state,
       })
@@ -60,6 +87,15 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
     onJobQueued: ({ job }) => {
       state.jobs.set(job.id, { job, state: 'queued' })
       state.execution.queued += 1
+    },
+    onJobRetry: (payload) => {
+      const current = state.jobs.get(payload.job.id)
+      state.jobs.set(payload.job.id, {
+        job: payload.job,
+        retry: { attempt: payload.attempt, maxAttempts: payload.maxAttempts, startedAt: payload.startedAt },
+        startedAt: current?.startedAt ?? payload.startedAt ?? now(),
+        state: current?.state ?? 'running',
+      })
     },
     onJobStart: (payload) => {
       state.jobs.set(payload.job.id, {
@@ -73,22 +109,50 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       state.diagnostics = [...payload.diagnostics]
       state.execution = { ...payload.execution }
       state.totalTokens = payload.usage.totalTokens
+      state.cachedTokens = payload.usage.cached?.totalTokens ?? 0
+      state.runStartedAt = payload.startedAt ?? state.runStartedAt
     },
-    onRunStart: ({ jobsTotal }) => {
+    onRunStart: ({ jobsTotal, startedAt }) => {
       state.diagnostics = []
       state.execution = createCounts(jobsTotal)
       state.jobs.clear()
+      state.runStartedAt = startedAt ?? now()
       state.spinnerIndex = 0
+      state.cachedTokens = 0
+      state.jobTokens.clear()
       state.totalTokens = 0
     },
-    onUsage: ({ record }) => {
-      if (record.totalTokens != null && Number.isFinite(record.totalTokens))
-        state.totalTokens += record.totalTokens
+    onUsage: ({ job, record }) => {
+      if (record.totalTokens != null && Number.isFinite(record.totalTokens)) {
+        state.jobTokens.set(job.id, (state.jobTokens.get(job.id) ?? 0) + record.totalTokens)
+        if (state.jobs.get(job.id)?.state === 'cached')
+          state.cachedTokens += record.totalTokens
+        else
+          state.totalTokens += record.totalTokens
+      }
     },
     tick: () => {
       state.spinnerIndex = (state.spinnerIndex + 1) % Math.max(options.spinnerFrames.length, 1)
     },
   }
+}
+
+function compareRuleGroups(left: RuleGroup, right: RuleGroup): number {
+  const leftActive = left.jobs.some(job => job.state === 'running') ? 1 : 0
+  const rightActive = right.jobs.some(job => job.state === 'running') ? 1 : 0
+  if (leftActive !== rightActive)
+    return rightActive - leftActive
+  if (left.failed !== right.failed)
+    return right.failed - left.failed
+  return left.firstJobIndex - right.firstJobIndex
+}
+
+function compareRunningJobs(left: JobState, right: JobState): number {
+  const leftStartedAt = left.startedAt ?? Number.POSITIVE_INFINITY
+  const rightStartedAt = right.startedAt ?? Number.POSITIVE_INFINITY
+  if (leftStartedAt !== rightStartedAt)
+    return leftStartedAt - rightStartedAt
+  return left.job.index - right.job.index
 }
 
 function completeGraphemeBoundary(input: string, maximumIndex: number): number {
@@ -123,9 +187,11 @@ function createCounts(planned = 0): ExecutionCounts {
 
 function createInitialState(): SummaryState {
   return {
+    cachedTokens: 0,
     diagnostics: [],
     execution: createCounts(),
     jobs: new Map(),
+    jobTokens: new Map(),
     spinnerIndex: 0,
     totalTokens: 0,
   }
@@ -137,30 +203,73 @@ function createRows(state: SummaryState, options: SummaryProgressReporterOptions
 
   const warnCount = countDiagnostics(state.diagnostics, 'warn')
   const errorCount = countDiagnostics(state.diagnostics, 'error')
-  const runningJobs = [...state.jobs.values()]
-    .filter(job => job.state === 'running')
-    .sort((left, right) => left.job.index - right.job.index)
-  const footerRows = 1
-  const separatorRows = options.rows === undefined || options.rows >= 2 ? 1 : 0
+  const groups = createRuleGroups(state)
+  const footerRows = options.rows === undefined ? 3 : Math.min(options.rows, 3)
+  const separatorRows = options.rows === undefined || options.rows - footerRows > 1 ? 1 : 0
   const contentBudget = options.rows === undefined
     ? Number.POSITIVE_INFINITY
     : Math.max(options.rows - footerRows - separatorRows, 0)
-  const needsMarker = runningJobs.length > contentBudget
-  const jobBudget = needsMarker ? Math.max(contentBudget - 1, 0) : contentBudget
-  const visible = runningJobs
-    .slice(0, jobBudget)
-    .map(job => formatJobRow(job, state, options, now))
-  const hiddenJobs = runningJobs.length - visible.length
+  const visible = formatContentRows(groups, state, options, now, contentBudget)
+  const footer = formatFooters(state, options, now)
+  const actualSeparatorRows = visible.length > 0 ? separatorRows : 0
+  const visibleFooters = options.rows === undefined
+    ? footer
+    : footer.slice(0, Math.max(options.rows - visible.length - actualSeparatorRows, 0))
 
-  if (hiddenJobs > 0 && contentBudget > 0)
-    visible.push(fitRow(`    └─ … ${hiddenJobs} more running jobs hidden`, options.columns))
-  if (separatorRows === 1)
+  if (actualSeparatorRows === 1)
     visible.push('')
-  visible.push(formatFooter(state, warnCount, errorCount, options))
+  visible.push(...visibleFooters)
 
   return options.color
     ? visible.map(row => styleRow(row, state, warnCount, errorCount, options))
     : visible
+}
+
+function createRuleGroups(state: SummaryState): RuleGroup[] {
+  const groups = new Map<string, RuleGroup>()
+
+  for (const job of state.jobs.values()) {
+    const group = groups.get(job.job.ruleId) ?? {
+      cached: 0,
+      cancelled: 0,
+      completed: 0,
+      failed: 0,
+      firstJobIndex: job.job.index,
+      jobs: [],
+      planned: 0,
+      ruleId: job.job.ruleId,
+      skipped: 0,
+      terminalDurationMs: 0,
+    }
+
+    group.firstJobIndex = Math.min(group.firstJobIndex, job.job.index)
+    group.jobs.push(job)
+    group.planned = Math.max(group.planned, job.job.ruleTotal)
+    if (job.state === 'cached')
+      group.cached += 1
+    if (job.state === 'cancelled')
+      group.cancelled += 1
+    if (job.state === 'completed')
+      group.completed += 1
+    if (job.state === 'failed')
+      group.failed += 1
+    if (job.state === 'skipped')
+      group.skipped += 1
+    if (job.endedAt !== undefined && job.startedAt !== undefined && job.state !== 'cached')
+      group.terminalDurationMs += Math.max(job.endedAt - job.startedAt, 0)
+
+    groups.set(group.ruleId, group)
+  }
+
+  return [...groups.values()]
+    .sort(compareRuleGroups)
+}
+
+function estimateEta(durationMs: number, terminal: number, planned: number): string {
+  if (terminal <= 0 || planned <= 0 || durationMs <= 0)
+    return 'eta ?'
+  const remaining = planned - terminal
+  return `eta ~${formatDuration(durationMs * remaining / terminal)}`
 }
 
 function fitRow(row: string, columns: number): string {
@@ -191,36 +300,115 @@ function fitRow(row: string, columns: number): string {
   return ''
 }
 
+function formatCollapsedRunningRow(hidden: number, options: SummaryProgressReporterOptions): string {
+  return fitRow(`   └─ ${hidden} more running`, options.columns)
+}
+
+function formatContentRows(
+  groups: RuleGroup[],
+  state: SummaryState,
+  options: SummaryProgressReporterOptions,
+  now: number,
+  contentBudget: number,
+): string[] {
+  const rows: string[] = []
+  const renderableGroups = groups.filter(group => group.jobs.some(job => job.state === 'running') || group.failed > 0)
+  const runningCount = renderableGroups.reduce(
+    (sum, group) => sum + group.jobs.filter(job => job.state === 'running').length,
+    0,
+  )
+
+  if (contentBudget === 1) {
+    const failedGroup = renderableGroups.find(group => group.failed > 0)
+    if (failedGroup)
+      return [formatRuleRow(failedGroup, state, options)]
+    if (runningCount > 0)
+      return [formatCollapsedRunningRow(runningCount, options)]
+  }
+
+  for (const [groupIndex, group] of renderableGroups.entries()) {
+    if (rows.length >= contentBudget)
+      break
+
+    const groupStart = rows.length
+    rows.push(formatRuleRow(group, state, options))
+    const runningJobs = group.jobs
+      .filter(job => job.state === 'running')
+      .sort(compareRunningJobs)
+    const remainingGroups = renderableGroups.length - groupIndex - 1
+
+    for (const [index, job] of runningJobs.entries()) {
+      const rowsReservedForLaterGroups = Math.min(remainingGroups, Math.max(contentBudget - rows.length, 0))
+      if (rows.length >= contentBudget) {
+        const hidden = runningJobs.length - index
+        if (rows.length > groupStart + 1 && hidden > 0)
+          rows[rows.length - 1] = formatCollapsedRunningRow(hidden, options)
+        break
+      }
+      if (rows.length + 1 + rowsReservedForLaterGroups >= contentBudget) {
+        if (runningJobs.length > 1)
+          rows.push(formatCollapsedRunningRow(runningJobs.length - index, options))
+        break
+      }
+
+      rows.push(formatTargetRow(job, options, now, index === runningJobs.length - 1))
+    }
+  }
+
+  return rows
+}
+
 function formatDuration(ms: number): string {
   return `${(Math.max(ms, 0) / 1000).toFixed(1)}s`
 }
 
-function formatFooter(
-  state: SummaryState,
-  warnCount: number,
-  errorCount: number,
-  options: SummaryProgressReporterOptions,
-): string {
-  const { cached, failed, queued, running } = state.execution
+function formatFooters(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {
+  const terminal = terminalCount(state.execution)
+  const elapsed = state.runStartedAt === undefined ? 0 : now - state.runStartedAt
+  const progressBar = formatMiniBarSegment(terminal, state.execution.planned, state.spinnerIndex, options)
+  const eta = estimateEta(elapsed, terminal, state.execution.planned)
+  const projectedTokens = terminal > 0 && state.execution.planned > 0
+    ? Math.ceil((state.totalTokens + state.cachedTokens) * state.execution.planned / terminal)
+    : undefined
 
-  return fitRow(
-    `${running} running / ${queued} queued / ${cached} cached / ${warnCount} warn / ${errorCount} error / ${failed} failed / ${state.totalTokens} tokens`,
-    options.columns,
-  )
+  return [
+    fitRow(`${terminal}/${state.execution.planned}${progressBar} ${formatDuration(elapsed)} -> ${eta === 'eta ?' ? '~?' : eta.replace('eta ', '')}`, options.columns),
+    fitRow(`${state.execution.running} concurrency / ${state.execution.queued} queued / ${state.execution.cached} cached / ${state.execution.failed} failed`, options.columns),
+    fitRow(`${state.totalTokens.toLocaleString('en-US')} tokens (${state.cachedTokens.toLocaleString('en-US')} cached) -> ${projectedTokens === undefined ? '~?' : `~${projectedTokens.toLocaleString('en-US')} tokens`}`, options.columns),
+  ]
 }
 
-function formatJobRow(jobState: JobState, state: SummaryState, options: SummaryProgressReporterOptions, now: number): string {
+function formatMiniBarSegment(completed: number, planned: number, tick: number, options: SummaryProgressReporterOptions): string {
+  if (options.columns < 60)
+    return ''
+
+  return ` ${formatMiniBar({ completed, planned, tick, width: 10 })}`
+}
+
+function formatRuleRow(group: RuleGroup, state: SummaryState, options: SummaryProgressReporterOptions): string {
   const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
+  const terminal = group.completed + group.cached + group.failed + group.cancelled + group.skipped
+  const percent = group.planned > 0 ? Math.floor((terminal / group.planned) * 100) : 0
+  const bar = formatMiniBarSegment(terminal, group.planned, state.spinnerIndex, options)
+  const running = group.jobs.filter(job => job.state === 'running').length
+  const failed = group.failed > 0 ? ` ${group.failed} failed` : ''
+  const eta = estimateEta(group.terminalDurationMs, terminal, group.planned)
+
+  return fitRow(`${spinner} ${group.ruleId} ${terminal}/${group.planned} ${percent}%${bar} ${eta} ${running} running${failed}`, options.columns)
+}
+
+function formatTargetRow(jobState: JobState, options: SummaryProgressReporterOptions, now: number, last: boolean): string {
   const inputPath = options.cwd ? relative(options.cwd, jobState.job.inputPath) || '.' : jobState.job.inputPath
   const target = jobState.job.target.name
     ? `${jobState.job.target.kind} ${jobState.job.target.name}`
     : jobState.job.target.kind
-  const startedAt = jobState.startedAt ?? now
+  const startedAt = jobState.retry?.startedAt ?? jobState.startedAt ?? now
+  const prefix = last ? '   └─' : '   ├─'
+  const stateText = jobState.retry
+    ? `${jobState.retry.attempt}/${jobState.retry.maxAttempts} retrying elapsed ${formatDuration(now - startedAt)}`
+    : `running ${formatDuration(now - startedAt)}`
 
-  return fitRow(
-    `${spinner} ${inputPath} > ${target} > ${jobState.job.ruleId} (${formatDuration(now - startedAt)})`,
-    options.columns,
-  )
+  return fitRow(`${prefix} ${inputPath} > ${target} ${stateText}`, options.columns)
 }
 
 function styleRow(
@@ -237,10 +425,20 @@ function styleRow(
     styledRow = styledRow.replace(spinner, colors.cyan(spinner))
 
   return styledRow
-    .replace(/\//g, colors.gray('/'))
+    .replace(`${state.execution.running} concurrency`, colors.cyan(`${state.execution.running} concurrency`))
+    .replace(`${state.totalTokens.toLocaleString('en-US')} tokens`, colors.cyan(`${state.totalTokens.toLocaleString('en-US')} tokens`))
+    .replace(`(${state.cachedTokens.toLocaleString('en-US')} cached)`, colors.dim(`(${state.cachedTokens.toLocaleString('en-US')} cached)`))
+    .replace(` / ${state.execution.cached} cached / `, ` / ${colors.dim(`${state.execution.cached} cached`)} / `)
     .replace(`${warnCount} warn`, colors.yellow(`${warnCount} warn`))
     .replace(`${errorCount} error`, (errorCount > 0 ? colors.red : colors.gray)(`${errorCount} error`))
     .replace(`${state.execution.failed} failed`, (state.execution.failed > 0 ? colors.red : colors.gray)(`${state.execution.failed} failed`))
+    // eslint-disable-next-line regexp/no-super-linear-backtracking
+    .replace(/\[([█▓░]*?)(░+)\]/g, (_, active: string, pending: string) => `[${active}${colors.gray(pending)}]`)
+    .replace(/\//g, colors.gray('/'))
+}
+
+function terminalCount(counts: ExecutionCounts): number {
+  return counts.completed + counts.failed + counts.cached + counts.skipped + counts.cancelled
 }
 
 function transition(counts: ExecutionCounts, from: 'queued' | 'running', to: keyof ExecutionCounts): void {

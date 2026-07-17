@@ -14,6 +14,7 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
   const writeLine = (line: string) => options.write(`${line}\n`)
 
   return {
+    onJobRetry: () => {},
     onJobStart: (payload: JobStartPayload) => {
       const target = payload.job.target.name
         ? `${payload.job.target.kind} ${payload.job.target.name}`

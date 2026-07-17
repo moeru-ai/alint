@@ -105,4 +105,27 @@ describe('createTtyProgressRenderer', () => {
       'first\nsecond',
     ])
   })
+
+  it('clears the live window before writing after finish', () => {
+    const chunks: string[] = []
+    const renderer = createTtyProgressRenderer({
+      clearInterval: () => {},
+      createInterval: () => ({ unref: () => {} }),
+      getRows: () => ['live row', 'footer row'],
+      intervalMs: 120,
+      write: chunk => chunks.push(chunk),
+    })
+
+    renderer.start()
+    renderer.finish()
+    renderer.write('final failure\n')
+
+    expect(chunks).toEqual([
+      'live row\nfooter row',
+      `${clearCurrentLine}${clearPreviousLine}`,
+      'final failure\n',
+    ])
+    expect(chunks.join('').endsWith('final failure\n')).toBe(true)
+    expect(chunks.join('')).not.toContain('final failure\nlive row\nfooter row')
+  })
 })
