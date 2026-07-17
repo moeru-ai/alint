@@ -28,6 +28,7 @@ Do not report:
 - functions with meaningful error handling, logging, metrics, tracing, caching, retries, resource ownership, cleanup, async orchestration, or dependency injection
 - public SDK or framework callbacks whose required shape makes the wrapper useful
 - test helpers, fixture builders, mocks, or factories whose purpose is local test readability
+- test workspace setup helpers, fixture-copy helpers, and local lint invocation helpers in test files when they make the test scenario easier to scan
 - overloaded functions, generic helpers, or type guards when the type-level contract is the real API and callers benefit from the named abstraction
 
 Use an aggressive but fair standard:
@@ -35,6 +36,8 @@ Use an aggressive but fair standard:
 - If inlining the body at each call site would preserve readability and make the code more direct, report it.
 - If the function name communicates a stable domain concept that is not obvious from the body, do not report it.
 - If uncertain whether the function has a meaningful boundary, return no finding.
+
+When reporting a vacuous function, make the suggestion practical but do not invent a migration the file does not support. If the body can clearly be inlined without hurting readability, suggest removing the helper and inlining it at the call sites. Otherwise, describe the kind of real boundary the helper would need to own to justify keeping it.
 
 Return warnings only.
 `.trim()
