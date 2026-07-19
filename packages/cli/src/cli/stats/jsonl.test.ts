@@ -100,53 +100,6 @@ describe('createJsonlStatsStore', () => {
     expect(agg.rows[0].totalTok).toBe(240)
   })
 
-  it('aggregates rule durations and counts rules that ran without usage records', async () => {
-    const dir = await tmp()
-    const store = createJsonlStatsStore({ dir })
-
-    // r1 has a usage record (tokens) and a duration; r2 ran without inference,
-    // so it appears only through its duration entry.
-    await store.record(input('/p', {
-      ruleDurations: [{ durationMs: 400, ruleId: 'r1' }, { durationMs: 150, ruleId: 'r2' }],
-    }))
-    const agg = await store.query({ by: 'rule' })
-
-    expect(agg.totalDuration).toBe(550)
-
-    const r1 = agg.rows.find(row => row.key === 'r1')!
-    expect(r1.durationMs).toBe(400)
-    expect(r1.totalTok).toBe(120)
-    expect(r1.runs).toBe(1)
-
-    const r2 = agg.rows.find(row => row.key === 'r2')!
-    expect(r2.durationMs).toBe(150)
-    expect(r2.totalTok).toBe(0)
-    expect(r2.runs).toBe(1)
-  })
-
-  it('leaves duration undefined for runs recorded without duration data', async () => {
-    const dir = await tmp()
-    const store = createJsonlStatsStore({ dir })
-
-    await store.record(input('/p'))
-    const agg = await store.query({ by: 'rule' })
-
-    expect(agg.totalDuration).toBeUndefined()
-    expect(agg.rows[0].key).toBe('r1')
-    expect(agg.rows[0].durationMs).toBeUndefined()
-  })
-
-  it('does not attach duration to non-rule dimensions', async () => {
-    const dir = await tmp()
-    const store = createJsonlStatsStore({ dir })
-
-    await store.record(input('/p', { ruleDurations: [{ durationMs: 400, ruleId: 'r1' }] }))
-    const agg = await store.query({ by: 'model' })
-
-    expect(agg.totalDuration).toBeUndefined()
-    expect(agg.rows[0].durationMs).toBeUndefined()
-  })
-
   it('falls back to rule id when grouping by operation on untagged records', async () => {
     const dir = await tmp()
     const store = createJsonlStatsStore({ dir })
@@ -189,5 +142,140 @@ describe('createJsonlStatsStore', () => {
 
     expect(agg.totalRuns).toBe(0)
     expect(agg.rows).toEqual([])
+  })
+
+  it('filters the table by rule', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    await store.record(input('/p', {
+      usage: {
+        inTok: 30,
+        outTok: 6,
+        records: [
+          { inTok: 20, modelId: 'm', outTok: 4, providerId: 'openai', ruleId: 'r1', totalTok: 24 },
+          { inTok: 10, modelId: 'm', outTok: 2, providerId: 'openai', ruleId: 'r2', totalTok: 12 },
+        ],
+        totalTok: 36,
+      },
+    }))
+    const agg = await store.query({ by: 'rule', rules: ['r1'] })
+
+    expect(agg.rows.map(row => row.key)).toEqual(['r1'])
+    expect(agg.totalTok).toBe(24)
+    expect(agg.totalRuns).toBe(1)
+  })
+
+  it('buckets series runs by day and fills empty days', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir, retentionMonths: 0 })
+
+    await writeFile(join(dir, 'stats-2026-01.jsonl'), [
+      statLine(Date.UTC(2026, 0, 10), '/p'),
+      statLine(Date.UTC(2026, 0, 10), '/p'),
+      statLine(Date.UTC(2026, 0, 12), '/p'),
+    ].join(''))
+    const result = await store.querySeries({ interval: 'day' })
+
+    expect(result.interval).toBe('day')
+    expect(result.buckets.map(item => item.key)).toEqual(['01-10', '01-11', '01-12'])
+    expect(result.buckets[0].runs).toBe(2)
+    expect(result.buckets[1].runs).toBe(0)
+    expect(result.buckets[2].runs).toBe(1)
+    expect(result.totalRuns).toBe(3)
+  })
+
+  it('buckets series by week starting Monday', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir, retentionMonths: 0 })
+
+    await writeFile(join(dir, 'stats-2026-01.jsonl'), [
+      statLine(Date.UTC(2026, 0, 7), '/p'), // Wednesday -> week of Mon 01-05
+      statLine(Date.UTC(2026, 0, 14), '/p'), // Wednesday -> week of Mon 01-12
+    ].join(''))
+    const result = await store.querySeries({ interval: 'week' })
+
+    expect(result.buckets.map(item => item.key)).toEqual(['01-05', '01-12'])
+    expect(result.buckets[0].runs).toBe(1)
+    expect(result.buckets[1].runs).toBe(1)
+  })
+
+  it('buckets series by month across an empty month', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir, retentionMonths: 0 })
+
+    await writeFile(join(dir, 'stats-2026-01.jsonl'), statLine(Date.UTC(2026, 0, 15), '/p'))
+    await writeFile(join(dir, 'stats-2026-03.jsonl'), statLine(Date.UTC(2026, 2, 5), '/p'))
+    const result = await store.querySeries({ interval: 'month' })
+
+    expect(result.buckets.map(item => item.key)).toEqual(['Jan', 'Feb', 'Mar'])
+    expect(result.buckets[1].runs).toBe(0)
+  })
+
+  it('auto-selects a day interval for a short range', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir, retentionMonths: 0 })
+
+    await writeFile(join(dir, 'stats-2026-01.jsonl'), [
+      statLine(Date.UTC(2026, 0, 1), '/p'),
+      statLine(Date.UTC(2026, 0, 4), '/p'),
+    ].join(''))
+
+    expect((await store.querySeries({})).interval).toBe('day')
+  })
+
+  it('derives the auto interval from the --since window regardless of data spread', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    // A single run "now" sits inside every window below; the window length, not
+    // the (zero) data spread, decides the bucket.
+    await store.record(input('/p'))
+
+    expect((await store.querySeries({ since: '24h' })).interval).toBe('day')
+    expect((await store.querySeries({ since: '7d' })).interval).toBe('day')
+    expect((await store.querySeries({ since: '30d' })).interval).toBe('week')
+    expect((await store.querySeries({ since: '200d' })).interval).toBe('month')
+  })
+
+  it('lets an explicit interval override the window', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir })
+
+    await store.record(input('/p'))
+
+    expect((await store.querySeries({ interval: 'week', since: '24h' })).interval).toBe('week')
+  })
+
+  it('filters series buckets by rule', async () => {
+    const dir = await tmp()
+    const store = createJsonlStatsStore({ dir, retentionMonths: 0 })
+
+    await writeFile(join(dir, 'stats-2026-01.jsonl'), statLine(Date.UTC(2026, 0, 10), '/p', {
+      usage: {
+        inTok: 30,
+        outTok: 6,
+        records: [
+          { inTok: 20, modelId: 'm', outTok: 4, providerId: 'openai', ruleId: 'r1', totalTok: 24 },
+          { inTok: 10, modelId: 'm', outTok: 2, providerId: 'openai', ruleId: 'r2', totalTok: 12 },
+        ],
+        totalTok: 36,
+      },
+    }))
+    const all = await store.querySeries({ interval: 'day' })
+    const onlyR1 = await store.querySeries({ interval: 'day', rules: ['r1'] })
+
+    expect(all.totalTok).toBe(36)
+    expect(onlyR1.totalTok).toBe(24)
+    expect(onlyR1.buckets[0].totalTok).toBe(24)
+  })
+
+  it('returns an empty series when the dir does not exist', async () => {
+    const dir = join(await tmp(), 'nope')
+
+    const result = await createJsonlStatsStore({ dir }).querySeries()
+
+    expect(result.buckets).toEqual([])
+    expect(result.totalRuns).toBe(0)
   })
 })

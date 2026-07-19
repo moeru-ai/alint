@@ -23,7 +23,6 @@ async function seedStats(): Promise<{ cwd: string, io: TestIo }> {
   const run = {
     cwd,
     ruleCounts: { cached: 0, cancelled: 0, completed: 1, failed: 0, planned: 1 },
-    ruleDurations: [{ durationMs: 300, ruleId: 'r1' }],
     ts: Date.UTC(2026, 0, 10),
     usage: {
       inTok: 100,
@@ -81,18 +80,42 @@ describe('alint stats command', () => {
     expect(io.stderrText).toContain('Invalid --by "bogus"')
   })
 
-  it('renders a bar chart with --chart', async () => {
+  it('renders a horizontal usage timeline with --chart', async () => {
     const { io } = await seedStats()
 
-    const code = await executeCli(['node', 'alint', 'stats', '--by', 'rule', '--chart'], io)
+    const code = await executeCli(['node', 'alint', 'stats', '--chart'], io)
 
     expect(code).toBe(0)
+    expect(io.stdoutText).toContain('tokens by day')
+    // The seeded run lands on 2026-01-10.
+    expect(io.stdoutText).toContain('01-10')
     expect(io.stdoutText).toContain('█')
-    // The single seeded rule owns the whole run total.
-    expect(io.stdoutText).toContain('100.0%')
+    // Horizontal is the default: no vertical axis frame.
+    expect(io.stdoutText).not.toContain('┼')
   })
 
-  it('lets --json win over --chart', async () => {
+  it('draws vertical bars with --chart --vertical', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--chart', '--vertical'], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('┼')
+  })
+
+  it('lists the flags in stats help', async () => {
+    const { io } = await seedStats()
+
+    const code = await executeCli(['node', 'alint', 'stats', '--help'], io)
+
+    expect(code).toBe(0)
+    expect(io.stdoutText).toContain('Options:')
+    expect(io.stdoutText).toContain('--chart')
+    expect(io.stdoutText).toContain('--by')
+    expect(io.stdoutText).toContain('--exact-numbers')
+  })
+
+  it('dumps the series as JSON with --chart --json', async () => {
     const { io } = await seedStats()
 
     const code = await executeCli(['node', 'alint', 'stats', '--chart', '--json'], io)
@@ -100,26 +123,42 @@ describe('alint stats command', () => {
     expect(code).toBe(0)
     expect(io.stdoutText).not.toContain('█')
     const output = JSON.parse(io.stdoutText)
-    expect(output.dimension).toBe('model')
+    expect(output.interval).toBe('day')
+    expect(output.buckets).toHaveLength(1)
+    expect(output.buckets[0].runs).toBe(1)
   })
 
-  it('shows the recorded rule duration with --metric duration', async () => {
+  it('honors --interval for the chart bucket', async () => {
     const { io } = await seedStats()
 
-    const code = await executeCli(['node', 'alint', 'stats', '--by', 'rule', '--metric', 'duration'], io)
+    const code = await executeCli(['node', 'alint', 'stats', '--chart', '--interval', 'month', '--json'], io)
 
     expect(code).toBe(0)
-    // 300ms recorded for the seeded rule renders as 0.3s in the time column.
-    expect(io.stdoutText).toContain('0.3s')
+    const output = JSON.parse(io.stdoutText)
+    expect(output.interval).toBe('month')
+    expect(output.buckets[0].key).toBe('Jan')
   })
 
-  it('rejects --metric duration outside the rule dimension', async () => {
+  it('filters the chart by rule', async () => {
+    const present = await seedStats()
+    const kept = await executeCli(['node', 'alint', 'stats', '--chart', '--rule', 'r1', '--json'], present.io)
+
+    expect(kept).toBe(0)
+    expect(JSON.parse(present.io.stdoutText).totalTok).toBe(120)
+
+    const absent = await seedStats()
+    await executeCli(['node', 'alint', 'stats', '--chart', '--rule', 'nope', '--json'], absent.io)
+
+    expect(JSON.parse(absent.io.stdoutText).buckets).toHaveLength(0)
+  })
+
+  it('reports an invalid --interval', async () => {
     const { io } = await seedStats()
 
-    const code = await executeCli(['node', 'alint', 'stats', '--by', 'model', '--metric', 'duration'], io)
+    const code = await executeCli(['node', 'alint', 'stats', '--chart', '--interval', 'bogus'], io)
 
     expect(code).toBe(2)
-    expect(io.stderrText).toContain('only available with --by rule')
+    expect(io.stderrText).toContain('Invalid --interval "bogus"')
   })
 
   it('reports an invalid --metric', async () => {

@@ -5,15 +5,20 @@ export { createRunStat } from './record'
 export type { CreateRunStatInput } from './record'
 export { parseSince } from './since'
 export type {
-  RuleDuration,
   RunRuleCounts,
   RunStat,
   RunStatInput,
   RunStatUsage,
   StatsAggregate,
+  StatsBucket,
   StatsDimension,
+  StatsFilter,
   StatsGroupRow,
+  StatsInterval,
+  StatsMetric,
   StatsQuery,
+  StatsSeries,
+  StatsSeriesQuery,
   StatsStore,
   StatsUsageRecord,
 } from './types'

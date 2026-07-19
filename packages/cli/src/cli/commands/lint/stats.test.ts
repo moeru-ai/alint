@@ -1,4 +1,4 @@
-import type { JobEndPayload, JobStartPayload, RunEndPayload } from '@alint-js/core'
+import type { JobStartPayload, RunEndPayload } from '@alint-js/core'
 
 import { describe, expect, it } from 'vitest'
 
@@ -46,31 +46,6 @@ describe('createStatsCollector', () => {
 
   it('leaves duration undefined without timing', () => {
     expect(createStatsCollector().durationMs()).toBeUndefined()
-  })
-
-  it('sums per-rule busy-time from job events', () => {
-    const collector = createStatsCollector()
-
-    collector.reporter.onJobEnd?.(jobEnd('rule/a', 1000, 1400))
-    collector.reporter.onJobEnd?.(jobEnd('rule/a', 1400, 1600))
-    collector.reporter.onJobEnd?.(jobEnd('rule/b', 1000, 1100))
-
-    expect(collector.ruleDurations()).toEqual([
-      { durationMs: 600, ruleId: 'rule/a' },
-      { durationMs: 100, ruleId: 'rule/b' },
-    ])
-  })
-
-  it('leaves rule durations undefined without job events', () => {
-    expect(createStatsCollector().ruleDurations()).toBeUndefined()
-  })
-
-  it('ignores jobs missing start or end timing', () => {
-    const collector = createStatsCollector()
-
-    collector.reporter.onJobEnd?.(jobEnd('rule/a', 1000, undefined))
-
-    expect(collector.ruleDurations()).toBeUndefined()
   })
 })
 
@@ -150,16 +125,6 @@ describe('mergeProgressReporters', () => {
 
 function counts(overrides: Partial<RunEndPayload['execution']>): RunEndPayload['execution'] {
   return { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0, queued: 0, running: 0, skipped: 0, ...overrides }
-}
-
-function jobEnd(ruleId: string, startedAt: number, endedAt: number | undefined): JobEndPayload {
-  return {
-    cache: 'miss',
-    endedAt,
-    job: { ...jobStart().job, ruleId },
-    startedAt,
-    state: 'completed',
-  }
 }
 
 function jobStart(): JobStartPayload {

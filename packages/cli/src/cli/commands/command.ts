@@ -164,17 +164,18 @@ function formatCommandHelp(
       .join('\n'),
     title: 'Commands',
   }
+
+  const optionSection = formatOptionsSection(node.options ?? [])
   const usageIndex = normalizedSections.findIndex(section => section.title === 'Usage')
+  const withCommands = usageIndex === -1
+    ? [commandSection, ...normalizedSections]
+    : [
+        ...normalizedSections.slice(0, usageIndex + 1),
+        commandSection,
+        ...normalizedSections.slice(usageIndex + 1),
+      ]
 
-  if (usageIndex === -1) {
-    return [commandSection, ...normalizedSections]
-  }
-
-  return [
-    ...normalizedSections.slice(0, usageIndex + 1),
-    commandSection,
-    ...normalizedSections.slice(usageIndex + 1),
-  ]
+  return optionSection ? [...withCommands, optionSection] : withCommands
 }
 
 function formatExamples(examples: readonly string[]): string {
@@ -396,11 +397,14 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--config',
     '--cwd',
     '--format',
+    '--interval',
+    '--metric',
     '--model',
     '--provider-endpoint',
     '--provider-header',
     '--provider-id',
     '--provider-model',
+    '--rule',
     '--rule-concurrency',
     '--since',
     '--timeout-ms',
