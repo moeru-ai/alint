@@ -51,19 +51,6 @@ describe('createRunStat', () => {
     expect(stat.usage.records[1].inTok).toBe(50)
   })
 
-  it('passes rule durations through unchanged', () => {
-    const usage: RunUsage = { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 }
-
-    const stat = createRunStat({
-      cwd: '/p',
-      ruleCounts: { cached: 0, cancelled: 0, completed: 0, failed: 0, planned: 0 },
-      ruleDurations: [{ durationMs: 400, ruleId: 'r1' }],
-      usage,
-    })
-
-    expect(stat.ruleDurations).toEqual([{ durationMs: 400, ruleId: 'r1' }])
-  })
-
   it('defaults missing token fields to zero', () => {
     const usage: RunUsage = {
       inputTokens: 0,

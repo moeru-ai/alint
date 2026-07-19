@@ -2,9 +2,13 @@ import type {
   RunStat,
   RunStatInput,
   StatsAggregate,
+  StatsBucket,
   StatsDimension,
   StatsGroupRow,
+  StatsInterval,
   StatsQuery,
+  StatsSeries,
+  StatsSeriesQuery,
   StatsStore,
   StatsUsageRecord,
 } from './types'
@@ -17,10 +21,20 @@ import { parseSince } from './since'
 
 const DEFAULT_RETENTION_MONTHS = 12
 const STATS_FILE_PATTERN = /^stats-(\d{4})-(\d{2})\.jsonl$/u
+const DAY_MS = 86_400_000
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
 export interface JsonlStatsStoreOptions {
   dir: string
   retentionMonths?: number
+}
+
+interface RunSlice {
+  inTok: number
+  outTok: number
+  totalTok: number
+  touched: boolean
+  usageRecords: StatsUsageRecord[]
 }
 
 // JSONL-backed stats store: one line per run in monthly-rotated files under `options.dir`.
@@ -29,6 +43,7 @@ export function createJsonlStatsStore(options: JsonlStatsStoreOptions): StatsSto
 
   return {
     query: filter => query(options.dir, filter ?? {}, Date.now),
+    querySeries: filter => querySeries(options.dir, filter ?? {}, Date.now),
     record: input => record(options.dir, input, Date.now(), retentionMonths),
   }
 }
@@ -56,6 +71,87 @@ function accumulate(
   return row
 }
 
+function bucketLabel(startMs: number, interval: StatsInterval): string {
+  const date = new Date(startMs)
+
+  if (interval === 'month') {
+    return MONTH_LABELS[date.getUTCMonth()]!
+  }
+
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0')
+  const day = String(date.getUTCDate()).padStart(2, '0')
+
+  return `${month}-${day}`
+}
+
+function bucketStart(ts: number, interval: StatsInterval): number {
+  const date = new Date(ts)
+
+  if (interval === 'month') {
+    return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1)
+  }
+
+  const dayStart = Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate())
+
+  if (interval === 'week') {
+    // Shift back to the UTC Monday opening the week (getUTCDay: 0 = Sunday).
+    const backToMonday = (new Date(dayStart).getUTCDay() + 6) % 7
+
+    return dayStart - backToMonday * DAY_MS
+  }
+
+  return dayStart
+}
+
+// Auto-select the bucket.
+//
+// When `--since` sets a window, the window's length drives the granularity
+// (7d → day, ~1mo → week, longer → month), matching how observability dashboards
+// pick a resolution from the selected range. With no lower bound, fall back to
+// the spread of the data that actually exists.
+function chooseInterval(since: number | undefined, nowMs: number, timestamps: number[]): StatsInterval {
+  if (since !== undefined) {
+    return intervalForDuration(nowMs - since)
+  }
+
+  if (timestamps.length < 2) {
+    return 'day'
+  }
+
+  return intervalForDuration(Math.max(...timestamps) - Math.min(...timestamps))
+}
+
+function fillBuckets(buckets: Map<number, StatsBucket>, interval: StatsInterval): StatsBucket[] {
+  if (buckets.size === 0) {
+    return []
+  }
+
+  const starts = [...buckets.keys()].sort((left, right) => left - right)
+  const last = starts.at(-1)!
+  const filled: StatsBucket[] = []
+
+  for (let startMs = starts[0]!; startMs <= last; startMs = nextBucketStart(startMs, interval)) {
+    filled.push(buckets.get(startMs)
+      ?? { inTok: 0, key: bucketLabel(startMs, interval), outTok: 0, runs: 0, startMs, totalTok: 0 })
+  }
+
+  return filled
+}
+
+function intervalForDuration(ms: number): StatsInterval {
+  const days = ms / DAY_MS
+
+  if (days <= 21) {
+    return 'day'
+  }
+
+  if (days <= 120) {
+    return 'week'
+  }
+
+  return 'month'
+}
+
 function isEnoent(error: unknown): boolean {
   return error instanceof Error && (error as NodeJS.ErrnoException).code === 'ENOENT'
 }
@@ -64,6 +160,16 @@ function monthIndexOf(ts: number): number {
   const date = new Date(ts)
 
   return date.getUTCFullYear() * 12 + date.getUTCMonth()
+}
+
+function nextBucketStart(startMs: number, interval: StatsInterval): number {
+  if (interval === 'month') {
+    const date = new Date(startMs)
+
+    return Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1)
+  }
+
+  return startMs + (interval === 'week' ? 7 * DAY_MS : DAY_MS)
 }
 
 function parseRunLine(line: string): RunStat | undefined {
@@ -101,59 +207,102 @@ async function prune(dir: string, ts: number, retentionMonths: number): Promise<
 async function query(dir: string, filter: StatsQuery, now: () => number): Promise<StatsAggregate> {
   const dimension: StatsDimension = filter.by ?? 'model'
   const since = parseSince(filter.since, now())
+  const rules = ruleSet(filter.rules)
   const runs = await readRuns(dir)
   const rows = new Map<string, StatsGroupRow>()
   let totalRuns = 0
   let totalIn = 0
   let totalOut = 0
   let totalTok = 0
-  let totalDuration: number | undefined
 
   for (const run of runs) {
-    if (since !== undefined && run.ts < since) {
+    if (!runInWindow(run, since, filter.cwd)) {
       continue
     }
 
-    if (filter.cwd !== undefined && run.cwd !== filter.cwd) {
+    const slice = sliceRun(run, rules)
+
+    // A rule filter that matches nothing in this run drops it entirely.
+    if (!slice.touched) {
       continue
     }
 
     totalRuns += 1
-    totalIn += run.usage.inTok
-    totalOut += run.usage.outTok
-    totalTok += run.usage.totalTok
+    totalIn += slice.inTok
+    totalOut += slice.outTok
+    totalTok += slice.totalTok
 
     if (dimension === 'dir') {
-      accumulate(rows, run.cwd, run.usage.inTok, run.usage.outTok, run.usage.totalTok, true)
+      accumulate(rows, run.cwd, slice.inTok, slice.outTok, slice.totalTok, true)
       continue
     }
 
     const seenKeys = new Set<string>()
 
-    for (const usageRecord of run.usage.records) {
+    for (const usageRecord of slice.usageRecords) {
       const key = recordKey(usageRecord, dimension)
 
       accumulate(rows, key, usageRecord.inTok, usageRecord.outTok, usageRecord.totalTok, !seenKeys.has(key))
       seenKeys.add(key)
-    }
-
-    if (dimension !== 'rule') {
-      continue
-    }
-
-    for (const { durationMs, ruleId } of run.ruleDurations ?? []) {
-      const row = accumulate(rows, ruleId, 0, 0, 0, !seenKeys.has(ruleId))
-
-      seenKeys.add(ruleId)
-      row.durationMs = (row.durationMs ?? 0) + durationMs
-      totalDuration = (totalDuration ?? 0) + durationMs
     }
   }
 
   return {
     dimension,
     rows: [...rows.values()].sort((left, right) => right.totalTok - left.totalTok),
-    totalDuration,
+    totalIn,
+    totalOut,
+    totalRuns,
+    totalTok,
+  }
+}
+
+async function querySeries(dir: string, filter: StatsSeriesQuery, now: () => number): Promise<StatsSeries> {
+  const nowMs = now()
+  const since = parseSince(filter.since, nowMs)
+  const rules = ruleSet(filter.rules)
+  const runs = await readRuns(dir)
+  const sliced: Array<{ slice: RunSlice, ts: number }> = []
+
+  for (const run of runs) {
+    if (!runInWindow(run, since, filter.cwd)) {
+      continue
+    }
+
+    const slice = sliceRun(run, rules)
+
+    if (slice.touched) {
+      sliced.push({ slice, ts: run.ts })
+    }
+  }
+
+  const interval = filter.interval ?? chooseInterval(since, nowMs, sliced.map(entry => entry.ts))
+  const buckets = new Map<number, StatsBucket>()
+  let totalRuns = 0
+  let totalIn = 0
+  let totalOut = 0
+  let totalTok = 0
+
+  for (const { slice, ts } of sliced) {
+    const startMs = bucketStart(ts, interval)
+    const bucket = buckets.get(startMs)
+      ?? { inTok: 0, key: bucketLabel(startMs, interval), outTok: 0, runs: 0, startMs, totalTok: 0 }
+
+    bucket.runs += 1
+    bucket.inTok += slice.inTok
+    bucket.outTok += slice.outTok
+    bucket.totalTok += slice.totalTok
+    buckets.set(startMs, bucket)
+
+    totalRuns += 1
+    totalIn += slice.inTok
+    totalOut += slice.outTok
+    totalTok += slice.totalTok
+  }
+
+  return {
+    buckets: fillBuckets(buckets, interval),
+    interval,
     totalIn,
     totalOut,
     totalRuns,
@@ -204,6 +353,37 @@ function recordKey(record: StatsUsageRecord, dimension: StatsDimension): string 
   return `${record.providerId}/${record.modelId}`
 }
 
+function ruleSet(rules: string[] | undefined): Set<string> | undefined {
+  return rules && rules.length > 0 ? new Set(rules) : undefined
+}
+
+function runInWindow(run: RunStat, since: number | undefined, cwd: string | undefined): boolean {
+  return (since === undefined || run.ts >= since) && (cwd === undefined || run.cwd === cwd)
+}
+
+// Reduce a run to the part matching `rules`; with no filter it is the whole run.
+function sliceRun(run: RunStat, rules: Set<string> | undefined): RunSlice {
+  if (rules === undefined) {
+    return {
+      inTok: run.usage.inTok,
+      outTok: run.usage.outTok,
+      totalTok: run.usage.totalTok,
+      touched: true,
+      usageRecords: run.usage.records,
+    }
+  }
+
+  const usageRecords = run.usage.records.filter(record => rules.has(record.ruleId))
+
+  return {
+    inTok: sumBy(usageRecords, record => record.inTok),
+    outTok: sumBy(usageRecords, record => record.outTok),
+    totalTok: sumBy(usageRecords, record => record.totalTok),
+    touched: usageRecords.length > 0,
+    usageRecords,
+  }
+}
+
 function statsFileName(ts: number): string {
   const date = new Date(ts)
   const year = date.getUTCFullYear()
@@ -234,4 +414,14 @@ async function statsFiles(dir: string): Promise<Array<{ month: number, name: str
     })
     .filter((entry): entry is { month: number, name: string } => entry !== undefined)
     .sort((left, right) => left.month - right.month)
+}
+
+function sumBy<T>(items: T[], select: (item: T) => number): number {
+  let total = 0
+
+  for (const item of items) {
+    total += select(item)
+  }
+
+  return total
 }
