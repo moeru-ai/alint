@@ -19,26 +19,11 @@ const tools = createTools(ctx.cwd)
 const py = createTools(ctx.cwd, { ignore: [...DEFAULT_IGNORE_PATTERNS, '**/.venv/**'] })
 // Replace the builtins:
 const bare = createTools(ctx.cwd, { ignore: ['**/generated/**'] })
-// Confine an agent to non-secret files under the canonical repository root:
-const confined = createTools(ctx.cwd, { confined: true })
 ```
 
-In non-confined mode, `options.ignore` **replaces** the builtins
-(`git/build/dist/node_modules/vendor`); spread `DEFAULT_IGNORE_PATTERNS` to extend them instead.
-In confined mode, configured and per-call ignores append to the mandatory defaults and secret-file
-ignores; they cannot make a protected path readable.
+`options.ignore` **replaces** the builtins (`git/build/dist/node_modules/vendor`); spread
+`DEFAULT_IGNORE_PATTERNS` to extend them instead. Per-call ignores from the agent always append to the ignore list set at tool creation time.
 The underlying `listFiles` / `readFile` / `searchFiles` / `searchInFiles` are exported too.
-
-## Repository-confined mode
-
-`{ confined: true }` accepts only repository-relative paths, resolves symlinks before access,
-does not follow directory symlinks during discovery, and rejects likely credential files plus
-configured ignores. Direct reads are limited to 200,000 UTF-8 bytes per file. Listings show at
-most 160 paths, content searches show at most 24 matches, and one content search inspects at most
-20,000,000 bytes across otherwise eligible files. Truncated results include an explicit marker.
-
-Confinement assumes the checkout is not concurrently rewritten by another actor during a tool
-call; it is intended to bound an agent's repository exploration, not to isolate a hostile writer.
 
 ## When to use
 

@@ -15,9 +15,3 @@ Report only redundant-catch: an outer catch adds no behavior because the protect
 
 Do not report merely because a catch rethrows. Prove the imported or local callee's full error postcondition, compare all error metadata, and submit an empty review if the proof is incomplete.
 `.trim()
-
-export const redundantCatchVerificationPrompt = `
-An earlier independent pass submitted a clean review for a target that contains catch candidates. Challenge that conclusion rather than trusting it.
-
-For every supplied candidate line, trace the protected call into its implementation and try to prove that the catch's non-domain branch is unreachable. Submit a redundant-catch finding when the callee already preserves domain-error identity and normalizes every other real exit with the same metadata. Submit an empty review only after identifying a concrete reachable behavior the outer catch adds, or a concrete proof gap that repository reads cannot resolve.
-`.trim()

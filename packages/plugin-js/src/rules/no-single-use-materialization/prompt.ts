@@ -13,9 +13,3 @@ Report only single-use-materialization: a collection is produced once, consumed 
 
 Do not report merely because the target contains two loops. Trace the producer expression under the declared input contract, inspect a local helper when purity depends on it, and submit an empty review if the elimination proof is incomplete.
 `.trim()
-
-export const singleUseMaterializationVerificationPrompt = `
-An earlier independent pass submitted a clean review for a target with mechanically extracted collection-flow candidates. Challenge that conclusion.
-
-Trace each supplied declaration, producer, and consumer line as one possible maximal region. Try to prove single production, single immediate consumption, preserved order and exceptions, and whether an early-exiting consumer makes later pure production unnecessary. Submit a finding when the intermediate collection and extra pass are removable. Submit an empty review only after identifying a concrete observable behavior or intentional domain phase that requires materialization.
-`.trim()

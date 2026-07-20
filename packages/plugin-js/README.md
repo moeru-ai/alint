@@ -28,9 +28,7 @@ Five repository-aware rules are registered but intentionally not enabled by `rec
 
 ## Repository-aware review requirements
 
-The five opt-in rules require both a configured model and an agent adapter capable of tool calls. They use confined repository list, search, and read tools rooted at the lint working directory; review cost and latency therefore depend on the repository evidence needed for each target.
-
-A non-empty repository review is accepted only after at least one successful discovery call and one successful file read. Every finding must include concrete proof anchored to the target and, when repository locations are used, exact repo-relative `path:line` citations. Related locations are validated through confined reads and must appear in the proof.
+The five opt-in rules require both a configured model and an agent adapter capable of tool calls. They reuse the standard `@alint-js/tools-fs` list, search, and read tools, and ask the agent to include repository evidence with each finding.
 
 ## How to use
 

@@ -1,6 +1,6 @@
 import { glob } from 'tinyglobby'
 
-export const MAX_LISTED_FILES = 160
+const maxListedFiles = 160
 
 export const DEFAULT_IGNORE_PATTERNS: readonly string[] = [
   '**/.git/**',
@@ -11,25 +11,18 @@ export const DEFAULT_IGNORE_PATTERNS: readonly string[] = [
 ]
 
 export interface ListFilesOptions {
-  dot?: boolean
-  followSymbolicLinks?: boolean
   ignore?: readonly string[] | string
-  maxFiles?: number
   patterns?: readonly string[] | string
 }
 
 export async function listFiles(root: string, options: ListFilesOptions = {}): Promise<string[]> {
   try {
-    const files = await glob(options.patterns ?? '**/*', {
+    return (await glob(options.patterns ?? '**/*', {
       absolute: true,
       cwd: root,
-      dot: options.dot,
-      followSymbolicLinks: options.followSymbolicLinks,
       ignore: toStringArray(options.ignore),
       onlyFiles: true,
-    })
-
-    return files.slice(0, options.maxFiles ?? MAX_LISTED_FILES)
+    })).slice(0, maxListedFiles)
   }
   catch {
     return []

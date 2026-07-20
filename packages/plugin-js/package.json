@@ -16,9 +16,6 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
-    "oxc-parser": "catalog:"
-  },
   "devDependencies": {
     "@alint-js/core": "workspace:*",
     "@alint-js/plugin": "workspace:*",

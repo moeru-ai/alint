@@ -611,10 +611,6 @@ importers:
         version: 1.4.2(typescript@6.0.3)
 
   packages/plugin-js:
-    dependencies:
-      oxc-parser:
-        specifier: 'catalog:'
-        version: 0.140.0
     devDependencies:
       '@alint-js/core':
         specifier: workspace:*
