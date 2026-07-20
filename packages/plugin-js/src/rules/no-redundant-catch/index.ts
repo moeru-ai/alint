@@ -1,0 +1,1 @@
+export { redundantCatchRule } from './rule'
