@@ -1,0 +1,1 @@
+export { singleUseMaterializationRule } from './rule'

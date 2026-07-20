@@ -618,6 +618,9 @@ importers:
       '@alint-js/plugin':
         specifier: workspace:*
         version: link:../plugin
+      '@alint-js/tools-fs':
+        specifier: workspace:*
+        version: link:../tools-fs
       '@valibot/to-json-schema':
         specifier: 'catalog:'
         version: 1.7.1(valibot@1.4.2(typescript@6.0.3))

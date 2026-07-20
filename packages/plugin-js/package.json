@@ -19,6 +19,7 @@
   "devDependencies": {
     "@alint-js/core": "workspace:*",
     "@alint-js/plugin": "workspace:*",
+    "@alint-js/tools-fs": "workspace:*",
     "@valibot/to-json-schema": "catalog:",
     "apeira": "catalog:",
     "valibot": "catalog:"
