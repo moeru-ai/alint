@@ -58,9 +58,10 @@ export interface RuleRuntimeState {
   activeFilePath?: string
   bucket: RuleExecutionBucket
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  job: ProgressJob
+  jobRef: ProgressJob
   reporterCause?: unknown
   reporterFailed: boolean
+  sealed: boolean
   signal: AbortSignal
 }
 

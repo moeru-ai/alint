@@ -3009,13 +3009,13 @@ describe('runAlint', () => {
     expect(maximum).toBe(3)
   })
 
-  it('keeps diagnostics and usage input ordered when jobs finish out of order', async () => {
+  it('keeps the complete result input ordered across sequential and reverse completion', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-opposite-completion-'))
     const filePath = join(root, 'demo.txt')
     await writeFile(filePath, 'hello\n')
 
-    const runWithCompletionOrder = async (completionOrder: number[]) => {
-      const releases = Array.from({ length: 3 }, () => {
+    const runWithConcurrency = async (ruleConcurrency: 1 | 2, completionOrder?: number[]) => {
+      const releases = Array.from({ length: 2 }, () => {
         let release!: () => void
         const promise = new Promise<void>((resolve) => {
           release = resolve
@@ -3027,7 +3027,7 @@ describe('runAlint', () => {
       const startedPromise = new Promise<void>((resolve) => {
         allStarted = resolve
       })
-      const names = ['first', 'second', 'third']
+      const names = ['first', 'second']
       const observationOrder: string[] = []
       const rules = Object.fromEntries(names.map((name, index) => [name, defineRule({
         create: ctx => ({
@@ -3035,7 +3035,8 @@ describe('runAlint', () => {
             started += 1
             if (started === names.length)
               allStarted()
-            await releases[index]!.promise
+            if (completionOrder)
+              await releases[index]!.promise
             observationOrder.push(name)
             ctx.report({ message: `${name}:diagnostic:1` })
             ctx.report({ message: `${name}:diagnostic:2` })
@@ -3048,49 +3049,43 @@ describe('runAlint', () => {
         config: createConfig(rules, {
           'company/first': 'warn',
           'company/second': 'warn',
-          'company/third': 'warn',
         }, {}, { language: 'text/plain' }),
         files: [filePath],
-        runner: { cache: false, ruleConcurrency: 3 },
+        runner: { cache: false, ruleConcurrency },
         setupConfig: createSetupConfig(),
       })
 
-      await startedPromise
-      for (const index of completionOrder) {
-        releases[index]!.release()
-        await Promise.resolve()
+      if (completionOrder) {
+        await startedPromise
+        for (const index of completionOrder) {
+          releases[index]!.release()
+          await Promise.resolve()
+        }
       }
       const result = await run
       return {
         observationOrder,
-        projected: {
-          diagnostics: result.diagnostics,
-          usage: result.usage.records,
-        },
+        projected: result,
       }
     }
 
-    const forward = await runWithCompletionOrder([0, 1, 2])
-    const reverse = await runWithCompletionOrder([2, 1, 0])
+    const sequential = await runWithConcurrency(1)
+    const reverse = await runWithConcurrency(2, [1, 0])
 
-    expect(forward.observationOrder).toEqual(['first', 'second', 'third'])
-    expect(reverse.observationOrder).toEqual(['third', 'second', 'first'])
-    expect(reverse.projected).toEqual(forward.projected)
-    expect(forward.projected.diagnostics.map(diagnostic => diagnostic.message)).toEqual([
+    expect(sequential.observationOrder).toEqual(['first', 'second'])
+    expect(reverse.observationOrder).toEqual(['second', 'first'])
+    expect(reverse.projected).toEqual(sequential.projected)
+    expect(sequential.projected.diagnostics.map(diagnostic => diagnostic.message)).toEqual([
       'first:diagnostic:1',
       'first:diagnostic:2',
       'second:diagnostic:1',
       'second:diagnostic:2',
-      'third:diagnostic:1',
-      'third:diagnostic:2',
     ])
-    expect(forward.projected.usage.map(record => record.modelId)).toEqual([
+    expect(sequential.projected.usage.records.map(record => record.modelId)).toEqual([
       'first:model:1',
       'first:model:2',
       'second:model:1',
       'second:model:2',
-      'third:model:1',
-      'third:model:2',
     ])
   })
 
@@ -3098,14 +3093,18 @@ describe('runAlint', () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-failure-drain-'))
     const filePath = join(root, 'demo.txt')
     const visited: string[] = []
+    const thrownFailures: Error[] = []
     await writeFile(filePath, 'hello\n')
     const names = Array.from({ length: 8 }, (_, index) => `job-${index}`)
     const rules = Object.fromEntries(names.map((name, index) => [name, defineRule({
       create: () => ({
         onTargetFile: () => {
           visited.push(name)
-          if (index === 1 || index === 4)
-            throw new Error(`${name}:failure`)
+          if (index === 1 || index === 4) {
+            const error = new Error(`${name}:failure`)
+            thrownFailures.push(error)
+            throw error
+          }
         },
       }),
     })]))
@@ -3136,7 +3135,76 @@ describe('runAlint', () => {
     ])
     expect((runError as AlintRunError).result.execution).toMatchObject({ completed: 6, failed: 2, planned: 8, queued: 0, running: 0 })
     expect((runError as AlintRunError).cause).toBeInstanceOf(AggregateError)
+    expect(((runError as AlintRunError).cause as AggregateError).errors.map(error => error.message)).toEqual([
+      'job-1:failure',
+      'job-4:failure',
+    ])
+    expect(((runError as AlintRunError).cause as AggregateError).errors[0]).not.toBe(thrownFailures[0])
+    expect(((runError as AlintRunError).cause as AggregateError).errors[1]).not.toBe(thrownFailures[1])
     expect(visited).toEqual(names)
+  })
+
+  it('isolates failures from mutating job progress reporters', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-progress-job-snapshot-'))
+    const filePath = join(root, 'demo.txt')
+    const callbackJobs: ProgressJob[] = []
+    let originalTargetIdentity = ''
+    await writeFile(filePath, 'hello\n')
+    const rule = defineRule({
+      create: () => ({
+        onTargetFile: () => {
+          throw new Error('original rule failure')
+        },
+      }),
+    })
+
+    let runError: unknown
+    try {
+      await runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'text/plain' }),
+        files: [filePath],
+        progress: {
+          onJobEnd: ({ failure, job }) => {
+            callbackJobs.push(job)
+            job.id = 'mutated end id'
+            job.target.name = 'mutated end target'
+            if (failure) {
+              failure.message = 'mutated end failure'
+              failure.job.inputPath = 'mutated failure path'
+              Object.assign(failure, { backlink: 'attached failure sentinel' })
+            }
+          },
+          onJobQueued: ({ job }) => {
+            callbackJobs.push(job)
+            originalTargetIdentity = job.target.identity
+            job.id = 'mutated queued id'
+            job.target.name = 'mutated queued target'
+          },
+          onJobStart: ({ job }) => {
+            callbackJobs.push(job)
+            job.inputPath = 'mutated start path'
+            job.target.identity = 'mutated start target'
+          },
+        },
+        runner: { cache: false },
+        setupConfig: createSetupConfig(),
+      })
+    }
+    catch (error) {
+      runError = error
+    }
+
+    expect(runError).toBeInstanceOf(AlintRunError)
+    const failure = (runError as AlintRunError).failures[0]!
+    expect(failure.message).toBe('original rule failure')
+    expect(failure.job.id).not.toContain('mutated')
+    expect(failure.job.inputPath).toBe(filePath)
+    expect(failure.job.target).toEqual({ identity: originalTargetIdentity, kind: 'file', name: undefined })
+    expect(callbackJobs).toHaveLength(3)
+    expect(callbackJobs[0]).not.toBe(callbackJobs[1])
+    expect(callbackJobs[1]).not.toBe(callbackJobs[2])
+    expect(callbackJobs[2]).not.toBe(failure.job)
+    expect(JSON.stringify(runError)).not.toContain('attached failure sentinel')
   })
 
   it('cancels queued jobs without emitting rule events for them', async () => {
