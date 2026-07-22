@@ -127,15 +127,17 @@ function updateProvider(
   providerId: string,
   update: (provider: ProviderDefinition) => ProviderDefinition,
 ): SetupConfig {
-  if (!config.providers.some(provider => provider.id === providerId)) {
+  const providerIndex = config.providers.findIndex(provider => provider.id === providerId)
+
+  if (providerIndex === -1) {
     throw new Error(`Unknown provider "${providerId}".`)
   }
 
   return {
     ...config,
-    providers: config.providers.map((provider) => {
+    providers: config.providers.map((provider, index) => {
       const clonedProvider = cloneProvider(provider)
-      return provider.id === providerId ? update(clonedProvider) : clonedProvider
+      return providerIndex === index ? update(clonedProvider) : clonedProvider
     }),
   }
 }

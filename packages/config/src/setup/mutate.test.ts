@@ -272,6 +272,58 @@ describe('setup config mutations', () => {
     expectOriginalConfigUnchanged(config)
   })
 
+  it('updates only the first provider when ids are duplicated', () => {
+    const config = createSetupConfig()
+    const duplicate: ProviderDefinition = {
+      endpoint: 'https://duplicate.example/v1',
+      headers: { 'X-Duplicate': 'true' },
+      id: 'primary',
+      models: [
+        {
+          aliases: ['duplicate'],
+          capabilities: ['vision'],
+          defaultParams: { quality: 'high' },
+          id: 'duplicate-model',
+          name: 'Duplicate Model',
+        },
+      ],
+      type: 'openai-compatible',
+    }
+    config.providers.push(duplicate)
+
+    const result = setProviderEndpoint(config, 'primary', 'https://changed.example/v1')
+    const resultDuplicate = result.providers[2]!
+    const resultDuplicateModel = resultDuplicate.models[0]!
+    const duplicateModel = duplicate.models[0]!
+
+    expect(result.providers[0]?.endpoint).toBe('https://changed.example/v1')
+    expect(resultDuplicate.endpoint).toBe('https://duplicate.example/v1')
+    expect(resultDuplicate).toEqual(duplicate)
+    expect(resultDuplicate).not.toBe(duplicate)
+    expect(resultDuplicate.headers).not.toBe(duplicate.headers)
+    expect(resultDuplicate.models).not.toBe(duplicate.models)
+    expect(resultDuplicateModel).not.toBe(duplicateModel)
+    expect(resultDuplicateModel.aliases).not.toBe(duplicateModel.aliases)
+    expect(resultDuplicateModel.capabilities).not.toBe(duplicateModel.capabilities)
+    expect(resultDuplicateModel.defaultParams).not.toBe(duplicateModel.defaultParams)
+
+    resultDuplicate.headers!['X-Duplicate'] = 'changed'
+    resultDuplicate.models.push({ id: 'mutated' })
+    resultDuplicateModel.name = 'Mutated Model'
+    resultDuplicateModel.aliases?.push('mutated')
+    resultDuplicateModel.capabilities?.push('mutated')
+    resultDuplicateModel.defaultParams!.quality = 'low'
+
+    expect(duplicate.endpoint).toBe('https://duplicate.example/v1')
+    expect(duplicate.headers).toEqual({ 'X-Duplicate': 'true' })
+    expect(duplicate.models.map(model => model.id)).toEqual(['duplicate-model'])
+    expect(duplicateModel.name).toBe('Duplicate Model')
+    expect(duplicateModel.aliases).toEqual(['duplicate'])
+    expect(duplicateModel.capabilities).toEqual(['vision'])
+    expect(duplicateModel.defaultParams).toEqual({ quality: 'high' })
+    expectOriginalConfigUnchanged({ ...config, providers: config.providers.slice(0, 2) })
+  })
+
   it('merges and replaces one provider header', () => {
     const config = createSetupConfig()
     const result = setProviderHeader(config, 'primary', 'Authorization', 'Bearer changed')
