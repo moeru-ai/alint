@@ -77,6 +77,17 @@ Use `alint setup` to write provider configuration. The `-N` flag is short for `-
 
 Without `--local`, setup writes the global config at `~/.config/alint/config.toml`. With `--local`, it writes `.alint/config.toml` in the current project.
 
+Provider management commands use the same scope policy: writes target the global config by default, and `--local` selects the current project's config. Update an existing provider or edit individual fields with:
+
+```bash
+alint config providers update --provider openrouter
+alint config providers set --provider openrouter endpoint https://openrouter.ai/api/v1
+alint config providers set --provider openrouter headers.Authorization "Bearer $TOKEN"
+alint config providers unset --provider openrouter headers.Authorization
+```
+
+`providers update` probes the provider and adds newly reported models. It is additive, so it does not remove configured models that are absent from the response. Header values supplied as command arguments may remain in shell history. Use an environment variable such as `$TOKEN`, not a literal credential.
+
 <details>
 <summary>Ollama</summary>
 
@@ -169,9 +180,17 @@ Useful CLI commands:
 ```bash
 alint config inspect src/index.ts
 alint config providers list
+alint config providers show openrouter
 alint config models list
-alint config models probe
+alint config models show ollama/qwen
+alint config models probe --endpoint http://localhost:11434/v1
+alint config models rm qwen --provider ollama
+alint config models prune --provider ollama -N --yes
 ```
+
+When a model ID exists under multiple providers, qualify it as `<provider>/<model-id>` or pass `--provider <provider-id>`. Configuration mutations write globally unless `--local` selects the current project's setup config.
+
+`models rm` removes one exact configured model. `models prune` probes provider model endpoints and destructively removes configured IDs that are no longer reported. Interactive prune asks for confirmation; scripts must pass `-N --yes`.
 
 Save machine-readable output and inspect it later without rerunning model calls:
 

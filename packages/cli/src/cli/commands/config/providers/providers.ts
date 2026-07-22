@@ -16,5 +16,22 @@ export const providers = defineCommand({
     unset,
   ],
   description: 'Manage configured providers',
+  examples: [
+    [
+      '# Probe and add newly reported models without removing configured models',
+      'alint config providers update --provider openrouter',
+    ].join('\n'),
+    [
+      '# Set or unset one provider header',
+      'alint config providers set --provider openrouter headers.Authorization "Bearer $TOKEN"',
+      'alint config providers unset --provider openrouter headers.Authorization',
+    ].join('\n'),
+  ],
+  help: [
+    'Inspect and edit providers in alint setup configuration.',
+    'Provider update is additive: it keeps configured models that the remote endpoint no longer reports. Use config models prune when you intend to remove unavailable models.',
+    'Writes use global scope by default. Pass --local to select the current project\'s setup configuration.',
+    'Header values passed as command arguments may remain in shell history. Use environment-variable placeholders such as $TOKEN instead of literal secrets.',
+  ].join('\n\n'),
   name: 'providers',
 })

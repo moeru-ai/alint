@@ -688,8 +688,69 @@ local = "./plugins/local-plugin"
     expect(io.stdoutText).toContain('config models probe')
     expect(io.stdoutText).toContain('config models list')
     expect(io.stdoutText).toContain('config models show <model>')
+    expect(io.stdoutText).toContain('config models rm <model-id>')
+    expect(io.stdoutText).toContain('config models prune')
+    expect(io.stdoutText).toContain('alint config models rm qwen --provider ollama')
+    expect(io.stdoutText).toContain('alint config models prune --provider ollama -N --yes')
     expect(io.stdoutText).not.toContain('config providers')
     expect(io.stdoutText).not.toContain('--provider-header')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints provider management commands and examples in config providers help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', 'providers', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('config providers update')
+    expect(io.stdoutText).toContain('config providers set <key> <value>')
+    expect(io.stdoutText).toContain('config providers unset <key>')
+    expect(io.stdoutText).toContain('alint config providers update --provider openrouter')
+    expect(io.stdoutText).toContain('alint config providers set --provider openrouter headers.Authorization "Bearer $TOKEN"')
+    expect(io.stdoutText).toContain('alint config providers unset --provider openrouter headers.Authorization')
+    expect(io.stdoutText).not.toContain('--yes')
+    expect(io.stderrText).toBe('')
+  })
+
+  it.each([
+    {
+      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      command: ['config', 'models', 'rm'],
+      options: ['--provider <id>', '--local'],
+      usage: '$ alint config models rm <model-id>',
+    },
+    {
+      absentOptions: ['--provider-header'],
+      command: ['config', 'models', 'prune'],
+      options: ['--provider <id>', '--local', '-N, --no-interactive', '--yes'],
+      usage: '$ alint config models prune',
+    },
+    {
+      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      command: ['config', 'providers', 'set'],
+      options: ['--provider <id>', '--local'],
+      usage: '$ alint config providers set <key> <value>',
+    },
+    {
+      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      command: ['config', 'providers', 'unset'],
+      options: ['--provider <id>', '--local'],
+      usage: '$ alint config providers unset <key>',
+    },
+  ])('prints only relevant options in $usage help', async ({ absentOptions, command, options, usage }) => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', ...command, '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain(usage)
+    for (const option of options) {
+      expect(io.stdoutText).toContain(option)
+    }
+    for (const option of absentOptions) {
+      expect(io.stdoutText).not.toContain(option)
+    }
     expect(io.stderrText).toBe('')
   })
 
