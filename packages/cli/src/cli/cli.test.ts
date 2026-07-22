@@ -13,6 +13,7 @@ import * as alintCore from '@alint-js/core'
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
+import { runPruneModelsCommand } from './commands/config/models/prune'
 import { providerUpdateSource } from './commands/config/providers/update'
 import { resolveRunnerConfig } from './commands/lint/runner'
 import { createProviderId, providerSetupSources } from './provider-registry'
@@ -2391,6 +2392,90 @@ local = "./plugins/local-plugin"
       )
       expect(io.stdoutText.split('\n')).toHaveLength(3)
       expect(io.stderrText.split('\n')).toHaveLength(2)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it.each(['declined', 'cancelled'] as const)(
+    'reaches prune confirmation in TTY mode and returns 1 without writing when %s',
+    async (confirmation) => {
+      const io = await createTestIo()
+      io.stdin = { isTTY: true }
+      io.stdout.isTTY = true
+      const configPath = getGlobalSetupConfigPath(io.env)
+      const server = await withModelsServer(() => ({ body: { data: [] } }))
+      const confirm = vi.fn(async () => confirmation)
+
+      try {
+        await writeSetupConfig(configPath, {
+          providers: [{
+            endpoint: server.endpoint,
+            id: 'example',
+            models: [{ id: 'stale' }],
+            type: 'openai-compatible',
+          }],
+          version: 1,
+        })
+        const before = await readFile(configPath, 'utf8')
+
+        const exitCode = await runPruneModelsCommand({
+          globalOptions: {},
+          interceptConsoleOutput: () => () => {},
+          io,
+          setupNoInteractive: false,
+        }, {}, confirm)
+
+        expect(exitCode).toBe(1)
+        expect(confirm).toHaveBeenCalledOnce()
+        expect(await readFile(configPath, 'utf8')).toBe(before)
+      }
+      finally {
+        await server.close()
+      }
+    },
+  )
+
+  it('redacts malformed secret-bearing headers from line-safe prune probe failures', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [] } }))
+    const endpoint = `${server.endpoint}\u2028models`
+    const secret = 'Bearer top-secret\nInjected'
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint,
+          headers: { Authorization: secret },
+          id: 'failed\nprovider',
+          models: [{ id: 'keep-unchanged' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      const before = await readFile(configPath, 'utf8')
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toBe(
+        `failed to probe provider "failed\\nprovider" at "${server.endpoint}\\u2028models".\n`,
+      )
+      expect(io.stderrText).not.toContain('top-secret')
+      expect(io.stderrText).not.toContain('Injected')
+      expect(io.stderrText.split('\n')).toHaveLength(2)
+      expect(io.stdoutText).toBe('no models to prune.\n')
+      expect(await readFile(configPath, 'utf8')).toBe(before)
     }
     finally {
       await server.close()

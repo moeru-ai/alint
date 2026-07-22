@@ -7,6 +7,7 @@ import { executeCli } from '../cli'
 void executeCli(process.argv, {
   cwd: process.cwd(),
   stderr: process.stderr,
+  stdin: process.stdin,
   stdout: process.stdout,
 }).then((exitCode) => {
   process.exitCode = exitCode

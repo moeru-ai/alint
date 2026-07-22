@@ -3,12 +3,13 @@ import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@ali
 import type { CommandContext } from '../../command'
 
 import { pruneProviderModels, writeSetupConfig } from '@alint-js/config'
-import { errorMessageFrom } from '@moeru/std/error'
 
 import { escapeLineValue } from '../../../output'
 import { probeModels } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
+
+export type PruneConfirmation = () => Promise<'cancelled' | 'confirmed' | 'declined'>
 
 export interface PruneOptions {
   local?: boolean
@@ -34,13 +35,6 @@ export const prune = defineCommand({
   ],
 })
 
-function applyPlans(config: SetupConfig, plans: readonly ProviderPrunePlan[]): SetupConfig {
-  return plans.reduce(
-    (nextConfig, plan) => pruneProviderModels(nextConfig, plan.provider.id, plan.remoteModelIds),
-    config,
-  )
-}
-
 /**
  * Removes configured models absent from their providers' model registries.
  *
@@ -54,13 +48,15 @@ function applyPlans(config: SetupConfig, plans: readonly ProviderPrunePlan[]): S
  * - {@link dispatchCommand}
  *
  * Downstream:
+ * - {@link confirmPruneModels}
  * - {@link probeModels}
  * - {@link pruneProviderModels}
  * - {@link writeSetupConfig}
  */
-async function runPruneModelsCommand(
+export async function runPruneModelsCommand(
   context: CommandContext,
   options: PruneOptions,
+  confirm: PruneConfirmation = confirmPruneModels,
 ): Promise<number> {
   if (Array.isArray(options.provider)) {
     context.io.stderr.write('config models prune accepts --provider only once.\n')
@@ -99,10 +95,10 @@ async function runPruneModelsCommand(
     try {
       remoteModelIds = new Set(await probeModels(provider.endpoint, provider.headers))
     }
-    catch (error) {
+    catch {
       hadFailure = true
       context.io.stderr.write(
-        `failed to probe provider "${escapeLineValue(provider.id)}": ${errorMessageFrom(error) ?? 'Unknown error.'}\n`,
+        `failed to probe provider "${escapeLineValue(provider.id)}" at "${escapeLineValue(provider.endpoint)}".\n`,
       )
       continue
     }
@@ -147,10 +143,7 @@ async function runPruneModelsCommand(
       return 2
     }
 
-    const prompts = await import('@clack/prompts')
-    const confirmed = await prompts.confirm({ message: 'Remove these configured models?' })
-
-    if (prompts.isCancel(confirmed) || confirmed !== true) {
+    if (await confirm() !== 'confirmed') {
       return 1
     }
   }
@@ -158,4 +151,22 @@ async function runPruneModelsCommand(
   const nextConfig = applyPlans(config, plans)
   await writeSetupConfig(path, nextConfig)
   return hadFailure ? 2 : 0
+}
+
+function applyPlans(config: SetupConfig, plans: readonly ProviderPrunePlan[]): SetupConfig {
+  return plans.reduce(
+    (nextConfig, plan) => pruneProviderModels(nextConfig, plan.provider.id, plan.remoteModelIds),
+    config,
+  )
+}
+
+async function confirmPruneModels(): Promise<'cancelled' | 'confirmed' | 'declined'> {
+  const prompts = await import('@clack/prompts')
+  const confirmed = await prompts.confirm({ message: 'Remove these configured models?' })
+
+  if (prompts.isCancel(confirmed)) {
+    return 'cancelled'
+  }
+
+  return confirmed ? 'confirmed' : 'declined'
 }
