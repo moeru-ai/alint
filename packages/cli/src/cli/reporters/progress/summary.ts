@@ -49,13 +49,13 @@ interface RuleGroup {
 }
 
 interface SummaryState {
+  animationTick: number
   cachedTokens: number
   diagnostics: Diagnostic[]
   execution: ExecutionCounts
   jobs: Map<string, JobState>
   jobTokens: Map<string, number>
   runStartedAt?: number
-  spinnerIndex: number
   totalTokens: number
 }
 
@@ -112,12 +112,28 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       state.cachedTokens = payload.usage.cached?.totalTokens ?? 0
       state.runStartedAt = payload.startedAt ?? state.runStartedAt
     },
+    /**
+     * Resets summary state when the core run starts.
+     *
+     * Triggering workflow:
+     *
+     * `@alint-js/core run`
+     *   -> `ProgressReporter.onRunStart`
+     *     -> `createRenderingProgressReporter(...).onRunStart`
+     *       -> `SummaryProgressReporter.onRunStart` (this handler)
+     *
+     * Upstream:
+     * - `createRenderingProgressReporter(...).onRunStart`
+     *
+     * Downstream:
+     * - Resets `state.animationTick` and run data consumed by {@link createRows}.
+     */
     onRunStart: ({ jobsTotal, startedAt }) => {
       state.diagnostics = []
       state.execution = createCounts(jobsTotal)
       state.jobs.clear()
       state.runStartedAt = startedAt ?? now()
-      state.spinnerIndex = 0
+      state.animationTick = 0
       state.cachedTokens = 0
       state.jobTokens.clear()
       state.totalTokens = 0
@@ -131,8 +147,23 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
           state.totalTokens += record.totalTokens
       }
     },
+    /**
+     * Advances the summary animation on each renderer interval.
+     *
+     * Triggering workflow:
+     *
+     * `createTtyProgressRenderer`
+     *   -> `createCliProgressReporter` `createInterval` callback
+     *     -> `SummaryProgressReporter.tick` (this handler)
+     *
+     * Upstream:
+     * - `createCliProgressReporter` `createInterval` callback registered by `createTtyProgressRenderer`
+     *
+     * Downstream:
+     * - Increments `state.animationTick`, consumed by {@link createRows}, {@link formatSpinnerFrame}, and {@link formatMiniBarSegment}.
+     */
     tick: () => {
-      state.spinnerIndex = (state.spinnerIndex + 1) % Math.max(options.spinnerFrames.length, 1)
+      state.animationTick += 1
     },
   }
 }
@@ -187,12 +218,12 @@ function createCounts(planned = 0): ExecutionCounts {
 
 function createInitialState(): SummaryState {
   return {
+    animationTick: 0,
     cachedTokens: 0,
     diagnostics: [],
     execution: createCounts(),
     jobs: new Map(),
     jobTokens: new Map(),
-    spinnerIndex: 0,
     totalTokens: 0,
   }
 }
@@ -365,7 +396,7 @@ function formatDuration(ms: number): string {
 function formatFooters(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {
   const terminal = terminalCount(state.execution)
   const elapsed = state.runStartedAt === undefined ? 0 : now - state.runStartedAt
-  const progressBar = formatMiniBarSegment(terminal, state.execution.planned, state.spinnerIndex, options)
+  const progressBar = formatMiniBarSegment(terminal, state.execution.planned, state.animationTick, options)
   const eta = estimateEta(elapsed, terminal, state.execution.planned)
   const projectedTokens = terminal > 0 && state.execution.planned > 0
     ? Math.ceil((state.totalTokens + state.cachedTokens) * state.execution.planned / terminal)
@@ -386,15 +417,19 @@ function formatMiniBarSegment(completed: number, planned: number, tick: number, 
 }
 
 function formatRuleRow(group: RuleGroup, state: SummaryState, options: SummaryProgressReporterOptions): string {
-  const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
+  const spinner = formatSpinnerFrame(state.animationTick, options.spinnerFrames)
   const terminal = group.completed + group.cached + group.failed + group.cancelled + group.skipped
   const percent = group.planned > 0 ? Math.floor((terminal / group.planned) * 100) : 0
-  const bar = formatMiniBarSegment(terminal, group.planned, state.spinnerIndex, options)
+  const bar = formatMiniBarSegment(terminal, group.planned, state.animationTick, options)
   const running = group.jobs.filter(job => job.state === 'running').length
   const failed = group.failed > 0 ? ` ${group.failed} failed` : ''
   const eta = estimateEta(group.terminalDurationMs, terminal, group.planned)
 
   return fitRow(`${spinner} ${group.ruleId} ${terminal}/${group.planned} ${percent}%${bar} ${eta} ${running} running${failed}`, options.columns)
+}
+
+function formatSpinnerFrame(animationTick: number, spinnerFrames: string[]): string {
+  return spinnerFrames[animationTick % Math.max(spinnerFrames.length, 1)] ?? ''
 }
 
 function formatTargetRow(jobState: JobState, options: SummaryProgressReporterOptions, now: number, last: boolean): string {
@@ -419,7 +454,7 @@ function styleRow(
   options: SummaryProgressReporterOptions,
 ): string {
   let styledRow = row
-  const spinner = options.spinnerFrames[state.spinnerIndex] ?? ''
+  const spinner = formatSpinnerFrame(state.animationTick, options.spinnerFrames)
 
   if (spinner)
     styledRow = styledRow.replace(spinner, colors.cyan(spinner))
