@@ -2,6 +2,8 @@ import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@ali
 
 import { getBorderCharacters, table } from 'table'
 
+import { escapeLineValue } from './output'
+
 export interface FlattenedModel {
   model: SetupModelDefinition
   provider: ProviderDefinition
@@ -15,15 +17,9 @@ export interface ProviderSetupSource {
   value: 'cliProxyApi' | 'custom' | 'manual' | 'ollama'
 }
 
-// JSON string escaping prevents control characters from creating terminal lines;
-// removing only the outer quotes keeps ordinary identifiers byte-for-byte stable.
-export function escapeLineValue(value: string): string {
-  return JSON.stringify(value).slice(1, -1)
-}
-
 export function formatDuplicateModelIdentity(identity: string): string {
   return [
-    `model ${JSON.stringify(identity)} is configured more than once.`,
+    `model "${escapeLineValue(identity)}" is configured more than once.`,
     'remove duplicate provider/model definitions from the setup configuration.',
     '',
   ].join('\n')

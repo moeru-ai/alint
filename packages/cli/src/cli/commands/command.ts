@@ -1,5 +1,7 @@
 import type { Cli, CliIo, CliWritable } from '../types'
 
+import { escapeLineValue } from '../output'
+
 export type CommandAction = (
   context: CommandContext,
   ...args: any[]
@@ -112,7 +114,7 @@ function dispatchCommand(
 
     if (unexpectedArgument !== undefined) {
       context.io.stderr.write(
-        `unexpected argument ${JSON.stringify(unexpectedArgument)}. usage: alint ${formatUsagePattern(path, node)}.\n`,
+        `unexpected argument "${escapeLineValue(unexpectedArgument)}". usage: alint ${formatUsagePattern(path, node)}.\n`,
       )
       return Promise.resolve(2)
     }

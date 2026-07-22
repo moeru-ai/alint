@@ -8,7 +8,7 @@ export type ExactModelTargetResult
   = | { candidates: Array<{ modelId: string, providerId: string }>, status: 'ambiguous' }
     | { model: SetupModelDefinition, provider: ProviderDefinition, status: 'found' }
     | { modelId: string, provider?: ProviderDefinition, status: 'missing' }
-    | { modelId: string, providerId: string, status: 'duplicate' }
+    | { providerId: string, status: 'duplicate-provider' }
     | { providerId: string, status: 'unknown-provider' }
     | { qualifiedProviderId: string, requestedProviderId: string, status: 'conflict' }
 
@@ -50,30 +50,33 @@ export function resolveExactModelTarget(
   }
 
   const selectedProviders = qualifiedProviders.length > 0 ? qualifiedProviders : requestedProviders
+  const selectedProvider = selectedProviders[0]
+  if (selectedProvider !== undefined && selectedProviders.length > 1) {
+    return { providerId: selectedProvider.id, status: 'duplicate-provider' }
+  }
+
   const searchedProviders = selectedProviders.length > 0 ? selectedProviders : config.providers
-  const candidates = searchedProviders.flatMap(provider =>
-    provider.models
-      .filter(model => model.id === modelId)
-      .map(model => ({ model, provider })),
+  const matchingProviders = searchedProviders.filter(provider =>
+    provider.models.some(model => model.id === modelId),
   )
+
+  if (selectedProviders.length === 0) {
+    const duplicateProvider = matchingProviders.find(provider =>
+      config.providers.filter(candidate => candidate.id === provider.id).length > 1,
+    )
+
+    if (duplicateProvider !== undefined) {
+      return { providerId: duplicateProvider.id, status: 'duplicate-provider' }
+    }
+  }
+
+  const candidates = matchingProviders.flatMap((provider) => {
+    const model = findExactModel(provider, modelId)
+    return model === undefined ? [] : [{ model, provider }]
+  })
 
   if (candidates.length === 0) {
     return { modelId, provider: selectedProviders[0], status: 'missing' }
-  }
-
-  const candidatesByIdentity = new Map<string, typeof candidates>()
-  for (const candidate of candidates) {
-    const identity = `${candidate.provider.id}/${candidate.model.id}`
-    candidatesByIdentity.set(identity, [...(candidatesByIdentity.get(identity) ?? []), candidate])
-  }
-
-  const duplicate = [...candidatesByIdentity.values()].find(matches => matches.length > 1)?.[0]
-  if (duplicate !== undefined) {
-    return {
-      modelId: duplicate.model.id,
-      providerId: duplicate.provider.id,
-      status: 'duplicate',
-    }
   }
 
   if (candidates.length > 1) {
@@ -87,4 +90,12 @@ export function resolveExactModelTarget(
   }
 
   return { ...candidates[0]!, status: 'found' }
+}
+
+function findExactModel(provider: ProviderDefinition, modelId: string): SetupModelDefinition | undefined {
+  const matches = provider.models.filter(model => model.id === modelId)
+
+  // Every duplicate row is removed together, so selecting a default-aliased row
+  // ensures the caller blocks the whole mutation when any duplicate is protected.
+  return matches.find(model => model.aliases?.includes('default')) ?? matches[0]
 }

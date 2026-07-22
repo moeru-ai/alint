@@ -6,7 +6,7 @@ import process from 'node:process'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, mergeSetupConfigs } from '@alint-js/config'
 
-import { escapeLineValue } from '../../provider-registry'
+import { escapeLineValue } from '../../output'
 
 export interface ScopedSetupConfig {
   config: SetupConfig

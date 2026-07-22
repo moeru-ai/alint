@@ -2,7 +2,7 @@ import type { CommandContext } from '../../command'
 
 import { removeProviderModels, writeSetupConfig } from '@alint-js/config'
 
-import { escapeLineValue, formatDuplicateModelIdentity } from '../../../provider-registry'
+import { escapeLineValue } from '../../../output'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
 import { resolveExactModelTarget } from './target'
@@ -56,7 +56,7 @@ async function runRemoveModelCommand(
 
   if (target.status === 'conflict') {
     context.io.stderr.write(
-      `model provider ${JSON.stringify(target.qualifiedProviderId)} conflicts with --provider ${JSON.stringify(target.requestedProviderId)}.\n`,
+      `model provider "${escapeLineValue(target.qualifiedProviderId)}" conflicts with --provider "${escapeLineValue(target.requestedProviderId)}".\n`,
     )
     return 2
   }
@@ -68,7 +68,7 @@ async function runRemoveModelCommand(
 
   if (target.status === 'ambiguous') {
     context.io.stderr.write([
-      `ambiguous model id ${JSON.stringify(request)}.`,
+      `ambiguous model id "${escapeLineValue(request)}".`,
       'specify <provider>/<model-id> or pass --provider <provider-id>:',
       ...target.candidates.map(candidate =>
         `  ${escapeLineValue(candidate.providerId)}/${escapeLineValue(candidate.modelId)}`,
@@ -78,10 +78,12 @@ async function runRemoveModelCommand(
     return 2
   }
 
-  if (target.status === 'duplicate') {
-    context.io.stderr.write(
-      formatDuplicateModelIdentity(`${target.providerId}/${target.modelId}`),
-    )
+  if (target.status === 'duplicate-provider') {
+    context.io.stderr.write([
+      `provider "${escapeLineValue(target.providerId)}" is configured more than once.`,
+      'remove duplicate provider definitions from the setup configuration.',
+      '',
+    ].join('\n'))
     return 2
   }
 
@@ -91,7 +93,7 @@ async function runRemoveModelCommand(
 
   if ((target.model.aliases ?? []).includes('default')) {
     context.io.stderr.write(
-      `cannot remove default model ${JSON.stringify(`${target.provider.id}/${target.model.id}`)}. select another default first.\n`,
+      `cannot remove default model "${escapeLineValue(target.provider.id)}/${escapeLineValue(target.model.id)}". select another default first.\n`,
     )
     return 2
   }
