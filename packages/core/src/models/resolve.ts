@@ -15,11 +15,23 @@ export function resolveModel(
 
   if (options.request !== undefined) {
     const request = options.request
-    const candidate = candidates.find(candidate => matchesRequest(candidate, request))
+    const matchingCandidates = candidates.filter(candidate => matchesRequest(candidate, request))
 
-    if (candidate === undefined) {
+    if (matchingCandidates.length === 0) {
       throw new Error(`Unknown model "${request}".`)
     }
+
+    if (matchingCandidates.length > 1) {
+      const choices = [...new Set(
+        matchingCandidates.map(({ model, provider }) => `${provider.id}/${model.id}`),
+      )]
+
+      throw new Error(
+        `Ambiguous model "${request}".\nSpecify a provider-qualified model:\n${choices.map(choice => `  ${choice}`).join('\n')}`,
+      )
+    }
+
+    const candidate = matchingCandidates[0]!
 
     if (!satisfiesHardRequirements(candidate.model, options.requirement)) {
       throw new Error(

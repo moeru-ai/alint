@@ -40,6 +40,36 @@ const registry: SetupConfig = {
   version: 1,
 }
 
+const ambiguousRegistry: SetupConfig = {
+  providers: [
+    {
+      endpoint: 'https://first.example.com/v1',
+      id: 'first',
+      models: [
+        {
+          aliases: ['shared'],
+          id: 'qwen',
+          name: 'Qwen',
+        },
+      ],
+      type: 'openai-compatible',
+    },
+    {
+      endpoint: 'https://second.example.com/v1',
+      id: 'second',
+      models: [
+        {
+          aliases: ['shared'],
+          id: 'qwen',
+          name: 'Qwen',
+        },
+      ],
+      type: 'openai-compatible',
+    },
+  ],
+  version: 1,
+}
+
 describe('resolveModel', () => {
   it('resolves aliases to a stable model id', () => {
     const model = resolveModel(registry, { request: 'default' })
@@ -64,6 +94,28 @@ describe('resolveModel', () => {
 
     expect(model.provider.id).toBe('ollama')
     expect(model.id).toBe('local:qwen-32b')
+  })
+
+  it.each(['qwen', 'Qwen', 'shared'])('rejects ambiguous explicit selector %s', (request) => {
+    expect(() => resolveModel(ambiguousRegistry, { request })).toThrowError(
+      new Error(
+        `Ambiguous model "${request}".\nSpecify a provider-qualified model:\n  first/qwen\n  second/qwen`,
+      ),
+    )
+  })
+
+  it('resolves an unambiguous provider-qualified model', () => {
+    const model = resolveModel(ambiguousRegistry, { request: 'second/qwen' })
+
+    expect(model.provider.id).toBe('second')
+    expect(model.id).toBe('qwen')
+  })
+
+  it('retains deterministic automatic selection for ambiguous registries', () => {
+    const model = resolveModel(ambiguousRegistry)
+
+    expect(model.provider.id).toBe('first')
+    expect(model.id).toBe('qwen')
   })
 
   it('defaults the concrete model name to id when name is absent', () => {
