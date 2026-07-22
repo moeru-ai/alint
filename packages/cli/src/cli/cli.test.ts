@@ -5,7 +5,7 @@ import { createServer } from 'node:http'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
+import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, writeSetupConfig } from '@alint-js/config'
 import { describe, expect, it, vi } from 'vitest'
 
 import * as alintCore from '@alint-js/core'
@@ -1308,6 +1308,301 @@ local = "./plugins/local-plugin"
     finally {
       await server.close()
     }
+  })
+
+  it('updates the global provider by default with merged headers and additive models', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    await writeSetupConfig(globalPath, {
+      providers: [{
+        endpoint: 'https://old.example/v1',
+        headers: { Authorization: 'Bearer existing' },
+        id: 'example',
+        models: [{
+          aliases: ['default'],
+          capabilities: ['code-review'],
+          contextWindow: 32768,
+          defaultParams: { temperature: 0.1 },
+          id: 'existing',
+          name: 'Existing',
+          size: 'small',
+        }],
+        type: 'openai-compatible',
+      }],
+      runner: { ruleConcurrency: 3 },
+      version: 1,
+    })
+    await writeSetupConfig(localPath, {
+      providers: [{
+        endpoint: 'https://local.example/v1',
+        id: 'example',
+        models: [{ id: 'local-only' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const server = await withModelsServer(({ headers, url }) => {
+      expect(url).toBe('/v1/models')
+      expect(headers.authorization).toBe('Bearer existing')
+      expect(headers['x-new']).toBe('true')
+
+      return { body: { data: [{ id: 'existing' }, { id: 'remote-new' }] } }
+    })
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'update',
+        '--provider',
+        'example',
+        '-N',
+        '--provider-endpoint',
+        server.endpoint,
+        '--provider-header',
+        'X-New=true',
+        '--provider-model',
+        'manual',
+      ], io)
+
+      expect(exitCode).toBe(0)
+      const config = await loadSetupConfig(globalPath)
+      expect(config.runner).toEqual({ ruleConcurrency: 3 })
+      expect(config.providers[0]?.endpoint).toBe(server.endpoint)
+      expect(config.providers[0]?.headers).toEqual({
+        'Authorization': 'Bearer existing',
+        'X-New': 'true',
+      })
+      expect(config.providers[0]?.models.map(model => model.id)).toEqual([
+        'existing',
+        'remote-new',
+        'manual',
+      ])
+      expect(config.providers[0]?.models[0]).toEqual({
+        aliases: ['default'],
+        capabilities: ['code-review'],
+        contextWindow: 32768,
+        defaultParams: { temperature: 0.1 },
+        id: 'existing',
+        name: 'Existing',
+        size: 'small',
+      })
+      expect((await loadSetupConfig(localPath)).providers[0]?.models[0]?.id).toBe('local-only')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('updates only the project-local provider when --local is set', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    await writeSetupConfig(globalPath, {
+      providers: [{
+        endpoint: 'https://global.example/v1',
+        id: 'example',
+        models: [{ id: 'global-only' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    await writeSetupConfig(localPath, {
+      providers: [{
+        endpoint: 'https://local.example/v1',
+        id: 'example',
+        models: [{ id: 'local-only' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const server = await withModelsServer(() => ({ body: { data: [{ id: 'remote-local' }] } }))
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'update',
+        '--provider',
+        'example',
+        '--local',
+        '-N',
+        '--provider-endpoint',
+        server.endpoint,
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect((await loadSetupConfig(globalPath)).providers[0]?.models.map(model => model.id)).toEqual(['global-only'])
+      expect((await loadSetupConfig(localPath)).providers[0]?.models.map(model => model.id)).toEqual(['local-only', 'remote-local'])
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('requires a provider id for provider updates', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'update',
+      '-N',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('config providers update requires --provider.\n')
+  })
+
+  it('reports the selected scope when an update provider is unknown', async () => {
+    const io = await createTestIo()
+
+    const globalExitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'update',
+      '--provider',
+      'missing',
+      '-N',
+    ], io)
+
+    expect(globalExitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing" in global setup config. Add --local to inspect project-local configuration.\n',
+    )
+
+    io.stderrText = ''
+    const localExitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'update',
+      '--provider',
+      'missing',
+      '--local',
+      '-N',
+    ], io)
+
+    expect(localExitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing" in local setup config. Remove --local to inspect global configuration.\n',
+    )
+  })
+
+  it('does not write a provider update when probing fails', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://old.example/v1',
+        id: 'example',
+        models: [{ aliases: ['default'], id: 'existing' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+    const server = await withModelsServer(() => ({ body: { data: [] }, status: 500 }))
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'update',
+        '--provider',
+        'example',
+        '-N',
+        '--provider-endpoint',
+        server.endpoint,
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toContain('failed to probe provider: GET')
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('rejects invalid update headers before probing or writing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://old.example/v1',
+        id: 'example',
+        models: [{ id: 'existing' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+    let probeCount = 0
+    const server = await withModelsServer(() => {
+      probeCount += 1
+      return { body: { data: [{ id: 'remote' }] } }
+    })
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'update',
+        '--provider',
+        'example',
+        '-N',
+        '--provider-endpoint',
+        server.endpoint,
+        '--provider-header',
+        'invalid',
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toBe('Invalid provider header "invalid". Expected Key=Value.\n')
+      expect(probeCount).toBe(0)
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('prints provider update options in contextual help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'update',
+      '--help',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('$ alint config providers update')
+    expect(io.stdoutText).toContain('--provider <id>')
+    expect(io.stdoutText).toContain('--local')
+    expect(io.stdoutText).toContain('-N, --no-interactive')
+    expect(io.stdoutText).toContain('--provider-endpoint <endpoint>')
+    expect(io.stdoutText).toContain('--provider-header <Key=Value>')
+    expect(io.stdoutText).toContain('--provider-model <model>')
   })
 
   it('prints effective config details for a file', async () => {
