@@ -23,7 +23,8 @@ interface TestIo {
   env?: NodeJS.ProcessEnv
   stderr: { columns?: number, isTTY?: boolean, rows?: number, write: (chunk: string) => void }
   stderrText: string
-  stdout: { write: (chunk: string) => void }
+  stdin?: { isTTY?: boolean }
+  stdout: { isTTY?: boolean, write: (chunk: string) => void }
   stdoutText: string
 }
 
@@ -1900,6 +1901,500 @@ local = "./plugins/local-plugin"
     expect(exitCode).toBe(2)
     expect(io.stderrText).toBe('config models rm accepts --provider only once.\n')
     expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('prunes one requested provider while leaving other providers unchanged', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [{ id: 'remote' }] } }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [
+          {
+            endpoint: server.endpoint,
+            id: 'selected',
+            models: [{ id: 'remote' }, { id: 'stale' }],
+            type: 'openai-compatible',
+          },
+          {
+            endpoint: 'https://other.test/v1',
+            id: 'other',
+            models: [{ id: 'keep-unchanged' }],
+            type: 'openai-compatible',
+          },
+        ],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '--provider',
+        'selected',
+        '-N',
+        '--yes',
+      ], io)
+
+      const config = await loadSetupConfig(configPath)
+      expect(exitCode).toBe(0)
+      expect(config.providers[0]?.models.map(model => model.id)).toEqual(['remote'])
+      expect(config.providers[1]?.models.map(model => model.id)).toEqual(['keep-unchanged'])
+      expect(io.stdoutText).toBe('Models to prune:\n  selected/stale\n')
+      expect(io.stderrText).toBe('')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('prunes every provider sequentially in configuration order', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const requestedUrls: string[] = []
+    const server = await withModelsServer(({ url }) => {
+      requestedUrls.push(url ?? '')
+      return { body: { data: [{ id: 'remote' }] } }
+    })
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [
+          {
+            endpoint: server.endpoint.replace('/v1/', '/first/v1/'),
+            id: 'first',
+            models: [{ id: 'first-stale' }],
+            type: 'openai-compatible',
+          },
+          {
+            endpoint: server.endpoint.replace('/v1/', '/second/v1/'),
+            id: 'second',
+            models: [{ id: 'second-stale' }],
+            type: 'openai-compatible',
+          },
+        ],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      const config = await loadSetupConfig(configPath)
+      expect(exitCode).toBe(0)
+      expect(requestedUrls).toEqual(['/first/v1/models', '/second/v1/models'])
+      expect(config.providers[0]?.models).toEqual([])
+      expect(config.providers[1]?.models).toEqual([])
+      expect(io.stdoutText).toBe([
+        'Models to prune:',
+        '  first/first-stale',
+        '  second/second-stale',
+        '',
+      ].join('\n'))
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('prunes only project-local configuration with --local', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    const server = await withModelsServer(() => ({ body: { data: [] } }))
+
+    try {
+      await writeSetupConfig(globalPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          id: 'global',
+          models: [{ id: 'global-stale' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      await writeSetupConfig(localPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          id: 'local',
+          models: [{ id: 'local-stale' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '--local',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect((await loadSetupConfig(globalPath)).providers[0]?.models.map(model => model.id)).toEqual(['global-stale'])
+      expect((await loadSetupConfig(localPath)).providers[0]?.models).toEqual([])
+      expect(io.stdoutText).toBe('Models to prune:\n  local/local-stale\n')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('does not write or require confirmation when there are no models to prune', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [{ id: 'current' }] } }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          id: 'example',
+          models: [{ id: 'current' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      const before = await readFile(configPath, 'utf8')
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect(io.stdoutText).toBe('no models to prune.\n')
+      expect(io.stderrText).toBe('')
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it.each([
+    {
+      arguments: ['-N'],
+      error: 'config models prune requires --yes in --no-interactive mode.\n',
+      label: '-N without --yes',
+    },
+    {
+      arguments: [],
+      error: 'config models prune requires a TTY or -N --yes.\n',
+      label: 'interactive mode without a TTY',
+    },
+  ])('requires safe confirmation for $label', async ({ arguments: commandArguments, error }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [] } }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          id: 'example',
+          models: [{ id: 'stale' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      const before = await readFile(configPath, 'utf8')
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        ...commandArguments,
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stdoutText).toBe('Models to prune:\n  example/stale\n')
+      expect(io.stderrText).toBe(error)
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('blocks a provider containing a stale default model without deleting its safe stale models', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [] } }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          id: 'example',
+          models: [
+            { id: 'ordinary-stale' },
+            { aliases: ['default'], id: 'default-stale' },
+          ],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      const before = await readFile(configPath, 'utf8')
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stdoutText).toBe('no models to prune.\n')
+      expect(io.stderrText).toBe(
+        'cannot prune default model "example/default-stale". select another default first.\n',
+      )
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('forwards configured provider headers while probing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(({ headers }) => {
+      expect(headers.authorization).toBe('Bearer prune secret')
+      expect(headers['x-provider']).toBe('example')
+      return { body: { data: [] } }
+    })
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          headers: {
+            'Authorization': 'Bearer prune secret',
+            'X-Provider': 'example',
+          },
+          id: 'example',
+          models: [{ id: 'stale' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(0)
+      expect(io.stdoutText).not.toContain('prune secret')
+      expect(io.stderrText).not.toContain('prune secret')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it('applies successful providers once while preserving failed providers and returning 2', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(({ url }) => url?.startsWith('/failed/')
+      ? { body: { data: [] }, status: 500 }
+      : { body: { data: [{ id: 'remote' }] } })
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [
+          {
+            endpoint: server.endpoint.replace('/v1/', '/working/v1/'),
+            id: 'working',
+            models: [{ id: 'remote' }, { id: 'stale' }],
+            type: 'openai-compatible',
+          },
+          {
+            endpoint: server.endpoint.replace('/v1/', '/failed/v1/'),
+            id: 'failed',
+            models: [{ id: 'keep-unchanged' }],
+            type: 'openai-compatible',
+          },
+        ],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      const config = await loadSetupConfig(configPath)
+      expect(exitCode).toBe(2)
+      expect(config.providers.find(provider => provider.id === 'working')?.models.map(model => model.id)).toEqual(['remote'])
+      expect(config.providers.find(provider => provider.id === 'failed')?.models.map(model => model.id)).toEqual(['keep-unchanged'])
+      expect(io.stdoutText).toBe('Models to prune:\n  working/stale\n')
+      expect(io.stderrText).toContain('failed to probe provider "failed"')
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it.each([
+    {
+      arguments: ['--provider', 'missing', '-N', '--yes'],
+      error: 'unknown provider "missing" in global setup config. Add --local to inspect project-local configuration.\n',
+      label: 'unknown provider',
+    },
+    {
+      arguments: ['--provider', 'first', '--provider', 'second', '-N', '--yes'],
+      error: 'config models prune accepts --provider only once.\n',
+      label: 'repeated provider',
+    },
+  ])('rejects an unsafe prune target: $label', async ({ arguments: commandArguments, error }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'first',
+        models: [{ id: 'keep' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'prune',
+      ...commandArguments,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(error)
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('rejects duplicate provider definitions before an all-provider prune', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [
+        {
+          endpoint: 'https://first.test/v1',
+          id: 'duplicate',
+          models: [{ id: 'first-model' }],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'https://second.test/v1',
+          id: 'duplicate',
+          models: [{ id: 'second-model' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'prune',
+      '-N',
+      '--yes',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'provider "duplicate" is configured more than once.',
+      'remove duplicate provider definitions from the setup configuration.',
+      '',
+    ].join('\n'))
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('escapes line-breaking provider and model ids in prune output and failures', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body: { data: [] } }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [
+          {
+            endpoint: server.endpoint,
+            id: 'provider\nname',
+            models: [{ id: 'model\u2028id' }],
+            type: 'openai-compatible',
+          },
+          {
+            endpoint: server.endpoint,
+            id: 'blocked\u0085provider',
+            models: [{ aliases: ['default'], id: 'default\u2029model' }],
+            type: 'openai-compatible',
+          },
+        ],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stdoutText).toBe('Models to prune:\n  provider\\nname/model\\u2028id\n')
+      expect(io.stderrText).toBe(
+        'cannot prune default model "blocked\\u0085provider/default\\u2029model". select another default first.\n',
+      )
+      expect(io.stdoutText.split('\n')).toHaveLength(3)
+      expect(io.stderrText.split('\n')).toHaveLength(2)
+    }
+    finally {
+      await server.close()
+    }
   })
 
   it('lists merged config providers without printing header values', async () => {

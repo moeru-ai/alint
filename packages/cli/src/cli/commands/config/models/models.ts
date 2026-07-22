@@ -1,12 +1,14 @@
 import { defineCommand } from '../../command'
 import { ls } from './ls'
 import { probe } from './probe'
+import { prune } from './prune'
 import { rm } from './rm'
 import { show } from './show'
 
 export const models = defineCommand({
   children: [
     probe,
+    prune,
     ls,
     show,
     rm,
