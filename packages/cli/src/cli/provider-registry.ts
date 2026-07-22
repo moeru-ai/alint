@@ -74,10 +74,15 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
   }
 }
 
-export function findModel(config: SetupConfig, request: string): FlattenedModel | undefined {
-  return flattenModels(config).find(({ model }) =>
-    model.id === request || model.name === request || (model.aliases ?? []).includes(request),
-  )
+export function findModels(config: SetupConfig, request: string): FlattenedModel[] {
+  return flattenModels(config).filter((candidate) => {
+    const names = [candidate.model.id, candidate.model.name, ...(candidate.model.aliases ?? [])]
+      .filter((name): name is string => name !== undefined)
+
+    return names.some(name =>
+      name === request || `${candidate.provider.id}/${name}` === request,
+    )
+  })
 }
 
 export function findProviderSetupSource(value: ProviderSetupSource['value']): ProviderSetupSource | undefined {
@@ -96,6 +101,18 @@ export function flattenModels(config: SetupConfig): FlattenedModel[] {
   return config.providers.flatMap(provider =>
     provider.models.map(model => ({ model, provider })),
   )
+}
+
+export function formatAmbiguousModels(request: string, candidates: FlattenedModel[]): string {
+  const choices = [...new Set(candidates.map(candidate =>
+    `${candidate.provider.id}/${candidate.model.id}`,
+  ))]
+
+  return `${[
+    `ambiguous model "${request}".`,
+    'specify a provider-qualified model:',
+    ...choices.map(choice => `  ${choice}`),
+  ].join('\n')}\n`
 }
 
 export function formatModelList(config: SetupConfig): string {

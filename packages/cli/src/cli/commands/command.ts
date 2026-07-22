@@ -400,6 +400,7 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--interval',
     '--metric',
     '--model',
+    '--provider',
     '--provider-endpoint',
     '--provider-header',
     '--provider-id',

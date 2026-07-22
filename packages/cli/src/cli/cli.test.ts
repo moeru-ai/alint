@@ -1182,6 +1182,92 @@ local = "./plugins/local-plugin"
     expect(io.stdoutText).not.toContain('secret')
   })
 
+  it('returns 2 when a model alias is ambiguous across merged setup configs', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getGlobalSetupConfigPath(io.env), {
+      providers: [
+        {
+          endpoint: 'https://global.example/v1',
+          id: 'global-provider',
+          models: [{ aliases: ['shared'], id: 'qwen', name: 'Qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'https://local.example/v1',
+          id: 'local-provider',
+          models: [{ aliases: ['shared'], id: 'qwen', name: 'Qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'show',
+      'shared',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'ambiguous model "shared".',
+      'specify a provider-qualified model:',
+      '  local-provider/qwen',
+      '  global-provider/qwen',
+      '',
+    ].join('\n'))
+    expect(io.stdoutText).toBe('')
+  })
+
+  it('shows a provider-qualified model alias from merged setup configs', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getGlobalSetupConfigPath(io.env), {
+      providers: [
+        {
+          endpoint: 'https://global.example/v1',
+          id: 'global-provider',
+          models: [{ aliases: ['shared'], id: 'qwen', name: 'Qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'https://local.example/v1',
+          id: 'local-provider',
+          models: [{ aliases: ['shared'], id: 'qwen', name: 'Qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'show',
+      'local-provider/shared',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('provider: local-provider\n')
+    expect(io.stderrText).toBe('')
+  })
+
   it('returns 2 when model is unknown', async () => {
     const io = await createTestIo()
 
