@@ -602,6 +602,8 @@ describe('executeCli', () => {
     expect(io.stdoutText).toContain('alint config providers list')
     expect(io.stdoutText).toContain('alint config models list')
     expect(io.stdoutText).toContain('alint config models probe --endpoint https://openrouter.ai/api/v1')
+    expect(io.stdoutText).toContain('Provider updates are additive by default.')
+    expect(io.stdoutText).toContain('Interactive TUI deselection can remove a configured model.')
     expect(io.stdoutText).toContain('Commands:')
     expect(io.stdoutText).toContain('config inspect <path>')
     expect(io.stdoutText).toContain('config models')
@@ -709,34 +711,49 @@ local = "./plugins/local-plugin"
     expect(io.stdoutText).toContain('alint config providers update --provider openrouter')
     expect(io.stdoutText).toContain('alint config providers set --provider openrouter headers.Authorization "Bearer $TOKEN"')
     expect(io.stdoutText).toContain('alint config providers unset --provider openrouter headers.Authorization')
+    expect(io.stdoutText).toContain('Provider update is additive by default.')
+    expect(io.stdoutText).toContain('Deselecting a configured model in the interactive TUI removes it when you confirm the update.')
     expect(io.stdoutText).not.toContain('--yes')
     expect(io.stderrText).toBe('')
   })
 
   it.each([
     {
-      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      absentOptions: ['--provider-endpoint', '--provider-header', '--provider-model', '--yes', '--no-interactive'],
       command: ['config', 'models', 'rm'],
       options: ['--provider <id>', '--local'],
       usage: '$ alint config models rm <model-id>',
     },
     {
-      absentOptions: ['--provider-header'],
+      absentOptions: ['--provider-endpoint', '--provider-header', '--provider-model'],
       command: ['config', 'models', 'prune'],
       options: ['--provider <id>', '--local', '-N, --no-interactive', '--yes'],
       usage: '$ alint config models prune',
     },
     {
-      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      absentOptions: ['--provider-endpoint', '--provider-header', '--provider-model', '--yes', '--no-interactive'],
       command: ['config', 'providers', 'set'],
       options: ['--provider <id>', '--local'],
       usage: '$ alint config providers set <key> <value>',
     },
     {
-      absentOptions: ['--provider-header', '--yes', '-N, --no-interactive'],
+      absentOptions: ['--provider-endpoint', '--provider-header', '--provider-model', '--yes', '--no-interactive'],
       command: ['config', 'providers', 'unset'],
       options: ['--provider <id>', '--local'],
       usage: '$ alint config providers unset <key>',
+    },
+    {
+      absentOptions: ['--yes'],
+      command: ['config', 'providers', 'update'],
+      options: [
+        '--provider <id>',
+        '--local',
+        '-N, --no-interactive',
+        '--provider-endpoint <endpoint>',
+        '--provider-header <Key=Value>',
+        '--provider-model <model>',
+      ],
+      usage: '$ alint config providers update',
     },
   ])('prints only relevant options in $usage help', async ({ absentOptions, command, options, usage }) => {
     const io = await createTestIo()

@@ -18,7 +18,7 @@ export const providers = defineCommand({
   description: 'Manage configured providers',
   examples: [
     [
-      '# Probe and add newly reported models without removing configured models',
+      '# Probe and add newly reported models',
       'alint config providers update --provider openrouter',
     ].join('\n'),
     [
@@ -29,7 +29,8 @@ export const providers = defineCommand({
   ],
   help: [
     'Inspect and edit providers in alint setup configuration.',
-    'Provider update is additive: it keeps configured models that the remote endpoint no longer reports. Use config models prune when you intend to remove unavailable models.',
+    'Provider update is additive by default. It does not automatically remove a configured model merely because the remote provider no longer reports it.',
+    'Deselecting a configured model in the interactive TUI removes it when you confirm the update. Use the destructive config models prune command to remove configured models absent from provider responses.',
     'Writes use global scope by default. Pass --local to select the current project\'s setup configuration.',
     'Header values passed as command arguments may remain in shell history. Use environment-variable placeholders such as $TOKEN instead of literal secrets.',
   ].join('\n\n'),
