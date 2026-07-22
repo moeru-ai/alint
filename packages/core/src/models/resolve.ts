@@ -15,23 +15,37 @@ export function resolveModel(
 
   if (options.request !== undefined) {
     const request = options.request
-    const matchingCandidates = candidates.filter(candidate => matchesRequest(candidate, request))
+    const canonicalCandidates = candidates.filter(({ model, provider }) =>
+      `${provider.id}/${model.id}` === request,
+    )
 
-    if (matchingCandidates.length === 0) {
-      throw new Error(`Unknown model "${request}".`)
-    }
-
-    if (matchingCandidates.length > 1) {
-      const choices = [...new Set(
-        matchingCandidates.map(({ model, provider }) => `${provider.id}/${model.id}`),
-      )]
-
+    if (canonicalCandidates.length > 1) {
       throw new Error(
-        `Ambiguous model "${request}".\nSpecify a provider-qualified model:\n${choices.map(choice => `  ${choice}`).join('\n')}`,
+        `Model "${request}" is configured more than once.\nRemove duplicate provider/model definitions from the setup configuration.`,
       )
     }
 
-    const candidate = matchingCandidates[0]!
+    let candidate = canonicalCandidates[0]
+
+    if (candidate === undefined) {
+      const matchingCandidates = candidates.filter(candidate => matchesRequest(candidate, request))
+
+      if (matchingCandidates.length === 0) {
+        throw new Error(`Unknown model "${request}".`)
+      }
+
+      if (matchingCandidates.length > 1) {
+        const choices = [...new Set(
+          matchingCandidates.map(({ model, provider }) => `${provider.id}/${model.id}`),
+        )]
+
+        throw new Error(
+          `Ambiguous model "${request}".\nSpecify a provider-qualified model:\n${choices.map(choice => `  ${choice}`).join('\n')}`,
+        )
+      }
+
+      candidate = matchingCandidates[0]!
+    }
 
     if (!satisfiesHardRequirements(candidate.model, options.requirement)) {
       throw new Error(

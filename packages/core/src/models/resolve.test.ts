@@ -70,6 +70,36 @@ const ambiguousRegistry: SetupConfig = {
   version: 1,
 }
 
+const sameProviderCollisionRegistry: SetupConfig = {
+  providers: [
+    {
+      endpoint: 'https://first.example.com/v1',
+      id: 'first',
+      models: [
+        { id: 'qwen' },
+        { aliases: ['qwen'], id: 'other' },
+      ],
+      type: 'openai-compatible',
+    },
+  ],
+  version: 1,
+}
+
+const duplicateCanonicalRegistry: SetupConfig = {
+  providers: [
+    {
+      endpoint: 'https://first.example.com/v1',
+      id: 'first',
+      models: [
+        { id: 'qwen' },
+        { id: 'qwen' },
+      ],
+      type: 'openai-compatible',
+    },
+  ],
+  version: 1,
+}
+
 describe('resolveModel', () => {
   it('resolves aliases to a stable model id', () => {
     const model = resolveModel(registry, { request: 'default' })
@@ -109,6 +139,29 @@ describe('resolveModel', () => {
 
     expect(model.provider.id).toBe('second')
     expect(model.id).toBe('qwen')
+  })
+
+  it('suggests canonical model ids for same-provider selector collisions', () => {
+    expect(() => resolveModel(sameProviderCollisionRegistry, { request: 'qwen' })).toThrowError(
+      new Error(
+        'Ambiguous model "qwen".\nSpecify a provider-qualified model:\n  first/qwen\n  first/other',
+      ),
+    )
+  })
+
+  it('prioritizes a provider-qualified canonical id over a qualified alias', () => {
+    const model = resolveModel(sameProviderCollisionRegistry, { request: 'first/qwen' })
+
+    expect(model.provider.id).toBe('first')
+    expect(model.id).toBe('qwen')
+  })
+
+  it('rejects duplicate canonical provider and model ids as a configuration collision', () => {
+    expect(() => resolveModel(duplicateCanonicalRegistry, { request: 'first/qwen' })).toThrowError(
+      new Error(
+        'Model "first/qwen" is configured more than once.\nRemove duplicate provider/model definitions from the setup configuration.',
+      ),
+    )
   })
 
   it('retains deterministic automatic selection for ambiguous registries', () => {
