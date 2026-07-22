@@ -86,7 +86,7 @@ alint config providers set --provider openrouter headers.Authorization "Bearer $
 alint config providers unset --provider openrouter headers.Authorization
 ```
 
-`providers update` probes the provider and adds newly reported models. It is additive, so it does not remove configured models that are absent from the response. Header values supplied as command arguments may remain in shell history. Use an environment variable such as `$TOKEN`, not a literal credential.
+`providers update` probes the provider and adds newly reported models. It is additive, so it does not remove configured models that are absent from the response. Provider inspection, command output, and failure reports show header names only; they never print header values. Header values supplied as command arguments may remain in shell history. Use an environment variable such as `$TOKEN`, not a literal credential.
 
 <details>
 <summary>Ollama</summary>
