@@ -2625,7 +2625,8 @@ export default [
     ], io)
 
     expect(exitCode).toBe(0)
-    expect(io.stderrText).toContain('alint started')
+    expect(io.stderrText).toContain('alint preparing')
+    expect(io.stderrText).toContain('alint prepared: 1 files')
     expect(io.stderrText).toContain('scan ')
     expect(io.stderrText).toContain('alint finished')
     expect(io.stdoutText).toContain('Problem found')

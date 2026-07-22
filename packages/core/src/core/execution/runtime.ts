@@ -6,6 +6,7 @@ import type { PreparedRule } from '../preparation'
 import type { SourceRuntime } from '../source/types'
 import type { RuleRuntime, RuleRuntimeState } from '../targets/types'
 import type { Diagnostic, ProgressReporter, RunOptions } from '../types'
+import type { RunProgress } from './progress'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -13,7 +14,7 @@ import { combineAbortSignals } from '../../agent'
 import { withAgentRetry } from '../../agent/retry'
 import { resolveModel } from '../../models/resolve'
 import { stableHash } from '../hash'
-import { snapshotDiagnostic, snapshotProgressJob, snapshotUsage } from './records'
+import { snapshotDiagnostic, snapshotProgressJobRef, snapshotUsage } from './records'
 
 export function createRuleRuntimes(options: {
   cwd: string
@@ -22,6 +23,7 @@ export function createRuleRuntimes(options: {
   progress?: ProgressReporter
   rules: readonly PreparedRule[]
   runOptions: RunOptions
+  runProgress: RunProgress
   setupConfig: SetupConfig
   src: SourceRuntime
 }): RuleRuntime[] {
@@ -38,7 +40,7 @@ export function createRuleRuntimes(options: {
               return
             const startedAt = Date.now()
             try {
-              options.progress?.onJobRetry?.({ attempt, job: snapshotProgressJob(state.jobRef), maxAttempts, startedAt })
+              options.progress?.onJobRetry?.({ attempt, job: snapshotProgressJobRef(state.jobRef), maxAttempts, progress: state.runProgress.snapshot(), startedAt })
             }
             catch (cause) {
               if (!state.reporterFailed) {
@@ -74,7 +76,7 @@ export function createRuleRuntimes(options: {
 
           state.bucket.usage.push(usageRecord)
           try {
-            options.progress?.onUsage?.({ job: snapshotProgressJob(state.jobRef), record: snapshotUsage(usageRecord) })
+            options.progress?.onUsage?.({ job: snapshotProgressJobRef(state.jobRef), progress: state.runProgress.snapshot(), record: snapshotUsage(usageRecord) })
           }
           catch (cause) {
             if (!state.reporterFailed) {
@@ -137,7 +139,7 @@ export function createRuleRuntimes(options: {
 
         state.bucket.diagnostics.push(diagnostic)
         try {
-          options.progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJob(state.jobRef) })
+          options.progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJobRef(state.jobRef), progress: state.runProgress.snapshot() })
         }
         catch (cause) {
           if (!state.reporterFailed) {

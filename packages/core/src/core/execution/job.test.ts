@@ -2,7 +2,7 @@ import type { EnabledRule } from '../../dsl/types'
 import type { CacheEntry, CacheOwnerTransaction } from '../cache'
 import type { FileTarget } from '../source/types'
 import type { RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from '../targets/types'
-import type { ProgressJob } from '../types'
+import type { ProgressJobRef } from '../types'
 import type { JobOrderKey, RuleJob } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -11,19 +11,17 @@ import { expect, it } from 'vitest'
 
 import { defineRule } from '../../dsl/define'
 import { compareJobOrder, createRuleJobs, executeRuleJob } from './job'
+import { createRunProgress } from './progress'
 import { createRuleRuntimes } from './runtime'
 
 it('detaches a completed outcome from the active rule job', async () => {
   const executionState = new AsyncLocalStorage<RuleRuntimeState>()
-  const jobRef: ProgressJob = {
+  const jobRef: ProgressJobRef = {
     id: 'job-1',
     index: 1,
     inputPath: '/repo/source.ts',
     ruleId: 'company/review',
-    ruleIndex: 1,
-    ruleTotal: 1,
     target: { identity: 'source.ts', kind: 'file' },
-    total: 1,
   }
   const orderKey = {
     inputIndex: 0,
@@ -88,6 +86,7 @@ it('detaches a completed outcome from the active rule job', async () => {
   const outcome = await executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
     clock: () => 2,
+    runProgress: startedProgress(),
     startedAt: 1,
   })
 
@@ -129,6 +128,7 @@ it.each([
   await expect(executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
     clock: () => 2,
+    runProgress: startedProgress(),
     startedAt: 1,
   })).resolves.toMatchObject({
     cache: 'miss',
@@ -155,6 +155,7 @@ it.each([
   }), {
     cache: { modelHash: 'model-hash' },
     clock: () => 2,
+    runProgress: startedProgress(),
     startedAt: 1,
   })
 
@@ -164,7 +165,7 @@ it.each([
 it('isolates the failed outcome from onJobEnd mutations', async () => {
   const executionState = new AsyncLocalStorage<RuleRuntimeState>()
   const rule = defineRule({ create: () => ({}) })
-  let endedJob: ProgressJob | undefined
+  let endedJob: ProgressJobRef | undefined
   const outcome = await executeRuleJob(createTestJob({
     executionState,
     rule,
@@ -186,6 +187,7 @@ it('isolates the failed outcome from onJobEnd mutations', async () => {
         }
       },
     },
+    runProgress: startedProgress(),
     startedAt: 1,
   })
 
@@ -233,6 +235,7 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
   })
   const diagnosticsProgress: string[] = []
   const usageProgress: number[] = []
+  const runProgress = startedProgress()
   const [runtime] = createRuleRuntimes({
     cwd: '/repo',
     effectiveAgent: undefined,
@@ -260,6 +263,7 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
       ruleIndex: 0,
     }],
     runOptions: {},
+    runProgress,
     setupConfig: { providers: [], version: 1 },
     src: {
       getText: target => target.text,
@@ -304,6 +308,7 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
   const outcome = await executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
     clock: () => 2,
+    runProgress,
     startedAt: 1,
   })
 
@@ -462,10 +467,7 @@ function createTestJob(options: {
       index: 1,
       inputPath: '/repo/source.ts',
       ruleId: 'company/review',
-      ruleIndex: 1,
-      ruleTotal: 1,
       target: { identity: 'source.ts', kind: 'file' },
-      total: 1,
     },
     orderKey: { inputIndex: 0, ruleIndex: 0, scope: 'source', targetIndex: 0 },
     target: {
@@ -479,4 +481,11 @@ function createTestJob(options: {
       text: 'source',
     },
   }
+}
+
+function startedProgress() {
+  const progress = createRunProgress(1)
+  progress.queue()
+  progress.start()
+  return progress
 }

@@ -2,8 +2,9 @@ import type { AsyncLocalStorage } from 'node:async_hooks'
 
 import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
 import type { CacheEntry, CacheOwnerTransaction } from '../cache'
+import type { RunProgress } from '../execution/progress'
 import type { SourceFile, SourceTarget } from '../source/types'
-import type { Diagnostic, InferenceUsageRecord, ProgressJob, ProgressTargetKind } from '../types'
+import type { Diagnostic, InferenceUsageRecord, ProgressJobRef, ProgressTargetKind } from '../types'
 
 export interface CacheRunContext {
   modelHash: string
@@ -58,9 +59,10 @@ export interface RuleRuntimeState {
   activeFilePath?: string
   bucket: RuleExecutionBucket
   currentModel?: { providerId: string, requested?: string, resolvedId: string }
-  jobRef: ProgressJob
+  jobRef: ProgressJobRef
   reporterCause?: unknown
   reporterFailed: boolean
+  runProgress: RunProgress
   sealed: boolean
   signal: AbortSignal
 }

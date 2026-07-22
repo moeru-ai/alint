@@ -10,7 +10,8 @@ import { cwd as processCwd } from 'node:process'
 
 import { createCacheStore, normalizeRunnerCacheConfig } from './cache'
 import { compareJobOrder, createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
-import { snapshotProgressJob } from './execution/records'
+import { createRunProgress, groupJobsForAdmission } from './execution/progress'
+import { snapshotDiagnostics, snapshotProgressJobRef, snapshotUsageRecords } from './execution/records'
 import { createRuleRuntimes } from './execution/runtime'
 import { hashText, stableHash } from './hash'
 import { prepareRun } from './preparation'
@@ -51,12 +52,18 @@ export class AlintRunError extends Error {
 }
 
 export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
+  const clock = Date.now
   const timeoutMs = resolveRuleExecutionTimeout(options.runner?.timeoutMs)
   const concurrency = resolveRuleConcurrency(options.runner?.ruleConcurrency)
+  const prepareStartedAt = clock()
+  options.progress?.onPrepareStart?.({ startedAt: prepareStartedAt })
   const preparation = prepareRun(options)
+  options.progress?.onPrepareEnd?.({ endedAt: clock(), filesTotal: preparation.files.length, startedAt: prepareStartedAt })
+  const runProgress = createRunProgress(preparation.files.length)
+  const runStartedAt = clock()
+  options.progress?.onExecuteStart?.({ progress: runProgress.snapshot(), startedAt: runStartedAt })
   const cwd = options.cwd ?? processCwd()
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
-  const clock = Date.now
   const src = createSourceRuntime()
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
@@ -88,6 +95,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       progress: options.progress,
       rules: input.rules,
       runOptions: options,
+      runProgress,
       setupConfig,
       src,
     })
@@ -111,6 +119,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         progress: options.progress,
         rules: input.rules,
         runOptions: options,
+        runProgress,
         setupConfig,
         src,
       }),
@@ -125,6 +134,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         progress: options.progress,
         rules: preparation.project.rules,
         runOptions: options,
+        runProgress,
         setupConfig,
         src,
       })
@@ -142,48 +152,72 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     : undefined
   const allPlans = [...filePlans, ...directoryPlans, ...(projectPlan ? [projectPlan] : [])]
   const jobs = createRuleJobs(allPlans)
-  const runStartedAt = clock()
   const settledOutcomes = new Array<RuleJobOutcome | undefined>(jobs.length)
+  const lifecycles: Array<'queued' | 'running' | 'terminal' | 'unadmitted'> = jobs.map(() => 'unadmitted')
+  const admissionGroups = groupJobsForAdmission(jobs)
   let infrastructureError: unknown
   let infrastructureFailed = false
-
-  options.progress?.onRunStart?.({
-    jobsTotal: jobs.length,
-    startedAt: runStartedAt,
-  })
-  for (const job of jobs)
-    options.progress?.onJobQueued?.({ job: snapshotProgressJob(job.jobRef) })
+  let admissionFailed = false
+  let shouldReconcile = false
 
   try {
+    for (const [fileIndex, file] of files.entries()) {
+      let jobsAdded = 0
+      for (const { index: jobIndex, job } of admissionGroups.sourceByInput[fileIndex] ?? []) {
+        const progress = runProgress.queue()
+        lifecycles[jobIndex] = 'queued'
+        jobsAdded += 1
+        options.progress?.onJobQueued?.({ job: snapshotProgressJobRef(job.jobRef), progress })
+      }
+      options.progress?.onFileReady?.({
+        fileIndex: file.fileIndex,
+        inputPath: file.file.path,
+        jobsAdded,
+        progress: runProgress.snapshot(),
+      })
+    }
+    for (const { index: jobIndex, job } of admissionGroups.nonSource) {
+      const progress = runProgress.queue()
+      lifecycles[jobIndex] = 'queued'
+      options.progress?.onJobQueued?.({ job: snapshotProgressJobRef(job.jobRef), progress })
+    }
+    shouldReconcile = true
+
     let cursor = 0
     const worker = async (): Promise<void> => {
-      while (cursor < jobs.length) {
+      while (cursor < jobs.length && !infrastructureFailed) {
         const index = cursor
         cursor += 1
         const job = jobs[index]!
+        if (lifecycles[index] !== 'queued')
+          continue
         if (options.signal?.aborted) {
-          settledOutcomes[index] = {
-            cache: 'miss',
-            diagnostics: [],
-            jobRef: snapshotProgressJob(job.jobRef),
-            orderKey: { ...job.orderKey },
-            state: 'cancelled',
-            usage: [],
-          }
+          cancelQueuedJob(job, runProgress, options.progress, clock, (outcome) => {
+            settledOutcomes[index] = outcome
+            lifecycles[index] = 'terminal'
+          })
           continue
         }
         try {
           const startedAt = clock()
-          options.progress?.onJobStart?.({ job: snapshotProgressJob(job.jobRef), startedAt })
-          settledOutcomes[index] = await executeRuleJob(job, {
+          const progress = runProgress.start()
+          lifecycles[index] = 'running'
+          options.progress?.onJobStart?.({ job: snapshotProgressJobRef(job.jobRef), progress, startedAt })
+          const outcome = await executeRuleJob(job, {
             cache: cacheContext,
             cacheOnly: options.cacheOnly,
             clock,
+            onTerminal: (terminalOutcome) => {
+              settledOutcomes[index] = terminalOutcome
+              lifecycles[index] = 'terminal'
+            },
             progress: options.progress,
+            runProgress,
             runSignal: options.signal,
             startedAt,
             timeoutMs,
           })
+          settledOutcomes[index] = outcome
         }
         catch (error) {
           if (!infrastructureFailed) {
@@ -195,21 +229,36 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     }
     await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
   }
+  catch (error) {
+    infrastructureError = error
+    infrastructureFailed = true
+    admissionFailed = true
+  }
   finally {
     // cacheOnly runs are strictly read-only: reconciling a partial cache snapshot could
     // discard entries for the jobs deliberately skipped by this run.
-    if (!options.cacheOnly)
+    if (shouldReconcile && !options.cacheOnly)
       await reconcileCache(filePlans, projectPlan, cacheStore, options.signal?.aborted === true)
   }
 
-  const outcomes = Array.from({ length: jobs.length }, (_, index): RuleJobOutcome => settledOutcomes[index] ?? {
-    cache: 'miss',
-    diagnostics: [],
-    jobRef: snapshotProgressJob(jobs[index]!.jobRef),
-    orderKey: { ...jobs[index]!.orderKey },
-    state: 'cancelled',
-    usage: [],
-  }).sort((left, right) => compareJobOrder(left.orderKey, right.orderKey))
+  for (const [index, lifecycle] of lifecycles.entries()) {
+    if (lifecycle === 'queued') {
+      settledOutcomes[index] = cancelQueuedJob(jobs[index]!, runProgress)
+      lifecycles[index] = 'terminal'
+    }
+    else if (lifecycle === 'running') {
+      runProgress.finish('running', 'cancelled')
+      settledOutcomes[index] = cancelledOutcome(jobs[index]!)
+      lifecycles[index] = 'terminal'
+    }
+  }
+
+  runProgress.finalize()
+  if (admissionFailed)
+    throw infrastructureError
+
+  const outcomes = settledOutcomes.filter((outcome): outcome is RuleJobOutcome => outcome !== undefined)
+    .sort((left, right) => compareJobOrder(left.orderKey, right.orderKey))
   const failedOutcomes = outcomes.filter(
     (outcome): outcome is Extract<RuleJobOutcome, { state: 'failed' }> => outcome.state === 'failed',
   )
@@ -220,12 +269,14 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     usage: runUsage(outcomes),
   }
 
+  options.progress?.onExecuteEnd?.({ endedAt: clock(), progress: runProgress.snapshot() })
   options.progress?.onRunEnd?.({
-    diagnostics: result.diagnostics,
+    diagnostics: snapshotDiagnostics(result.diagnostics),
     endedAt: clock(),
-    execution: result.execution,
+    execution: { ...result.execution },
+    progress: runProgress.snapshot(),
     startedAt: runStartedAt,
-    usage: result.usage,
+    usage: snapshotRunUsage(result.usage),
   })
 
   if (infrastructureFailed)
@@ -240,6 +291,37 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   }
 
   return result
+}
+
+function cancelledOutcome(job: ReturnType<typeof createRuleJobs>[number]): RuleJobOutcome {
+  return {
+    cache: 'miss',
+    diagnostics: [],
+    jobRef: snapshotProgressJobRef(job.jobRef),
+    orderKey: { ...job.orderKey },
+    state: 'cancelled',
+    usage: [],
+  }
+}
+
+function cancelQueuedJob(
+  job: ReturnType<typeof createRuleJobs>[number],
+  progress: ReturnType<typeof createRunProgress>,
+  reporter?: RunOptions['progress'],
+  clock?: () => number,
+  onTerminal?: (outcome: RuleJobOutcome) => void,
+): RuleJobOutcome {
+  const outcome = cancelledOutcome(job)
+  const snapshot = progress.finish('queued', 'cancelled')
+  onTerminal?.(outcome)
+  reporter?.onJobEnd?.({
+    cache: 'miss',
+    endedAt: clock?.(),
+    job: snapshotProgressJobRef(job.jobRef),
+    progress: snapshot,
+    state: 'cancelled',
+  })
+  return outcome
 }
 
 function canCreateProjectPlan(runtimes: RuleRuntime[]): boolean {
@@ -343,6 +425,16 @@ function runUsage(outcomes: RuleJobOutcome[]): RunUsage {
   return {
     ...usageTotals(live),
     ...(cached.length > 0 ? { cached: usageTotals(cached) } : {}),
+  }
+}
+
+function snapshotRunUsage(usage: RunUsage): RunUsage {
+  return {
+    ...usage,
+    ...(usage.cached
+      ? { cached: { ...usage.cached, records: snapshotUsageRecords(usage.cached.records) } }
+      : {}),
+    records: snapshotUsageRecords(usage.records),
   }
 }
 

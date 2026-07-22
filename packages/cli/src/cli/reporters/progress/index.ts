@@ -65,6 +65,18 @@ function createRenderingProgressReporter(
       summary.onDiagnostic?.(payload)
       renderer.render()
     },
+    onExecuteEnd: (payload) => {
+      summary.onExecuteEnd?.(payload)
+      renderer.render()
+    },
+    onExecuteStart: (payload) => {
+      summary.onExecuteStart?.(payload)
+      renderer.render()
+    },
+    onFileReady: (payload) => {
+      summary.onFileReady?.(payload)
+      renderer.render()
+    },
     onJobEnd: (payload) => {
       summary.onJobEnd?.(payload)
       renderer.render()
@@ -81,13 +93,17 @@ function createRenderingProgressReporter(
       summary.onJobStart?.(payload)
       renderer.render()
     },
+    onPrepareEnd: (payload) => {
+      summary.onPrepareEnd?.(payload)
+      renderer.render()
+    },
+    onPrepareStart: (payload) => {
+      summary.onPrepareStart?.(payload)
+      renderer.start()
+    },
     onRunEnd: (payload) => {
       summary.onRunEnd?.(payload)
       renderer.render()
-    },
-    onRunStart: (payload) => {
-      summary.onRunStart?.(payload)
-      renderer.start()
     },
     onUsage: (payload) => {
       summary.onUsage?.(payload)

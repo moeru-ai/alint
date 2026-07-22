@@ -1,5 +1,5 @@
 import type { ExecutionTarget, RuleTargetExecution } from '../targets/types'
-import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressJob } from '../types'
+import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressJobRef } from '../types'
 
 export interface JobOrderKey {
   inputIndex: number
@@ -12,14 +12,14 @@ export type JobScope = 'directory' | 'project' | 'source'
 
 export interface RuleJob {
   execution: RuleTargetExecution
-  jobRef: ProgressJob
+  jobRef: ProgressJobRef
   orderKey: JobOrderKey
   target: ExecutionTarget
 }
 
 export type RuleJobOutcome = TerminalOutcome & {
   diagnostics: Diagnostic[]
-  jobRef: ProgressJob
+  jobRef: ProgressJobRef
   orderKey: JobOrderKey
   usage: InferenceUsageRecord[]
 }

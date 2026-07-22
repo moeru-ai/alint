@@ -1,4 +1,4 @@
-import type { Diagnostic, ExecutionCounts, ProgressJob, ProgressReporter } from '@alint-js/core'
+import type { ExecutionCounts, ProgressJobRef, ProgressReporter, ProgressSnapshot } from '@alint-js/core'
 
 import { relative } from 'node:path'
 
@@ -25,11 +25,10 @@ export interface SummaryProgressReporterOptions {
   spinnerFrames: string[]
 }
 
-type JobLifecycle = 'cached' | 'cancelled' | 'completed' | 'failed' | 'queued' | 'running' | 'skipped'
+type JobLifecycle = 'queued' | 'running'
 
 interface JobState {
-  endedAt?: number
-  job: ProgressJob
+  job: ProgressJobRef
   retry?: { attempt: number, maxAttempts: number, startedAt?: number }
   startedAt?: number
   state: JobLifecycle
@@ -48,15 +47,20 @@ interface RuleGroup {
   terminalDurationMs: number
 }
 
+type StoredRuleGroup = Omit<RuleGroup, 'jobs'>
+
 interface SummaryState {
   animationTick: number
+  activeJobs: Map<string, JobState>
   cachedTokens: number
-  diagnostics: Diagnostic[]
+  errorCount: number
   execution: ExecutionCounts
-  jobs: Map<string, JobState>
   jobTokens: Map<string, number>
+  progress: ProgressSnapshot
+  ruleGroups: Map<string, StoredRuleGroup>
   runStartedAt?: number
   totalTokens: number
+  warnCount: number
 }
 
 export function createSummaryProgressReporter(options: SummaryProgressReporterOptions): SummaryProgressReporter {
@@ -65,32 +69,50 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
 
   return {
     getRows: () => createRows(state, options, now()),
-    onDiagnostic: ({ diagnostic }) => {
-      state.diagnostics.push(diagnostic)
+    onDiagnostic: ({ diagnostic, progress }) => {
+      updateProgress(state, progress)
+      if (diagnostic.severity === 'warn')
+        state.warnCount += 1
+      else
+        state.errorCount += 1
     },
+    onExecuteEnd: ({ progress }) => {
+      updateProgress(state, progress)
+    },
+    onExecuteStart: ({ progress, startedAt }) => {
+      updateProgress(state, progress)
+      state.runStartedAt = startedAt ?? state.runStartedAt ?? now()
+    },
+    onFileReady: ({ progress }) => updateProgress(state, progress),
     onJobEnd: (payload) => {
-      const current = state.jobs.get(payload.job.id)
-      if (payload.state === 'cached' && current?.state !== 'cached') {
+      updateProgress(state, payload.progress)
+      const current = state.activeJobs.get(payload.job.id)
+      const group = state.ruleGroups.get(payload.job.ruleId)
+      if (!group)
+        throw new Error(`Cannot finish unqueued progress job "${payload.job.id}".`)
+      group[payload.state] += 1
+      if (payload.endedAt !== undefined && current?.startedAt !== undefined && payload.state !== 'cached')
+        group.terminalDurationMs += Math.max(payload.endedAt - current.startedAt, 0)
+      if (payload.state === 'cached') {
         const cachedTokens = state.jobTokens.get(payload.job.id) ?? 0
         state.totalTokens = Math.max(state.totalTokens - cachedTokens, 0)
         state.cachedTokens += cachedTokens
       }
-      state.jobs.set(payload.job.id, {
-        endedAt: payload.endedAt ?? now(),
-        job: payload.job,
-        retry: current?.retry,
-        startedAt: payload.startedAt ?? current?.startedAt,
-        state: payload.state,
-      })
-      transition(state.execution, 'running', payload.state)
+      state.activeJobs.delete(payload.job.id)
+      state.jobTokens.delete(payload.job.id)
     },
-    onJobQueued: ({ job }) => {
-      state.jobs.set(job.id, { job, state: 'queued' })
-      state.execution.queued += 1
+    onJobQueued: ({ job, progress }) => {
+      updateProgress(state, progress)
+      // The run engine admits each job exactly once, so rule totals need no unbounded dedupe set.
+      const group = state.ruleGroups.get(job.ruleId) ?? createRuleGroup(job)
+      group.planned += 1
+      state.ruleGroups.set(job.ruleId, group)
+      state.activeJobs.set(job.id, { job, state: 'queued' })
     },
     onJobRetry: (payload) => {
-      const current = state.jobs.get(payload.job.id)
-      state.jobs.set(payload.job.id, {
+      updateProgress(state, payload.progress)
+      const current = state.activeJobs.get(payload.job.id)
+      state.activeJobs.set(payload.job.id, {
         job: payload.job,
         retry: { attempt: payload.attempt, maxAttempts: payload.maxAttempts, startedAt: payload.startedAt },
         startedAt: current?.startedAt ?? payload.startedAt ?? now(),
@@ -98,53 +120,39 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
       })
     },
     onJobStart: (payload) => {
-      state.jobs.set(payload.job.id, {
+      updateProgress(state, payload.progress)
+      state.activeJobs.set(payload.job.id, {
         job: payload.job,
         startedAt: payload.startedAt ?? now(),
         state: 'running',
       })
-      transition(state.execution, 'queued', 'running')
     },
-    onRunEnd: (payload) => {
-      state.diagnostics = [...payload.diagnostics]
-      state.execution = { ...payload.execution }
-      state.totalTokens = payload.usage.totalTokens
-      state.cachedTokens = payload.usage.cached?.totalTokens ?? 0
-      state.runStartedAt = payload.startedAt ?? state.runStartedAt
-    },
-    /**
-     * Resets summary state when the core run starts.
-     *
-     * Triggering workflow:
-     *
-     * `@alint-js/core run`
-     *   -> `ProgressReporter.onRunStart`
-     *     -> `createRenderingProgressReporter(...).onRunStart`
-     *       -> `SummaryProgressReporter.onRunStart` (this handler)
-     *
-     * Upstream:
-     * - `createRenderingProgressReporter(...).onRunStart`
-     *
-     * Downstream:
-     * - Resets `state.animationTick` and run data consumed by {@link createRows}.
-     */
-    onRunStart: ({ jobsTotal, startedAt }) => {
-      state.diagnostics = []
-      state.execution = createCounts(jobsTotal)
-      state.jobs.clear()
+    onPrepareStart: ({ startedAt }) => {
+      state.activeJobs.clear()
+      state.errorCount = 0
+      state.execution = createCounts()
+      state.progress = createProgress()
+      state.ruleGroups.clear()
       state.runStartedAt = startedAt ?? now()
       state.animationTick = 0
       state.cachedTokens = 0
       state.jobTokens.clear()
       state.totalTokens = 0
+      state.warnCount = 0
     },
-    onUsage: ({ job, record }) => {
+    onRunEnd: (payload) => {
+      state.warnCount = payload.diagnostics.filter(diagnostic => diagnostic.severity === 'warn').length
+      state.errorCount = payload.diagnostics.length - state.warnCount
+      updateProgress(state, payload.progress)
+      state.totalTokens = payload.usage.totalTokens
+      state.cachedTokens = payload.usage.cached?.totalTokens ?? 0
+      state.runStartedAt = payload.startedAt ?? state.runStartedAt
+    },
+    onUsage: ({ job, progress, record }) => {
+      updateProgress(state, progress)
       if (record.totalTokens != null && Number.isFinite(record.totalTokens)) {
         state.jobTokens.set(job.id, (state.jobTokens.get(job.id) ?? 0) + record.totalTokens)
-        if (state.jobs.get(job.id)?.state === 'cached')
-          state.cachedTokens += record.totalTokens
-        else
-          state.totalTokens += record.totalTokens
+        state.totalTokens += record.totalTokens
       }
     },
     /**
@@ -199,10 +207,6 @@ function completeGraphemeBoundary(input: string, maximumIndex: number): number {
   return boundary
 }
 
-function countDiagnostics(diagnostics: Diagnostic[], severity: Diagnostic['severity']): number {
-  return diagnostics.filter(diagnostic => diagnostic.severity === severity).length
-}
-
 function createCounts(planned = 0): ExecutionCounts {
   return {
     cached: 0,
@@ -219,12 +223,26 @@ function createCounts(planned = 0): ExecutionCounts {
 function createInitialState(): SummaryState {
   return {
     animationTick: 0,
+    activeJobs: new Map(),
     cachedTokens: 0,
-    diagnostics: [],
+    errorCount: 0,
     execution: createCounts(),
-    jobs: new Map(),
     jobTokens: new Map(),
+    progress: createProgress(),
+    ruleGroups: new Map(),
     totalTokens: 0,
+    warnCount: 0,
+  }
+}
+
+function createProgress(): ProgressSnapshot {
+  return {
+    execution: createCounts(),
+    filesTotal: 0,
+    final: false,
+    jobsCompleted: 0,
+    jobsStarted: 0,
+    jobsTotal: 0,
   }
 }
 
@@ -232,8 +250,6 @@ function createRows(state: SummaryState, options: SummaryProgressReporterOptions
   if (options.rows !== undefined && options.rows <= 0)
     return []
 
-  const warnCount = countDiagnostics(state.diagnostics, 'warn')
-  const errorCount = countDiagnostics(state.diagnostics, 'error')
   const groups = createRuleGroups(state)
   const footerRows = options.rows === undefined ? 3 : Math.min(options.rows, 3)
   const separatorRows = options.rows === undefined || options.rows - footerRows > 1 ? 1 : 0
@@ -252,45 +268,30 @@ function createRows(state: SummaryState, options: SummaryProgressReporterOptions
   visible.push(...visibleFooters)
 
   return options.color
-    ? visible.map(row => styleRow(row, state, warnCount, errorCount, options))
+    ? visible.map(row => styleRow(row, state, state.warnCount, state.errorCount, options))
     : visible
 }
 
-function createRuleGroups(state: SummaryState): RuleGroup[] {
-  const groups = new Map<string, RuleGroup>()
-
-  for (const job of state.jobs.values()) {
-    const group = groups.get(job.job.ruleId) ?? {
-      cached: 0,
-      cancelled: 0,
-      completed: 0,
-      failed: 0,
-      firstJobIndex: job.job.index,
-      jobs: [],
-      planned: 0,
-      ruleId: job.job.ruleId,
-      skipped: 0,
-      terminalDurationMs: 0,
-    }
-
-    group.firstJobIndex = Math.min(group.firstJobIndex, job.job.index)
-    group.jobs.push(job)
-    group.planned = Math.max(group.planned, job.job.ruleTotal)
-    if (job.state === 'cached')
-      group.cached += 1
-    if (job.state === 'cancelled')
-      group.cancelled += 1
-    if (job.state === 'completed')
-      group.completed += 1
-    if (job.state === 'failed')
-      group.failed += 1
-    if (job.state === 'skipped')
-      group.skipped += 1
-    if (job.endedAt !== undefined && job.startedAt !== undefined && job.state !== 'cached')
-      group.terminalDurationMs += Math.max(job.endedAt - job.startedAt, 0)
-
-    groups.set(group.ruleId, group)
+function createRuleGroup(job: ProgressJobRef): StoredRuleGroup {
+  return {
+    cached: 0,
+    cancelled: 0,
+    completed: 0,
+    failed: 0,
+    firstJobIndex: job.index,
+    planned: 0,
+    ruleId: job.ruleId,
+    skipped: 0,
+    terminalDurationMs: 0,
   }
+}
+
+function createRuleGroups(state: SummaryState): RuleGroup[] {
+  const groups = new Map<string, RuleGroup>(
+    [...state.ruleGroups].map(([ruleId, group]) => [ruleId, { ...group, jobs: [] }]),
+  )
+  for (const job of state.activeJobs.values())
+    groups.get(job.job.ruleId)?.jobs.push(job)
 
   return [...groups.values()]
     .sort(compareRuleGroups)
@@ -396,14 +397,17 @@ function formatDuration(ms: number): string {
 function formatFooters(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {
   const terminal = terminalCount(state.execution)
   const elapsed = state.runStartedAt === undefined ? 0 : now - state.runStartedAt
-  const progressBar = formatMiniBarSegment(terminal, state.execution.planned, state.animationTick, options)
-  const eta = estimateEta(elapsed, terminal, state.execution.planned)
-  const projectedTokens = terminal > 0 && state.execution.planned > 0
+  const progressBar = state.progress.final
+    ? formatMiniBarSegment(terminal, state.execution.planned, state.animationTick, options)
+    : ''
+  const eta = state.progress.final ? estimateEta(elapsed, terminal, state.execution.planned) : 'eta ?'
+  const projectedTokens = state.progress.final && terminal > 0 && state.execution.planned > 0
     ? Math.ceil((state.totalTokens + state.cachedTokens) * state.execution.planned / terminal)
     : undefined
+  const discovering = state.progress.final ? '' : ' jobs (discovering)'
 
   return [
-    fitRow(`${terminal}/${state.execution.planned}${progressBar} ${formatDuration(elapsed)} -> ${eta === 'eta ?' ? '~?' : eta.replace('eta ', '')}`, options.columns),
+    fitRow(`${terminal}/${state.execution.planned}${discovering}${progressBar} ${formatDuration(elapsed)} -> ${eta === 'eta ?' ? '~?' : eta.replace('eta ', '')}`, options.columns),
     fitRow(`${state.execution.running} concurrency / ${state.execution.queued} queued / ${state.execution.cached} cached / ${state.execution.failed} failed`, options.columns),
     fitRow(`${state.totalTokens.toLocaleString('en-US')} tokens (${state.cachedTokens.toLocaleString('en-US')} cached) -> ${projectedTokens === undefined ? '~?' : `~${projectedTokens.toLocaleString('en-US')} tokens`}`, options.columns),
   ]
@@ -476,7 +480,7 @@ function terminalCount(counts: ExecutionCounts): number {
   return counts.completed + counts.failed + counts.cached + counts.skipped + counts.cancelled
 }
 
-function transition(counts: ExecutionCounts, from: 'queued' | 'running', to: keyof ExecutionCounts): void {
-  counts[from] -= 1
-  counts[to] += 1
+function updateProgress(state: SummaryState, progress: ProgressSnapshot): void {
+  state.execution = { ...progress.execution }
+  state.progress = { ...progress, execution: { ...progress.execution } }
 }
