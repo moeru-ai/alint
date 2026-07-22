@@ -14,8 +14,8 @@ import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
 import { resolveRunnerConfig } from './commands/lint/runner'
-import { formatProbeModelsFailure, isBackInput, withBackOption } from './commands/setup/interactive'
 import { createProviderId, providerSetupSources } from './provider-registry'
+import { formatProbeModelsFailure, isBackInput, withBackOption } from './tui/provider-editor/prompts'
 
 interface TestIo {
   cwd: string

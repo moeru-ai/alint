@@ -37,4 +37,5 @@ export interface ProviderEditorPromptPort {
 
 export type ProviderEditorResult
   = | { defaultAliasTarget?: DefaultAliasTarget, provider: ProviderDefinition, status: 'confirmed' }
-    | { status: 'back' | 'cancelled' }
+    | { status: 'back' }
+    | { status: 'cancelled' }
