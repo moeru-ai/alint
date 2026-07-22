@@ -13,6 +13,7 @@ import * as alintCore from '@alint-js/core'
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
+import { providerUpdateSource } from './commands/config/providers/update'
 import { resolveRunnerConfig } from './commands/lint/runner'
 import { createProviderId, providerSetupSources } from './provider-registry'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './tui/provider-editor/prompts'
@@ -302,6 +303,14 @@ describe('createProviderId', () => {
     expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi']))).toBe('cliproxyapi-2')
     expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi', 'cliproxyapi-2']))).toBe('cliproxyapi-3')
     expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('ollama')
+  })
+
+  it('uses the custom source when an invalid stored endpoint needs repair', () => {
+    expect(providerUpdateSource('not a valid endpoint')).toEqual({
+      label: 'Custom OpenAI-compatible provider',
+      probeModels: true,
+      value: 'custom',
+    })
   })
 })
 
@@ -1317,7 +1326,10 @@ local = "./plugins/local-plugin"
     await writeSetupConfig(globalPath, {
       providers: [{
         endpoint: 'https://old.example/v1',
-        headers: { Authorization: 'Bearer existing' },
+        headers: {
+          'Authorization': 'Bearer existing',
+          'X-Keep': 'yes',
+        },
         id: 'example',
         models: [{
           aliases: ['default'],
@@ -1344,10 +1356,20 @@ local = "./plugins/local-plugin"
     })
     const server = await withModelsServer(({ headers, url }) => {
       expect(url).toBe('/v1/models')
-      expect(headers.authorization).toBe('Bearer existing')
+      expect(headers.authorization).toBe('Bearer final')
+      expect(headers['x-keep']).toBe('yes')
       expect(headers['x-new']).toBe('true')
 
-      return { body: { data: [{ id: 'existing' }, { id: 'remote-new' }] } }
+      return {
+        body: {
+          data: [
+            { id: 'existing' },
+            { id: 'remote-new' },
+            { id: 'manual' },
+            { id: 'remote-new' },
+          ],
+        },
+      }
     })
 
     try {
@@ -1363,9 +1385,17 @@ local = "./plugins/local-plugin"
         '--provider-endpoint',
         server.endpoint,
         '--provider-header',
+        'authorization=Bearer replacement',
+        '--provider-header',
+        'AUTHORIZATION=Bearer final',
+        '--provider-header',
         'X-New=true',
         '--provider-model',
         'manual',
+        '--provider-model',
+        'explicit-new',
+        '--provider-model',
+        'explicit-new',
       ], io)
 
       expect(exitCode).toBe(0)
@@ -1373,13 +1403,15 @@ local = "./plugins/local-plugin"
       expect(config.runner).toEqual({ ruleConcurrency: 3 })
       expect(config.providers[0]?.endpoint).toBe(server.endpoint)
       expect(config.providers[0]?.headers).toEqual({
-        'Authorization': 'Bearer existing',
+        'AUTHORIZATION': 'Bearer final',
+        'X-Keep': 'yes',
         'X-New': 'true',
       })
       expect(config.providers[0]?.models.map(model => model.id)).toEqual([
         'existing',
         'remote-new',
         'manual',
+        'explicit-new',
       ])
       expect(config.providers[0]?.models[0]).toEqual({
         aliases: ['default'],
@@ -1460,6 +1492,69 @@ local = "./plugins/local-plugin"
 
     expect(exitCode).toBe(2)
     expect(io.stderrText).toBe('config providers update requires --provider.\n')
+  })
+
+  it.each([
+    {
+      arguments: [
+        '--provider',
+        'example',
+        '--provider',
+        'other',
+        '--provider-endpoint',
+        '__ENDPOINT__',
+      ],
+      error: 'config providers update accepts --provider only once.\n',
+    },
+    {
+      arguments: [
+        '--provider',
+        'example',
+        '--provider-endpoint',
+        '__ENDPOINT__',
+        '--provider-endpoint',
+        '__ENDPOINT__',
+      ],
+      error: 'config providers update accepts --provider-endpoint only once.\n',
+    },
+  ])('rejects a repeated scalar update option without probing or writing: $error', async ({ arguments: args, error }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://old.example/v1',
+        id: 'example',
+        models: [{ id: 'existing' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+    let probeCount = 0
+    const server = await withModelsServer(() => {
+      probeCount += 1
+      return { body: { data: [{ id: 'remote' }] } }
+    })
+
+    try {
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'providers',
+        'update',
+        '-N',
+        ...args.map(argument => argument === '__ENDPOINT__' ? server.endpoint : argument),
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toBe(error)
+      expect(probeCount).toBe(0)
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
   })
 
   it('reports the selected scope when an update provider is unknown', async () => {

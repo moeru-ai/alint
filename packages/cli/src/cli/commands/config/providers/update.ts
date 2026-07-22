@@ -1,5 +1,6 @@
 import type { ProviderDefinition, SetupConfig } from '@alint-js/config'
 
+import type { ProviderSetupSource } from '../../../provider-registry'
 import type { CommandContext } from '../../command'
 
 import {
@@ -22,8 +23,8 @@ import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
 
 export interface UpdateProviderOptions {
   local?: boolean
-  provider?: string
-  providerEndpoint?: string
+  provider?: string | string[]
+  providerEndpoint?: string | string[]
   providerHeader?: string | string[]
   providerModel?: string | string[]
 }
@@ -42,9 +43,41 @@ export const update = defineCommand({
   ],
 })
 
+export function providerUpdateSource(endpoint: string): ProviderSetupSource {
+  const custom = findProviderSetupSource('custom')!
+
+  try {
+    return findProviderSetupSourceByEndpoint(endpoint) ?? custom
+  }
+  catch {
+    // Invalid stored endpoints must remain editable through the custom flow.
+    return custom
+  }
+}
+
+function mergeProviderHeaders(
+  existing: Record<string, string> | undefined,
+  replacements: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  const headers = { ...existing }
+
+  for (const [replacementName, replacementValue] of Object.entries(replacements ?? {})) {
+    for (const existingName of Object.keys(headers)) {
+      if (existingName.toLowerCase() === replacementName.toLowerCase()) {
+        delete headers[existingName]
+      }
+    }
+
+    headers[replacementName] = replacementValue
+  }
+
+  return Object.keys(headers).length > 0 ? headers : undefined
+}
+
 async function runNonInteractiveUpdate(
   context: CommandContext,
   options: UpdateProviderOptions,
+  providerEndpoint: string | undefined,
   existingProvider: ProviderDefinition,
   config: SetupConfig,
   path: string,
@@ -61,10 +94,8 @@ async function runNonInteractiveUpdate(
 
   const draft: ProviderDefinition = {
     ...existingProvider,
-    endpoint: options.providerEndpoint ?? existingProvider.endpoint,
-    headers: parsedHeaders === undefined
-      ? existingProvider.headers
-      : { ...existingProvider.headers, ...parsedHeaders },
+    endpoint: providerEndpoint ?? existingProvider.endpoint,
+    headers: mergeProviderHeaders(existingProvider.headers, parsedHeaders),
   }
 
   let remoteModelIds: string[]
@@ -105,7 +136,18 @@ async function runUpdateProviderCommand(
   context: CommandContext,
   options: UpdateProviderOptions,
 ): Promise<number> {
-  const providerId = options.provider
+  let providerEndpoint: string | undefined
+  let providerId: string | undefined
+
+  try {
+    providerId = scalarOption(options.provider, '--provider')
+    providerEndpoint = scalarOption(options.providerEndpoint, '--provider-endpoint')
+  }
+  catch (error) {
+    context.io.stderr.write(`${errorMessageFrom(error) ?? 'Invalid provider update option.'}\n`)
+    return 2
+  }
+
   if (providerId === undefined) {
     context.io.stderr.write('config providers update requires --provider.\n')
     return 2
@@ -120,17 +162,15 @@ async function runUpdateProviderCommand(
   }
 
   if (context.setupNoInteractive) {
-    return runNonInteractiveUpdate(context, options, existingProvider, config, path)
+    return runNonInteractiveUpdate(context, options, providerEndpoint, existingProvider, config, path)
   }
 
-  const source = findProviderSetupSourceByEndpoint(existingProvider.endpoint)
-    ?? findProviderSetupSource('custom')!
   const result = await runProviderEditor({
     config,
     existingProvider,
     io: context.io,
     mode: 'update',
-    source,
+    source: providerUpdateSource(existingProvider.endpoint),
   })
 
   if (result.status !== 'confirmed') {
@@ -144,6 +184,14 @@ async function runUpdateProviderCommand(
 
   await writeSetupConfig(path, nextConfig)
   return 0
+}
+
+function scalarOption(value: string | string[] | undefined, flag: string): string | undefined {
+  if (Array.isArray(value)) {
+    throw new TypeError(`config providers update accepts ${flag} only once.`)
+  }
+
+  return value
 }
 
 function toArray(value: string | string[] | undefined): string[] {
