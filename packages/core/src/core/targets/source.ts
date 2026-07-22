@@ -1,3 +1,4 @@
+import type { CacheOwnerTransaction, CacheStore } from '../cache'
 import type { ClassTarget, FileTarget, FunctionTarget, SourceTarget } from '../source/types'
 import type { ExecutionTarget, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleTargetExecution } from './types'
 
@@ -6,9 +7,11 @@ import { createTargetIdentityResolver, normalizeCachePath } from '../cache'
 export function createSourceExecutionPlans(
   files: PreparedFile[],
   cwd: string,
+  cacheStore: CacheStore,
 ): PreparedFileExecutionPlan[] {
   return files.map((preparedFile, fileOffset) => {
-    const targets = collectExecutionTargets(preparedFile)
+    const cacheOwner = cacheStore.beginOwner({ kind: 'file', path: preparedFile.file.path })
+    const targets = collectExecutionTargets(preparedFile, cacheOwner)
     const resolveTargetIdentity = createTargetIdentityResolver(
       targets.map(target => toTargetIdentityInput(cwd, preparedFile.file.path, target)),
     )
@@ -18,6 +21,7 @@ export function createSourceExecutionPlans(
     }
 
     const filePlan: PreparedFileExecutionPlan = {
+      cacheOwner,
       id: `source:${preparedFile.file.path}`,
       index: fileOffset + 1,
       kind: 'source',
@@ -42,6 +46,7 @@ function calculateFilePlanExecutions(filePlan: PreparedFileExecutionPlan): numbe
 
 function collectExecutionTargets(
   preparedFile: PreparedFile,
+  cacheOwner: CacheOwnerTransaction,
 ): ExecutionTarget[] {
   const targets: ExecutionTarget[] = []
 
@@ -58,7 +63,7 @@ function collectExecutionTargets(
 
     targets.push({
       activeFilePath: preparedFile.file.path,
-      cacheFilePaths: [preparedFile.file.path],
+      cacheOwner,
       configHash: preparedFile.configHash,
       executions,
       identity: sourceTarget.identity,

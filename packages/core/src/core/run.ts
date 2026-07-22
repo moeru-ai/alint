@@ -2,9 +2,10 @@ import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
 import type { DirectoryTarget, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
+import type { CacheStore } from './cache'
 import type { RuleJobOutcome } from './execution/job'
 import type { PreparedDirectory } from './targets/directory'
-import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState } from './targets/types'
+import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from './targets/types'
 import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressReporter, RunOptions, RunResult, RunUsage, RunUsageTotals } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
@@ -17,7 +18,7 @@ import { withAgentRetry } from '../agent/retry'
 import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
 import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
-import { createCacheStore, normalizeCachePath, normalizeRunnerCacheConfig } from './cache'
+import { createCacheStore, normalizeRunnerCacheConfig } from './cache'
 import { createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
 import { hashText, stableHash } from './hash'
 import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
@@ -69,18 +70,15 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     cwd,
     enabled: normalizedCacheConfig.enabled,
     location: normalizedCacheConfig.location,
+    readOnly: options.cacheOnly,
   })
 
   const cacheContext: CacheRunContext = {
-    cwd,
-    enabled: normalizedCacheConfig.enabled,
-    fileEntryKeys: new Map(),
     modelHash: stableHash({
       modelOverride: options.modelOverride,
       outputLanguage: options.outputLanguage,
       setupConfig,
     }),
-    store: cacheStore,
   }
 
   const pendingFiles = [...(options.files ?? [])]
@@ -178,11 +176,12 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         setupConfig,
         src,
       })
-  const filePlans = createSourceExecutionPlans(files, cwd)
+  const filePlans = createSourceExecutionPlans(files, cwd, cacheStore)
   const directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
   const projectPlan = resolvedProjectConfig.ignored || options.projectTargets === false
     ? undefined
     : createProjectExecutionPlan({
+        cacheStore,
         configHash: stableHash({ settings: projectConfig.settings }),
         files,
         index: filePlans.length + directoryPlans.length + 1,
@@ -246,7 +245,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     // cacheOnly runs are strictly read-only: reconciling a partial cache snapshot could
     // discard entries for the jobs deliberately skipped by this run.
     if (!options.cacheOnly)
-      await reconcileCache(filePlans, cacheContext)
+      await reconcileCache(filePlans, projectPlan, cacheStore, options.signal?.aborted === true)
   }
 
   const outcomes = Array.from({ length: jobs.length }, (_, index): RuleJobOutcome => settledOutcomes[index] ?? {
@@ -510,18 +509,22 @@ function mergeModelRequirement(
 
 async function reconcileCache(
   filePlans: PreparedFileExecutionPlan[],
-  cacheContext: CacheRunContext,
+  projectPlan: TargetExecutionPlan | undefined,
+  cacheStore: CacheStore,
+  externallyAborted: boolean,
 ): Promise<void> {
   try {
     for (const filePlan of filePlans) {
       const file = filePlan.preparedFile.file
-      const normalizedPath = normalizeCachePath(cacheContext.cwd, file.path)
-      const entries = [...(cacheContext.fileEntryKeys.get(normalizedPath) ?? [])]
-
-      cacheContext.store.markFile(file.path, hashText(file.text), entries)
+      filePlan.cacheOwner.commit({
+        contentHash: hashText(file.text),
+        mode: externallyAborted ? 'merge' : 'replace',
+      })
     }
 
-    await cacheContext.store.reconcile()
+    projectPlan?.targets[0]?.cacheOwner?.commit({ mode: externallyAborted ? 'merge' : 'replace' })
+
+    await cacheStore.reconcile()
   }
   catch {
     // Cache writes are opportunistic and must not mask lint results.

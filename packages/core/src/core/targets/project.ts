@@ -1,10 +1,12 @@
 import type { ProjectTarget } from '../../dsl/types'
+import type { CacheStore } from '../cache'
 import type { ExecutionTarget, PreparedFile, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
 
 import { normalizeCachePath } from '../cache'
 import { hashText, stableHash } from '../hash'
 
 export function createProjectExecutionPlan(options: {
+  cacheStore: CacheStore
   configHash: string
   files: PreparedFile[]
   index: number
@@ -37,7 +39,7 @@ export function createProjectExecutionPlan(options: {
   }
 
   const target: ExecutionTarget = {
-    cacheFilePaths: options.files.map(file => file.file.path),
+    cacheOwner: options.cacheStore.beginOwner({ kind: 'project', path: options.root }),
     configHash: options.configHash,
     executions,
     identity: 'project',

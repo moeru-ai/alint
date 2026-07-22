@@ -36,7 +36,6 @@ export function createDirectoryExecutionPlans(
       : [{
           activeFilePath: directory.target.path,
           // TODO: (directory-cache-snapshot) Directory caching stays disabled because rule read scope has no stable snapshot contract; revisit only with an owner-approved target-cache design.
-          cacheFilePaths: [],
           configHash: directory.configHash,
           executions,
           identity: directory.target.path,

@@ -1,21 +1,17 @@
 import type { AsyncLocalStorage } from 'node:async_hooks'
 
 import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
-import type { CacheEntry, CacheStore } from '../cache'
+import type { CacheEntry, CacheOwnerTransaction } from '../cache'
 import type { SourceFile, SourceTarget } from '../source/types'
 import type { Diagnostic, InferenceUsageRecord, ProgressJob, ProgressTargetKind } from '../types'
 
 export interface CacheRunContext {
-  cwd: string
-  enabled: boolean
-  fileEntryKeys: Map<string, Set<string>>
   modelHash: string
-  store: CacheStore
 }
 
 export interface ExecutionTarget {
   activeFilePath?: string
-  cacheFilePaths: string[]
+  cacheOwner?: CacheOwnerTransaction
   configHash: string
   executions: RuleTargetExecution[]
   identity: string
@@ -37,6 +33,7 @@ export interface PreparedFile {
 }
 
 export interface PreparedFileExecutionPlan extends TargetExecutionPlan {
+  cacheOwner: CacheOwnerTransaction
   preparedFile: PreparedFile
 }
 

@@ -2895,7 +2895,9 @@ export default [
 
     expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
-    await expect(readFile(cachePath, 'utf8')).resolves.toContain('"entries"')
+    const cacheText = await readFile(cachePath, 'utf8')
+    expect(cacheText.startsWith('ALINT_CACHE 2 ')).toBe(true)
+    expect(cacheText).toContain('"entries"')
 
     io.stdoutText = ''
     io.stderrText = ''

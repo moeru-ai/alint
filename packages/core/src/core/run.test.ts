@@ -12,6 +12,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import { requireAgent, RetryableAgentError } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
+import { readCacheBody } from './cache'
 import { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './run'
 
 describe('runAlint', () => {
@@ -528,9 +529,7 @@ describe('runAlint', () => {
       setupConfig: createSetupConfig(),
     })
 
-    const cacheFile = JSON.parse(await readFile(join(root, '.alintcache'), 'utf8')) as {
-      entries: Record<string, { target: { identity: string } }>
-    }
+    const cacheFile = await readCacheBody(join(root, '.alintcache'))
     const normalizedIdentities = Object.values(cacheFile.entries)
       .map(entry => entry.target.identity)
       .sort()
@@ -723,11 +722,10 @@ describe('runAlint', () => {
       `project:${root}`,
     ])
 
-    const cacheFile = JSON.parse(await readFile(join(root, '.alintcache'), 'utf8')) as {
-      entries: Record<string, unknown>
-    }
+    const cacheFile = await readCacheBody(join(root, '.alintcache'))
 
-    expect(cacheFile.entries).toEqual({})
+    expect(Object.keys(cacheFile.entries)).toHaveLength(1)
+    expect(Object.values(cacheFile.entries)[0]?.target.kind).toBe('project')
   })
 
   it('provides one project target containing prepared files and source targets', async () => {
@@ -771,17 +769,15 @@ describe('runAlint', () => {
       kind: 'file',
     })))
 
-    const cacheFile = JSON.parse(await readFile(join(root, '.alintcache'), 'utf8')) as {
-      entries: Record<string, { target: { kind: string } }>
-      files: Record<string, { entries: string[] }>
-    }
+    const cacheFile = await readCacheBody(join(root, '.alintcache'))
     const projectEntryKeys = Object.entries(cacheFile.entries)
       .filter(([, entry]) => entry.target.kind === 'project')
       .map(([key]) => key)
 
     expect(projectEntryKeys).toHaveLength(1)
-    expect(cacheFile.files['first.ts']?.entries).toContain(projectEntryKeys[0])
-    expect(cacheFile.files['second.ts']?.entries).toContain(projectEntryKeys[0])
+    expect(Object.values(cacheFile.owners).find(owner => owner.kind === 'project')).toEqual(
+      expect.objectContaining({ path: '.', slots: projectEntryKeys }),
+    )
   })
 
   it('invalidates the project cache when participating file content changes', async () => {
@@ -1889,9 +1885,12 @@ describe('runAlint', () => {
         runner: { cache: { location: cachePath } },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(handlerCalls).toBe(2)
       expect(ruleEndEvents).toEqual(['miss'])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('reuses cached diagnostics and usage on unchanged targets', async () => {
@@ -1948,6 +1947,7 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(handlerCalls).toBe(1)
       expect(result.diagnostics).toMatchObject([
@@ -1992,6 +1992,8 @@ describe('runAlint', () => {
       expect(ruleEndEvents).toEqual([
         'function:hit:cached',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('cancels after rule start without replaying a warm cache entry', async () => {
@@ -2072,6 +2074,20 @@ describe('runAlint', () => {
       })
       expect(handlerCalls).toBe(1)
       expect(ruleEnds).toEqual(['miss:cancelled'])
+
+      const retained = await readCacheBody(cachePath)
+      expect(Object.values(retained.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(retained.entries)).toHaveLength(1)
+
+      const replayed = await runAlint({
+        config,
+        files: [filePath],
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(1)
+      expect(replayed.execution.cached).toBe(1)
     })
 
     it('reruns changed function targets while reusing unchanged siblings', async () => {
@@ -2132,6 +2148,7 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(Object.fromEntries(calls)).toEqual({
         first: 1,
@@ -2145,6 +2162,8 @@ describe('runAlint', () => {
         'first:hit',
         'second:miss',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(2)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(2)
     })
 
     it('does not cache rules that opt out', async () => {
@@ -2247,11 +2266,14 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(result.diagnostics[0]?.message).toBe('second')
       expect(ruleEndEvents).toEqual([
         'miss',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('invalidates cached entries when output language changes', async () => {
@@ -2299,12 +2321,15 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(calls).toBe(2)
       expect(result.diagnostics[0]?.message).toBe('checked in 日本語')
       expect(ruleEndEvents).toEqual([
         'miss',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('invalidates cached entries when implicit language resolution changes', async () => {
@@ -2365,11 +2390,14 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(result.diagnostics[0]?.message).toBe('custom/second')
       expect(ruleEndEvents).toEqual([
         'miss',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('invalidates cached entries when target metadata changes without text changes', async () => {
@@ -2431,11 +2459,14 @@ describe('runAlint', () => {
         },
         setupConfig: createSetupConfig(),
       })
+      const cacheBody = await readCacheBody(cachePath)
 
       expect(result.diagnostics[0]?.message).toBe('2')
       expect(ruleEndEvents).toEqual([
         'miss',
       ])
+      expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(cacheBody.entries)).toHaveLength(1)
     })
 
     it('keeps custom target identities distinct when text and kind match', async () => {
@@ -3084,6 +3115,7 @@ describe('runAlint', () => {
   it('emits failed rule progress before rethrowing rule failures', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-progress-error-'))
     const filePath = join(root, 'demo.txt')
+    const cachePath = join(root, '.alintcache')
     const events: string[] = []
 
     await writeFile(filePath, 'hello\n')
@@ -3108,6 +3140,7 @@ describe('runAlint', () => {
         onJobEnd: payload => events.push(`${payload.state}:${payload.job.ruleId}`),
         onRunEnd: payload => events.push(`run:${payload.execution.completed}/${payload.execution.failed}/${payload.execution.planned}`),
       },
+      runner: { cache: { location: cachePath } },
       setupConfig: createSetupConfig(),
     })).rejects.toMatchObject({
       failures: [{ message: 'rule exploded' }],
@@ -3118,6 +3151,9 @@ describe('runAlint', () => {
       'failed:company/explode',
       'run:0/1/1',
     ])
+    const cacheBody = await readCacheBody(cachePath)
+    expect(Object.values(cacheBody.owners)[0]?.slots).toHaveLength(0)
+    expect(Object.keys(cacheBody.entries)).toHaveLength(0)
   })
 
   it.each(['diagnostic', 'usage'] as const)('propagates a %s reporter exception raised during a handler', async (kind) => {
@@ -3206,6 +3242,22 @@ describe('runAlint', () => {
           })
         },
       }),
+    })
+
+    it('leaves legacy cache bytes unchanged even without input files', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-only-legacy-'))
+      const cachePath = join(root, '.alintcache')
+      const original = '{"legacy":true}\n'
+      await writeFile(cachePath, original)
+
+      await runAlint({
+        cacheOnly: true,
+        cwd: root,
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(await readFile(cachePath, 'utf8')).toBe(original)
     })
 
     it('skips rules that miss cache instead of executing them', async () => {
@@ -3516,6 +3568,62 @@ describe('runAlint', () => {
       expect(visited).toEqual(['first'])
     })
 
+    it('retains completed work when a later job is externally aborted', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-retains-completed-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      const controller = new AbortController()
+      const calls = { first: 0, second: 0 }
+      await writeFile(filePath, [
+        'export function first() {}',
+        'export function second() {}',
+      ].join('\n'))
+      const rule = defineRule({
+        create: () => ({
+          onTargetFunction: (target) => {
+            if (target.name === 'first')
+              calls.first += 1
+            if (target.name === 'second')
+              calls.second += 1
+          },
+        }),
+      })
+      const config = createConfig({ review: rule }, { 'company/review': 'warn' })
+
+      await expect(runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        progress: {
+          onJobStart: ({ job }) => {
+            if (job.target.name === 'second')
+              controller.abort()
+          },
+        },
+        runner: { cache: { location: cachePath }, ruleConcurrency: 1 },
+        setupConfig: createSetupConfig(),
+        signal: controller.signal,
+      })).rejects.toBeInstanceOf(AlintAbortError)
+      const abortedBody = await readCacheBody(cachePath)
+
+      expect(calls).toEqual({ first: 1, second: 0 })
+      expect(Object.values(abortedBody.owners)[0]?.slots).toHaveLength(1)
+      expect(Object.keys(abortedBody.entries)).toHaveLength(1)
+      expect(Object.values(abortedBody.entries)[0]?.target.name).toBe('first')
+
+      const replayed = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath }, ruleConcurrency: 1 },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(calls).toEqual({ first: 1, second: 1 })
+      expect(replayed.execution.cached).toBe(1)
+      expect(replayed.execution.completed).toBe(1)
+    })
+
     it('reports an abort as cancellation rather than a rule failure', async () => {
       const root = await mkdtemp(join(tmpdir(), 'alint-abort-not-errored-'))
       const filePath = join(root, 'demo.ts')
@@ -3557,7 +3665,7 @@ describe('runAlint', () => {
       expect(ruleEndEvents).toEqual(['cancelled'])
     })
 
-    it('keeps diagnostics and cache entries from rules that finished before the abort', async () => {
+    it('keeps diagnostics but does not cache a job cancelled by the external signal', async () => {
       const root = await mkdtemp(join(tmpdir(), 'alint-abort-keeps-work-'))
       const filePath = join(root, 'demo.ts')
       const cachePath = join(root, '.alintcache')
@@ -3612,9 +3720,9 @@ describe('runAlint', () => {
         setupConfig: createSetupConfig(),
       })
 
-      expect(handlerCalls).toEqual(['first', 'second'])
+      expect(handlerCalls).toEqual(['first', 'first', 'second'])
       expect(replayed.diagnostics).toMatchObject([
-        { cached: true, message: 'checked first' },
+        { message: 'checked first' },
         { message: 'checked second' },
       ])
     })

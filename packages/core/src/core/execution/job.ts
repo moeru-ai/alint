@@ -1,12 +1,9 @@
-import type { CacheEntry } from '../cache'
+import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
 import type { CacheRunContext, ExecutionTarget, RuleExecutionBucket, RuleRuntimeState, RuleTargetExecution, TargetExecutionPlan } from '../targets/types'
 import type { AlintRunFailure, Diagnostic, ProgressJob, ProgressReporter } from '../types'
 
 import { errorMessageFrom } from '@moeru/std/error'
 
-import packageJson from '../../../package.json'
-
-import { createCacheKey, normalizeCachePath } from '../cache'
 import { stableHash } from '../hash'
 
 export interface ExecuteRuleJobOptions {
@@ -92,16 +89,23 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   if (options.runSignal?.aborted)
     return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
 
-  const cacheKey = createExecutionCacheKey(job, options.cache)
-  const cachedEntry = cacheKey ? options.cache.store.get(cacheKey) : undefined
-  if (cacheKey && cachedEntry) {
-    rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
+  const slot: CacheSlotIdentity | undefined = job.target.cacheOwner && job.execution.runtime.cacheable
+    ? {
+        ruleId: job.execution.runtime.enabledRule.id,
+        scope: job.target.kind,
+        targetIdentity: job.target.identity,
+      }
+    : undefined
+  const fingerprint = slot ? createFingerprint(job, options.cache.modelHash) : undefined
+  const cachedEntry = slot && fingerprint ? job.target.cacheOwner?.lookup(slot, fingerprint) : undefined
+  if (slot && cachedEntry) {
     try {
       replayCachedEntry(cachedEntry, bucket, job.job, options.progress)
     }
     catch (error) {
       if (!(error instanceof CacheReplayProcessingError))
         throw error
+      job.target.cacheOwner?.discard(slot)
       return finish(job, options, bucket, {
         cache: 'hit',
         cause: error.cause,
@@ -162,17 +166,6 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   if (state.reporterFailed)
     throw state.reporterCause
 
-  if (!timedOut && !handlerFailed && cacheKey) {
-    try {
-      options.cache.store.set(cacheKey, createCacheEntry(job, options.cache, bucket))
-      rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
-    }
-    catch {
-      // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
-      // a write failure cannot invalidate successful rule work.
-    }
-  }
-
   if (options.runSignal?.aborted)
     return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
 
@@ -194,6 +187,16 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     })
   }
 
+  if (slot && fingerprint) {
+    try {
+      job.target.cacheOwner?.put(slot, createCacheEntry(job, fingerprint, bucket))
+    }
+    catch {
+      // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
+      // a write failure cannot invalidate successful rule work.
+    }
+  }
+
   return finish(job, options, bucket, { cache: 'miss', state: 'completed' })
 }
 
@@ -205,16 +208,10 @@ export function resolveRuleExecutionTimeout(timeoutMs: number | undefined): numb
   return timeoutMs
 }
 
-function createCacheEntry(job: RuleJob, cache: CacheRunContext, bucket: RuleExecutionBucket): CacheEntry {
+function createCacheEntry(job: RuleJob, fingerprint: CacheFingerprint, bucket: RuleExecutionBucket): CacheEntry {
   return {
     diagnostics: bucket.diagnostics,
-    filePath: normalizeCachePath(cache.cwd, job.job.inputPath),
-    fingerprint: {
-      alintVersion: packageJson.version,
-      configHash: job.target.configHash,
-      modelHash: cache.modelHash,
-      ruleHash: job.execution.runtime.ruleHash,
-    },
+    fingerprint,
     target: {
       hash: createTargetHash(job),
       identity: job.target.identity,
@@ -227,21 +224,13 @@ function createCacheEntry(job: RuleJob, cache: CacheRunContext, bucket: RuleExec
   }
 }
 
-function createExecutionCacheKey(job: RuleJob, cache: CacheRunContext): string | undefined {
-  if (!cache.enabled || !job.execution.runtime.cacheable || job.target.cacheFilePaths.length === 0)
-    return undefined
-
-  return createCacheKey({
-    alintVersion: packageJson.version,
+function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
+  return {
     configHash: job.target.configHash,
-    filePath: normalizeCachePath(cache.cwd, job.job.inputPath),
-    modelHash: cache.modelHash,
+    modelHash,
     ruleHash: job.execution.runtime.ruleHash,
-    schemaVersion: 1,
     targetHash: createTargetHash(job),
-    targetIdentity: job.target.identity,
-    targetKind: job.target.kind,
-  })
+  }
 }
 
 function createTargetHash(job: RuleJob): string {
@@ -285,15 +274,6 @@ function finish(
     state: outcome.state,
   })
   return outcome
-}
-
-function rememberCacheEntry(cache: CacheRunContext, filePaths: string[], cacheKey: string): void {
-  for (const filePath of filePaths) {
-    const normalizedPath = normalizeCachePath(cache.cwd, filePath)
-    const entries = cache.fileEntryKeys.get(normalizedPath) ?? new Set<string>()
-    entries.add(cacheKey)
-    cache.fileEntryKeys.set(normalizedPath, entries)
-  }
 }
 
 function replayCachedEntry(
