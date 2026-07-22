@@ -83,13 +83,13 @@ function statsDirOf(io: { env?: NodeJS.ProcessEnv }): string {
 }
 
 async function withModelsServer(
-  handler: (request: { headers: NodeJS.Dict<string | string[] | undefined>, url?: string }) => { body: unknown, status?: number },
+  handler: (request: { headers: NodeJS.Dict<string | string[] | undefined>, url?: string }) => { body?: unknown, rawBody?: string, status?: number },
 ): Promise<{ close: () => Promise<void>, endpoint: string }> {
   const server = createServer((request, response) => {
     const result = handler({ headers: request.headers, url: request.url })
     response.statusCode = result.status ?? 200
     response.setHeader('content-type', 'application/json')
-    response.end(JSON.stringify(result.body))
+    response.end(result.rawBody ?? JSON.stringify(result.body))
   })
 
   await new Promise<void>((resolve) => {
@@ -2469,10 +2469,71 @@ local = "./plugins/local-plugin"
 
       expect(exitCode).toBe(2)
       expect(io.stderrText).toBe(
-        `failed to probe provider "failed\\nprovider" at "${server.endpoint}\\u2028models".\n`,
+        `failed to probe provider "failed\\nprovider" at "${server.endpoint}\\u2028models": model request failed.\n`,
       )
       expect(io.stderrText).not.toContain('top-secret')
       expect(io.stderrText).not.toContain('Injected')
+      expect(io.stderrText.split('\n')).toHaveLength(2)
+      expect(io.stdoutText).toBe('no models to prune.\n')
+      expect(await readFile(configPath, 'utf8')).toBe(before)
+    }
+    finally {
+      await server.close()
+    }
+  })
+
+  it.each([
+    {
+      body: { data: [] },
+      rawBody: undefined,
+      reason: 'provider returned HTTP 500',
+      status: 500,
+    },
+    {
+      body: {},
+      rawBody: undefined,
+      reason: 'provider returned an invalid models response',
+      status: 200,
+    },
+    {
+      body: undefined,
+      rawBody: '{',
+      reason: 'provider returned invalid JSON',
+      status: 200,
+    },
+  ])('reports a safe prune probe failure category: $reason', async ({ body, rawBody, reason, status }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    const server = await withModelsServer(() => ({ body, rawBody, status }))
+
+    try {
+      await writeSetupConfig(configPath, {
+        providers: [{
+          endpoint: server.endpoint,
+          headers: { Authorization: 'Bearer secret' },
+          id: 'failed',
+          models: [{ id: 'keep-unchanged' }],
+          type: 'openai-compatible',
+        }],
+        version: 1,
+      })
+      const before = await readFile(configPath, 'utf8')
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'prune',
+        '-N',
+        '--yes',
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toBe(
+        `failed to probe provider "failed" at "${server.endpoint}": ${reason}.\n`,
+      )
+      expect(io.stderrText).not.toContain('Bearer secret')
       expect(io.stderrText.split('\n')).toHaveLength(2)
       expect(io.stdoutText).toBe('no models to prune.\n')
       expect(await readFile(configPath, 'utf8')).toBe(before)

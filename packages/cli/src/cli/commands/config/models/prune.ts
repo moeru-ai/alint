@@ -3,6 +3,7 @@ import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@ali
 import type { CommandContext } from '../../command'
 
 import { pruneProviderModels, writeSetupConfig } from '@alint-js/config'
+import { errorMessageFrom } from '@moeru/std/error'
 
 import { escapeLineValue } from '../../../output'
 import { probeModels } from '../../../provider-registry'
@@ -95,10 +96,10 @@ export async function runPruneModelsCommand(
     try {
       remoteModelIds = new Set(await probeModels(provider.endpoint, provider.headers))
     }
-    catch {
+    catch (error) {
       hadFailure = true
       context.io.stderr.write(
-        `failed to probe provider "${escapeLineValue(provider.id)}" at "${escapeLineValue(provider.endpoint)}".\n`,
+        `failed to probe provider "${escapeLineValue(provider.id)}" at "${escapeLineValue(provider.endpoint)}": ${classifyProbeFailure(error)}.\n`,
       )
       continue
     }
@@ -158,6 +159,26 @@ function applyPlans(config: SetupConfig, plans: readonly ProviderPrunePlan[]): S
     (nextConfig, plan) => pruneProviderModels(nextConfig, plan.provider.id, plan.remoteModelIds),
     config,
   )
+}
+
+function classifyProbeFailure(error: unknown): string {
+  const message = errorMessageFrom(error)
+  const httpStatus = message?.match(/^GET .+ returned ([1-5]\d\d)\.$/u)?.[1]
+
+  if (httpStatus !== undefined) {
+    return `provider returned HTTP ${httpStatus}`
+  }
+
+  if (error instanceof TypeError
+    && message === 'Expected OpenAI-compatible models response with data array.') {
+    return 'provider returned an invalid models response'
+  }
+
+  if (error instanceof SyntaxError) {
+    return 'provider returned invalid JSON'
+  }
+
+  return 'model request failed'
 }
 
 async function confirmPruneModels(): Promise<'cancelled' | 'confirmed' | 'declined'> {
