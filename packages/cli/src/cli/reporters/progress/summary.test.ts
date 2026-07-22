@@ -208,8 +208,8 @@ describe('createSummaryProgressReporter', () => {
     reporter.tick()
 
     const rows = reporter.getRows().join('\n')
-    expect(rows).toContain(`██░▓██`)
-    expect(rows).toContain(`▓██\u001B[90m░░░░\u001B[39m]`)
+    expect(rows).toContain('███▓░█')
+    expect(rows).toContain(`▓░█\u001B[90m░░░░\u001B[39m]`)
   })
 
   it('drops the mini bar before important footer text on narrow terminals', () => {
