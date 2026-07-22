@@ -6,7 +6,8 @@ import { errorMessageFrom } from '@moeru/std/error'
 
 import packageJson from '../../../package.json'
 
-import { createCacheKey, normalizeCachePath, stableHash } from '../cache'
+import { createCacheKey, normalizeCachePath } from '../cache'
+import { stableHash } from '../hash'
 
 export interface ExecuteRuleJobOptions {
   cache: CacheRunContext

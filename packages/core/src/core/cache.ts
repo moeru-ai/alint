@@ -4,12 +4,14 @@ import type { Diagnostic, InferenceUsageRecord, ProgressTargetKind } from './typ
 
 import process from 'node:process'
 
-import { createHash, randomUUID } from 'node:crypto'
+import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
 import { array, check, description, is, literal, number, object, optional, pipe, record, string, union, unknown } from 'valibot'
+
+import { stableHash } from './hash'
 
 const CACHE_SCHEMA_VERSION = 1
 const DEFAULT_CACHE_FILE_NAME = '.alintcache'
@@ -195,10 +197,6 @@ export function createTargetIdentityResolver(targets: TargetIdentityInput[]) {
   }
 }
 
-export function hashText(text: string): string {
-  return createHash('sha256').update(text).digest('hex')
-}
-
 export function normalizeCachePath(cwd: string, filePath: string): string {
   const resolvedPath = isAbsolute(filePath) ? resolve(filePath) : resolve(cwd, filePath)
   return relative(cwd, resolvedPath).split(sep).join('/')
@@ -251,10 +249,6 @@ export function resolveCacheLocation(cwd: string, location?: string): string {
   return resolved
 }
 
-export function stableHash(value: unknown): string {
-  return hashText(stableStringify(value))
-}
-
 function createBaseTargetIdentity(target: TargetIdentityInput): string {
   if (target.identity && (target.kind !== 'file' || target.identity !== 'file')) {
     return target.filePath
@@ -303,10 +297,6 @@ function isCacheFile(value: unknown): value is CacheFile {
   return is(CacheFileSchema, value)
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
 async function readCacheFile(location: string): Promise<CacheFile> {
   try {
     const parsed = JSON.parse(await readFile(location, 'utf8')) as unknown
@@ -320,26 +310,6 @@ async function readCacheFile(location: string): Promise<CacheFile> {
   }
 
   return createEmptyCacheFile()
-}
-
-function stableStringify(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(item => stableStringify(item)).join(',')}]`
-  }
-
-  if (isRecord(value)) {
-    return `{${Object.keys(value).sort().map((key) => {
-      const property = value[key]
-
-      if (property === undefined) {
-        return undefined
-      }
-
-      return `${JSON.stringify(key)}:${stableStringify(property)}`
-    }).filter((entry): entry is string => entry !== undefined).join(',')}}`
-  }
-
-  return JSON.stringify(value)
 }
 
 function statSyncIsDirectory(path: string): boolean {

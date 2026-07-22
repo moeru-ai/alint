@@ -1,7 +1,8 @@
 import type { ProjectTarget } from '../../dsl/types'
 import type { ExecutionTarget, PreparedFile, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
 
-import { hashText, normalizeCachePath, stableHash } from '../cache'
+import { normalizeCachePath } from '../cache'
+import { hashText, stableHash } from '../hash'
 
 export function createProjectExecutionPlan(options: {
   configHash: string

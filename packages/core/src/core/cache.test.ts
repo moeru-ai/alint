@@ -8,11 +8,10 @@ import {
   createCacheKey,
   createCacheStore,
   createTargetIdentityResolver,
-  hashText,
   normalizeRunnerCacheConfig,
   resolveCacheLocation,
-  stableHash,
 } from './cache'
+import { hashText, stableHash } from './hash'
 
 describe('cache helpers', () => {
   it('resolves the default cache file under cwd', () => {
@@ -25,11 +24,6 @@ describe('cache helpers', () => {
 
     expect(resolveCacheLocation('/repo', root)).toBe(join(root, '.alintcache'))
     expect(resolveCacheLocation('/repo', `${root}/`)).toBe(join(root, '.alintcache'))
-  })
-
-  it('hashes stable objects independent of property insertion order', () => {
-    expect(stableHash({ a: 1, b: 2 })).toBe(stableHash({ a: 1, b: 2 }))
-    expect(hashText('same')).toBe(hashText('same'))
   })
 
   it('builds distinct keys for different target hashes', () => {
