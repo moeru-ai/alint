@@ -39,6 +39,28 @@ export const rule = defineRule({
 })
 ```
 
+Project rules receive compact file and target entries. Read source only when the rule needs it:
+
+```ts
+import { defineRule } from '@alint-js/core'
+
+export const projectRule = defineRule({
+  create: ctx => ({
+    async onTargetProject(project) {
+      for (const entry of project.files) {
+        const file = await ctx.src.readFile(entry.path)
+        if (file.text.includes('deprecated-api'))
+          ctx.report({ filePath: entry.path, message: 'deprecated API used' })
+      }
+    },
+  }),
+})
+```
+
+`ProjectFileEntry` and `ProjectTargetEntry` intentionally omit source text and arbitrary
+extractor metadata. Calls to `ctx.src.readFile()` are explicit and plugin-owned, so a project
+rule controls which source files it loads and how long it retains them.
+
 Use the agent contract for tool-using rules:
 
 ```ts
@@ -86,8 +108,19 @@ explore with tools before answering, because a forced tool call is a single shot
 - You are adding a language processor or source extractor.
 - You are embedding `alint` in another tool.
 - You are implementing an `AgentAdapter`.
+- You need project-wide analysis that can consume compact descriptors and load source lazily.
 
 ## When not to use
 
 - Use `@alint-js/cli` for command-line usage and ordinary `alint.config.*` files.
 - Use `@alint-js/config` for setup TOML, config loading, and config-file tooling only.
+- A plugin that needs a persistent repository database should build and inject that database.
+  Do not retain every `SourceFile` returned by `ctx.src.readFile()` as a substitute for one.
+
+## Memory boundaries
+
+`alint` bounds its engine-owned source sessions. It cannot bound source files retained by plugin
+code after `ctx.src.readFile()` returns.
+
+A valid cache written by the same `alint` version is still read from one monolithic JSON document.
+An extremely large cache may therefore exhaust available memory.

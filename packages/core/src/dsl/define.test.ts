@@ -11,6 +11,22 @@ describe('define helpers', () => {
     expectTypeOf<keyof ProjectTargetEntry>().toEqualTypeOf<'filePath' | 'identity' | 'kind' | 'name' | 'range'>()
   })
 
+  it('defines compact project handlers that read source lazily', () => {
+    const projectRule = defineRule({
+      create: ctx => ({
+        async onTargetProject(project) {
+          for (const entry of project.files) {
+            const file = await ctx.src.readFile(entry.path)
+            if (file.text.includes('deprecated-api'))
+              ctx.report({ filePath: entry.path, message: 'deprecated API used' })
+          }
+        },
+      }),
+    })
+
+    expect(projectRule.create).toBeTypeOf('function')
+  })
+
   it('exposes all target lifecycle handlers from a rule', () => {
     const onTargetClass = () => {}
     const onTargetDirectory = () => {}
