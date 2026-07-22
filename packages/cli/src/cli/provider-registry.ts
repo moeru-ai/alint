@@ -213,6 +213,14 @@ export function formatProviderShow(provider: ProviderDefinition): string {
   return `${lines.join('\n')}\n`
 }
 
+// NOTICE: This matches Undici's HTTP token grammar so unsafe field names never enter provider config.
+// Adapted from `https://github.com/nodejs/undici/blob/a0922b0b6b5db878881017abb6fca3bbcdea555a/lib/core/util.js#L746-L760`.
+const httpTokenPattern = /^[\w^`\-!#$%&'*+.|~]+$/u
+
+export function isValidProviderHeaderName(name: string): boolean {
+  return httpTokenPattern.test(name)
+}
+
 export function parseHeaderList(headers: string[]): Record<string, string> | undefined {
   if (headers.length === 0) {
     return undefined

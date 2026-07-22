@@ -78,7 +78,7 @@ export function setProviderHeader(
   return updateProvider(config, providerId, provider => ({
     ...provider,
     headers: {
-      ...provider.headers,
+      ...headersWithoutName(provider.headers, name),
       [name]: value,
     },
   }))
@@ -94,9 +94,7 @@ export function unsetProviderHeader(
       return provider
     }
 
-    const headers = Object.fromEntries(
-      Object.entries(provider.headers).filter(([headerName]) => headerName !== name),
-    )
+    const headers = headersWithoutName(provider.headers, name)
 
     return {
       ...provider,
@@ -120,6 +118,17 @@ function cloneProvider(provider: ProviderDefinition): ProviderDefinition {
     headers: provider.headers === undefined ? undefined : { ...provider.headers },
     models: provider.models.map(cloneModel),
   }
+}
+
+function headersWithoutName(
+  headers: Record<string, string> | undefined,
+  name: string,
+): Record<string, string> {
+  const normalizedName = name.toLowerCase()
+
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).filter(([headerName]) => headerName.toLowerCase() !== normalizedName),
+  )
 }
 
 function updateProvider(

@@ -2,6 +2,7 @@ import type { CommandContext } from '../../command'
 
 import { unsetProviderHeader, writeSetupConfig } from '@alint-js/config'
 
+import { isValidProviderHeaderName } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
 
@@ -71,7 +72,14 @@ async function runUnsetProviderCommand(
     return 2
   }
 
-  const nextConfig = unsetProviderHeader(config, providerId, key.slice('headers.'.length))
+  const headerName = key.slice('headers.'.length)
+
+  if (!isValidProviderHeaderName(headerName)) {
+    context.io.stderr.write('invalid provider header name. expected an HTTP field-name token.\n')
+    return 2
+  }
+
+  const nextConfig = unsetProviderHeader(config, providerId, headerName)
   await writeSetupConfig(path, nextConfig)
   context.io.stdout.write(`provider: ${providerId}\nkey: ${key}\nscope: ${scope}\n`)
   return 0

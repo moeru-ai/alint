@@ -326,11 +326,18 @@ describe('setup config mutations', () => {
 
   it('merges and replaces one provider header', () => {
     const config = createSetupConfig()
+    config.providers[0]!.headers = {
+      ...config.providers[0]!.headers,
+      authorization: 'Bearer stale lower',
+      AUTHORIZATION: 'Bearer stale upper',
+    }
     const result = setProviderHeader(config, 'primary', 'Authorization', 'Bearer changed')
     const provider = result.providers[0]!
 
-    expect(provider.headers?.Authorization).toBe('Bearer changed')
-    expect(provider.headers?.['X-Project']).toBe('alint')
+    expect(provider.headers).toEqual({
+      'Authorization': 'Bearer changed',
+      'X-Project': 'alint',
+    })
     expect(provider.endpoint).toBe('https://primary.example/v1')
     expect(provider.models).toEqual(config.providers[0]?.models)
     expectPreservedConfigContext(config, result)
@@ -348,9 +355,14 @@ describe('setup config mutations', () => {
     expect(config.providers[0]?.headers).toBeUndefined()
   })
 
-  it('unsets an exact provider header and preserves the others', () => {
+  it('unsets all case variants of a provider header and preserves the others', () => {
     const config = createSetupConfig()
-    const result = unsetProviderHeader(config, 'primary', 'Authorization')
+    config.providers[0]!.headers = {
+      ...config.providers[0]!.headers,
+      authorization: 'Bearer stale lower',
+      AUTHORIZATION: 'Bearer stale upper',
+    }
+    const result = unsetProviderHeader(config, 'primary', 'aUtHoRiZaTiOn')
     const provider = result.providers[0]!
 
     expect(provider.headers).toEqual({ 'X-Project': 'alint' })

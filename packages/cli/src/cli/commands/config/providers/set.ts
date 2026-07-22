@@ -6,6 +6,7 @@ import {
   writeSetupConfig,
 } from '@alint-js/config'
 
+import { isValidProviderHeaderName } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
 
@@ -72,7 +73,14 @@ async function runSetProviderCommand(
     nextConfig = setProviderEndpoint(config, providerId, value)
   }
   else if (key.startsWith('headers.') && key.length > 'headers.'.length) {
-    nextConfig = setProviderHeader(config, providerId, key.slice('headers.'.length), value)
+    const headerName = key.slice('headers.'.length)
+
+    if (!isValidProviderHeaderName(headerName)) {
+      context.io.stderr.write('invalid provider header name. expected an HTTP field-name token.\n')
+      return 2
+    }
+
+    nextConfig = setProviderHeader(config, providerId, headerName, value)
   }
   else {
     context.io.stderr.write(`unsupported provider key "${key}". expected endpoint or headers.<name>.\n`)

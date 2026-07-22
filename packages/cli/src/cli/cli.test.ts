@@ -1538,7 +1538,11 @@ local = "./plugins/local-plugin"
     await writeSetupConfig(localPath, {
       providers: [{
         endpoint: 'https://local.example/v1',
-        headers: { Authorization: 'Bearer local' },
+        headers: {
+          Authorization: 'Bearer local',
+          authorization: 'Bearer stale lower',
+          AUTHORIZATION: 'Bearer stale upper',
+        },
         id: 'example',
         models: [],
         type: 'openai-compatible',
@@ -1555,15 +1559,17 @@ local = "./plugins/local-plugin"
       '--provider',
       'example',
       '--local',
-      'headers.Authorization',
+      'headers.aUtHoRiZaTiOn',
       'Bearer replacement',
     ], io)
 
     expect(setCode).toBe(0)
-    expect(io.stdoutText).toBe('provider: example\nkey: headers.Authorization\nscope: local\n')
+    expect(io.stdoutText).toBe('provider: example\nkey: headers.aUtHoRiZaTiOn\nscope: local\n')
     expect(io.stdoutText).not.toContain('Bearer replacement')
     expect((await loadSetupConfig(globalPath)).providers[0]?.headers?.Authorization).toBe('Bearer global')
-    expect((await loadSetupConfig(localPath)).providers[0]?.headers?.Authorization).toBe('Bearer replacement')
+    expect((await loadSetupConfig(localPath)).providers[0]?.headers).toEqual({
+      aUtHoRiZaTiOn: 'Bearer replacement',
+    })
 
     io.stdoutText = ''
     const unsetCode = await executeCli([
@@ -1575,13 +1581,13 @@ local = "./plugins/local-plugin"
       '--provider',
       'example',
       '--local',
-      'headers.Authorization',
+      'headers.authorization',
     ], io)
 
     expect(unsetCode).toBe(0)
-    expect(io.stdoutText).toBe('provider: example\nkey: headers.Authorization\nscope: local\n')
+    expect(io.stdoutText).toBe('provider: example\nkey: headers.authorization\nscope: local\n')
     expect((await loadSetupConfig(globalPath)).providers[0]?.headers?.Authorization).toBe('Bearer global')
-    expect((await loadSetupConfig(localPath)).providers[0]?.headers?.Authorization).toBeUndefined()
+    expect((await loadSetupConfig(localPath)).providers[0]?.headers).toBeUndefined()
     expect(io.stderrText).toBe('')
   })
 
@@ -1613,6 +1619,64 @@ local = "./plugins/local-plugin"
 
     expect(exitCode).toBe(0)
     expect((await loadSetupConfig(configPath)).providers[0]?.headers).toEqual({ 'X-Empty': '' })
+  })
+
+  it.each([
+    'Bad Header',
+    'Bad:Header',
+    'Bad\nInjected',
+    'Bad\u0000Header',
+    'Bad/Header',
+  ])('rejects invalid HTTP provider header name %j without writing or leaking values', async (headerName) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        headers: { Authorization: 'Bearer original' },
+        id: 'example',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+    const secret = 'Bearer replacement secret'
+
+    const setCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'set',
+      '--provider',
+      'example',
+      `headers.${headerName}`,
+      secret,
+    ], io)
+
+    expect(setCode).toBe(2)
+    expect(io.stderrText).toBe('invalid provider header name. expected an HTTP field-name token.\n')
+    expect(io.stderrText).not.toContain(secret)
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+
+    io.stderrText = ''
+    const unsetCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'unset',
+      '--provider',
+      'example',
+      `headers.${headerName}`,
+    ], io)
+
+    expect(unsetCode).toBe(2)
+    expect(io.stderrText).toBe('invalid provider header name. expected an HTTP field-name token.\n')
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
   })
 
   it.each([
