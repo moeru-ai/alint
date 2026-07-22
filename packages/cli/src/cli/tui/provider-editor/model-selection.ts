@@ -99,30 +99,45 @@ export function createModelOptions(
   discoveredIds: readonly string[],
 ): ModelOption[] {
   const discovered = new Set(discoveredIds)
-  const existingIds = new Set(provider?.models.map(model => model.id) ?? [])
+  const existing = firstModelsById(provider)
+  const optionIds = new Set(existing.keys())
+  const options: ModelOption[] = [...existing.values()].map(model => ({
+    hint: discovered.has(model.id) ? undefined : 'not reported by provider',
+    label: model.id,
+    value: model.id,
+  }))
 
-  return [
-    ...(provider?.models ?? []).map(model => ({
-      hint: discovered.has(model.id) ? undefined : 'not reported by provider',
-      label: model.id,
-      value: model.id,
-    })),
-    ...discoveredIds
-      .filter(modelId => !existingIds.has(modelId))
-      .map(modelId => ({ hint: 'new', label: modelId, value: modelId })),
-  ]
+  for (const modelId of discoveredIds) {
+    if (optionIds.has(modelId)) {
+      continue
+    }
+
+    optionIds.add(modelId)
+    options.push({ hint: 'new', label: modelId, value: modelId })
+  }
+
+  return options
 }
 
 export function modelsFromSelection(
   provider: ProviderDefinition | undefined,
   selectedIds: readonly string[],
 ): SetupModelDefinition[] {
-  const existing = new Map(provider?.models.map(model => [model.id, model]) ?? [])
+  const existing = firstModelsById(provider)
+  const models: SetupModelDefinition[] = []
+  const selected = new Set<string>()
 
-  return selectedIds.map((modelId) => {
+  for (const modelId of selectedIds) {
+    if (selected.has(modelId)) {
+      continue
+    }
+
+    selected.add(modelId)
     const model = existing.get(modelId)
-    return model === undefined ? { id: modelId, name: modelId } : cloneModel(model)
-  })
+    models.push(model === undefined ? { id: modelId, name: modelId } : cloneModel(model))
+  }
+
+  return models
 }
 
 function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
@@ -136,4 +151,18 @@ function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
 
 function createDefaultModelCandidateValue(providerId: string, modelId: string): string {
   return `${providerId}\u0000${modelId}`
+}
+
+function firstModelsById(provider: ProviderDefinition | undefined): Map<string, SetupModelDefinition> {
+  const models = new Map<string, SetupModelDefinition>()
+
+  // Setup loading normally rejects duplicates, but editor transforms keep the first
+  // configured definition so option ordering and metadata lookup share one policy.
+  for (const model of provider?.models ?? []) {
+    if (!models.has(model.id)) {
+      models.set(model.id, model)
+    }
+  }
+
+  return models
 }

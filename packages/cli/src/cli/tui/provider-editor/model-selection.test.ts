@@ -1,4 +1,4 @@
-import type { ProviderDefinition } from '@alint-js/config'
+import type { ProviderDefinition, SetupConfig } from '@alint-js/config'
 
 import { describe, expect, it } from 'vitest'
 
@@ -11,25 +11,26 @@ import {
 } from './model-selection'
 
 describe('provider editor model selection', () => {
-  it('combines configured and discovered model options in stable order', () => {
+  it('combines and stable-deduplicates configured and discovered model options', () => {
     const provider: ProviderDefinition = {
       endpoint: 'https://example.test/v1',
       id: 'example',
       models: [
         { id: 'existing', name: 'existing' },
+        { id: 'existing', name: 'duplicate existing' },
         { id: 'missing', name: 'missing' },
       ],
       type: 'openai-compatible',
     }
 
-    expect(createModelOptions(provider, ['existing', 'new'])).toEqual([
+    expect(createModelOptions(provider, ['existing', 'new', 'existing', 'new'])).toEqual([
       { hint: undefined, label: 'existing', value: 'existing' },
       { hint: 'not reported by provider', label: 'missing', value: 'missing' },
       { hint: 'new', label: 'new', value: 'new' },
     ])
   })
 
-  it('preserves selected model metadata and creates new models', () => {
+  it('stable-deduplicates selections and uses the first configured model metadata', () => {
     const provider: ProviderDefinition = {
       endpoint: 'https://example.test/v1',
       id: 'example',
@@ -42,11 +43,16 @@ describe('provider editor model selection', () => {
           id: 'existing',
           size: 'small',
         },
+        {
+          aliases: ['duplicate'],
+          id: 'existing',
+          name: 'duplicate existing',
+        },
       ],
       type: 'openai-compatible',
     }
 
-    const models = modelsFromSelection(provider, ['existing', 'new'])
+    const models = modelsFromSelection(provider, ['existing', 'new', 'existing', 'new'])
 
     expect(models).toEqual([
       {
@@ -178,13 +184,20 @@ describe('interactive setup default model helpers', () => {
   })
 
   it('applies one default alias and preserves unrelated aliases', () => {
-    const config = applyDefaultAlias({
+    const input: SetupConfig = {
       providers: [
         {
           endpoint: 'https://openrouter.ai/api/v1',
+          headers: { Authorization: 'Bearer secret' },
           id: 'openrouter',
           models: [
-            { aliases: ['default', 'fast'], id: 'openrouter-small', name: 'openrouter-small' },
+            {
+              aliases: ['default', 'fast'],
+              capabilities: ['code-review'],
+              defaultParams: { temperature: 0.1 },
+              id: 'openrouter-small',
+              name: 'openrouter-small',
+            },
           ],
           type: 'openai-compatible',
         },
@@ -199,11 +212,16 @@ describe('interactive setup default model helpers', () => {
         },
       ],
       version: 1,
-    }, { modelId: 'gpt-5.6-luna', providerId: 'cliproxyapi' })
+    }
+    const config = applyDefaultAlias(input, { modelId: 'gpt-5.6-luna', providerId: 'cliproxyapi' })
 
     expect(config.providers[0]?.models[0]?.aliases).toEqual(['fast'])
     expect(config.providers[1]?.models[0]?.aliases).toEqual(['review', 'default'])
     expect(config.providers[1]?.models[1]?.aliases).toBeUndefined()
+    expect(config.providers[0]?.headers).not.toBe(input.providers[0]?.headers)
+    expect(config.providers[0]?.models[0]?.aliases).not.toBe(input.providers[0]?.models[0]?.aliases)
+    expect(config.providers[0]?.models[0]?.capabilities).not.toBe(input.providers[0]?.models[0]?.capabilities)
+    expect(config.providers[0]?.models[0]?.defaultParams).not.toBe(input.providers[0]?.models[0]?.defaultParams)
   })
 
   it('models the Yes action by making the first selected new model the only default', () => {
