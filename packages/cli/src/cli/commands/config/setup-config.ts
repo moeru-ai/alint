@@ -6,6 +6,8 @@ import process from 'node:process'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, mergeSetupConfigs } from '@alint-js/config'
 
+import { escapeLineValue } from '../../provider-registry'
+
 export interface ScopedSetupConfig {
   config: SetupConfig
   path: string
@@ -19,7 +21,7 @@ export function formatUnknownProvider(providerId: string, scope: SetupConfigScop
     ? ' Remove --local to inspect global configuration.'
     : ' Add --local to inspect project-local configuration.'
 
-  return `unknown provider "${providerId}" in ${scope} setup config.${hint}\n`
+  return `unknown provider "${escapeLineValue(providerId)}" in ${scope} setup config.${hint}\n`
 }
 
 export async function loadMergedSetupConfig(io: CliIo): Promise<SetupConfig> {

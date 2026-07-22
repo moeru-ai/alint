@@ -27,6 +27,7 @@ export interface CommandNode extends CommandHelp {
   children?: readonly CommandNode[]
   default?: boolean
   description: string
+  exactArguments?: boolean
   name: string
   options?: readonly CommandOption[]
 }
@@ -103,6 +104,18 @@ function dispatchCommand(
 
   if (!node.action) {
     return Promise.resolve(reportUnknownCommand(context, path, args))
+  }
+
+  if (node.exactArguments === true) {
+    const expectedArgumentCount = node.arguments?.split(/\s+/u).filter(Boolean).length ?? 0
+    const unexpectedArgument = args[expectedArgumentCount]
+
+    if (unexpectedArgument !== undefined) {
+      context.io.stderr.write(
+        `unexpected argument ${JSON.stringify(unexpectedArgument)}. usage: alint ${formatUsagePattern(path, node)}.\n`,
+      )
+      return Promise.resolve(2)
+    }
   }
 
   return Promise.resolve(node.action(context, ...parseCommandArguments(node, args), options))

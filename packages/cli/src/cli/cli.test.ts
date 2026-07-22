@@ -1324,7 +1324,7 @@ local = "./plugins/local-plugin"
     expect((await loadSetupConfig(configPath)).providers[0]?.models).toEqual([])
   })
 
-  it('removes every duplicate exact id within the selected provider', async () => {
+  it('rejects a duplicate exact canonical model within one provider without writing', async () => {
     const io = await createTestIo()
     const configPath = getGlobalSetupConfigPath(io.env)
     await writeSetupConfig(configPath, {
@@ -1336,6 +1336,7 @@ local = "./plugins/local-plugin"
       }],
       version: 1,
     })
+    const before = await readFile(configPath, 'utf8')
 
     const exitCode = await executeCli([
       'node',
@@ -1346,8 +1347,13 @@ local = "./plugins/local-plugin"
       'qwen',
     ], io)
 
-    expect(exitCode).toBe(0)
-    expect((await loadSetupConfig(configPath)).providers[0]?.models).toEqual([])
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'model "example/qwen" is configured more than once.',
+      'remove duplicate provider/model definitions from the setup configuration.',
+      '',
+    ].join('\n'))
+    expect(await readFile(configPath, 'utf8')).toBe(before)
   })
 
   it('protects a default-aliased duplicate exact id even when it is not first', async () => {
@@ -1377,8 +1383,88 @@ local = "./plugins/local-plugin"
     ], io)
 
     expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'model "example/qwen" is configured more than once.',
+      'remove duplicate provider/model definitions from the setup configuration.',
+      '',
+    ].join('\n'))
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it.each([
+    { arguments: ['qwen'], selector: 'unqualified' },
+    { arguments: ['first/qwen'], selector: 'qualified' },
+    { arguments: ['qwen', '--provider', 'first'], selector: '--provider' },
+  ])('rejects duplicate provider/model definitions with a $selector selector', async ({ arguments: commandArguments }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [
+        {
+          endpoint: 'https://one.test/v1',
+          id: 'first',
+          models: [{ id: 'qwen' }],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'https://two.test/v1',
+          id: 'first',
+          models: [{ id: 'qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      ...commandArguments,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'model "first/qwen" is configured more than once.',
+      'remove duplicate provider/model definitions from the setup configuration.',
+      '',
+    ].join('\n'))
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('rejects extra positional model removal arguments without writing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://first.test/v1',
+        id: 'first',
+        models: [{ id: 'first' }, { id: 'second' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'first',
+      'second',
+      '--provider',
+      'first',
+    ], io)
+
+    expect(exitCode).toBe(2)
     expect(io.stderrText).toBe(
-      'cannot remove default model "example/qwen". select another default first.\n',
+      'unexpected argument "second". usage: alint config models rm <model-id>.\n',
     )
     expect(await readFile(configPath, 'utf8')).toBe(before)
   })
@@ -1423,6 +1509,79 @@ local = "./plugins/local-plugin"
       '',
     ].join('\n'))
     expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('escapes control characters in successful model removal output', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'provider\nname',
+        models: [{ id: 'model\u0000id' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'model\u0000id',
+      '--provider',
+      'provider\nname',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe('removed model: provider\\nname/model\\u0000id\nscope: global\n')
+    expect(io.stdoutText.split('\n')).toHaveLength(3)
+    expect(io.stderrText).toBe('')
+  })
+
+  it('escapes control characters in model ambiguity candidates', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [
+        {
+          endpoint: 'https://first.test/v1',
+          id: 'first\nprovider',
+          models: [{ id: 'qwen\nid' }],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'https://second.test/v1',
+          id: 'second\u0000provider',
+          models: [{ id: 'qwen\nid' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen\nid',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'ambiguous model id "qwen\\nid".',
+      'specify <provider>/<model-id> or pass --provider <provider-id>:',
+      '  first\\nprovider/qwen\\nid',
+      '  second\\u0000provider/qwen\\nid',
+      '',
+    ].join('\n'))
+    expect(io.stderrText.split('\n')).toHaveLength(5)
     expect(await readFile(configPath, 'utf8')).toBe(before)
   })
 
@@ -1474,6 +1633,27 @@ local = "./plugins/local-plugin"
     expect(io.stderrText).toBe(
       'unknown provider "missing" in local setup config. Remove --local to inspect global configuration.\n',
     )
+  })
+
+  it('escapes control characters in an unknown model provider scope hint', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+      '--provider',
+      'missing\nprovider',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing\\nprovider" in global setup config. Add --local to inspect project-local configuration.\n',
+    )
+    expect(io.stderrText.split('\n')).toHaveLength(2)
   })
 
   it('protects the default model without writing', async () => {

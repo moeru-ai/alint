@@ -2,6 +2,7 @@ import type { CommandContext } from '../../command'
 
 import { removeProviderModels, writeSetupConfig } from '@alint-js/config'
 
+import { escapeLineValue, formatDuplicateModelIdentity } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
 import { resolveExactModelTarget } from './target'
@@ -15,6 +16,7 @@ export const rm = defineCommand({
   action: runRemoveModelCommand,
   arguments: '<model-id>',
   description: 'Remove a configured model',
+  exactArguments: true,
   name: 'rm',
   options: [
     { description: 'Provider id', flags: '--provider <id>' },
@@ -68,9 +70,18 @@ async function runRemoveModelCommand(
     context.io.stderr.write([
       `ambiguous model id ${JSON.stringify(request)}.`,
       'specify <provider>/<model-id> or pass --provider <provider-id>:',
-      ...target.candidates.map(candidate => `  ${candidate.providerId}/${candidate.modelId}`),
+      ...target.candidates.map(candidate =>
+        `  ${escapeLineValue(candidate.providerId)}/${escapeLineValue(candidate.modelId)}`,
+      ),
       '',
     ].join('\n'))
+    return 2
+  }
+
+  if (target.status === 'duplicate') {
+    context.io.stderr.write(
+      formatDuplicateModelIdentity(`${target.providerId}/${target.modelId}`),
+    )
     return 2
   }
 
@@ -87,6 +98,8 @@ async function runRemoveModelCommand(
 
   const nextConfig = removeProviderModels(config, target.provider.id, new Set([target.model.id]))
   await writeSetupConfig(path, nextConfig)
-  context.io.stdout.write(`removed model: ${target.provider.id}/${target.model.id}\nscope: ${scope}\n`)
+  context.io.stdout.write(
+    `removed model: ${escapeLineValue(target.provider.id)}/${escapeLineValue(target.model.id)}\nscope: ${scope}\n`,
+  )
   return 0
 }

@@ -15,6 +15,20 @@ export interface ProviderSetupSource {
   value: 'cliProxyApi' | 'custom' | 'manual' | 'ollama'
 }
 
+// JSON string escaping prevents control characters from creating terminal lines;
+// removing only the outer quotes keeps ordinary identifiers byte-for-byte stable.
+export function escapeLineValue(value: string): string {
+  return JSON.stringify(value).slice(1, -1)
+}
+
+export function formatDuplicateModelIdentity(identity: string): string {
+  return [
+    `model ${JSON.stringify(identity)} is configured more than once.`,
+    'remove duplicate provider/model definitions from the setup configuration.',
+    '',
+  ].join('\n')
+}
+
 export const providerSetupSources: ProviderSetupSource[] = [
   {
     defaultEndpoint: 'http://127.0.0.1:8317/v1',
@@ -124,11 +138,7 @@ export function formatAmbiguousModels(request: string, candidates: FlattenedMode
     .find(([, matchingCandidates]) => matchingCandidates.length > 1)?.[0]
 
   if (duplicateIdentity !== undefined) {
-    return [
-      `model "${duplicateIdentity}" is configured more than once.`,
-      'remove duplicate provider/model definitions from the setup configuration.',
-      '',
-    ].join('\n')
+    return formatDuplicateModelIdentity(duplicateIdentity)
   }
 
   const choices = [...candidatesByIdentity.keys()]

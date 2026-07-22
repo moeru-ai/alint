@@ -8,6 +8,7 @@ export type ExactModelTargetResult
   = | { candidates: Array<{ modelId: string, providerId: string }>, status: 'ambiguous' }
     | { model: SetupModelDefinition, provider: ProviderDefinition, status: 'found' }
     | { modelId: string, provider?: ProviderDefinition, status: 'missing' }
+    | { modelId: string, providerId: string, status: 'duplicate' }
     | { providerId: string, status: 'unknown-provider' }
     | { qualifiedProviderId: string, requestedProviderId: string, status: 'conflict' }
 
@@ -20,52 +21,59 @@ export function resolveExactModelTarget(
   // this scope. Otherwise the complete request remains a valid slash-containing ID.
   const separatorIndex = request.indexOf('/')
   const qualifier = separatorIndex === -1 ? undefined : request.slice(0, separatorIndex)
-  const qualifiedProvider = qualifier === undefined
-    ? undefined
-    : config.providers.find(provider => provider.id === qualifier)
-  const modelId = qualifiedProvider === undefined
+  const qualifiedProviders = qualifier === undefined
+    ? []
+    : config.providers.filter(provider => provider.id === qualifier)
+  const qualifiedProviderId = qualifiedProviders[0]?.id
+  const modelId = qualifiedProviders.length === 0
     ? request
     : request.slice(separatorIndex + 1)
 
   if (
-    qualifiedProvider !== undefined
+    qualifiedProviderId !== undefined
     && requestedProviderId !== undefined
-    && qualifiedProvider.id !== requestedProviderId
+    && qualifiedProviderId !== requestedProviderId
   ) {
     return {
-      qualifiedProviderId: qualifiedProvider.id,
+      qualifiedProviderId,
       requestedProviderId,
       status: 'conflict',
     }
   }
 
-  const requestedProvider = requestedProviderId === undefined
-    ? undefined
-    : config.providers.find(provider => provider.id === requestedProviderId)
+  const requestedProviders = requestedProviderId === undefined
+    ? []
+    : config.providers.filter(provider => provider.id === requestedProviderId)
 
-  if (requestedProviderId !== undefined && requestedProvider === undefined) {
+  if (requestedProviderId !== undefined && requestedProviders.length === 0) {
     return { providerId: requestedProviderId, status: 'unknown-provider' }
   }
 
-  const selectedProvider = qualifiedProvider ?? requestedProvider
-
-  if (selectedProvider !== undefined) {
-    const model = findExactModel(selectedProvider, modelId)
-
-    return model === undefined
-      ? { modelId, provider: selectedProvider, status: 'missing' }
-      : { model, provider: selectedProvider, status: 'found' }
-  }
-
-  const candidates = config.providers.flatMap((provider) => {
-    // One provider is one target even if malformed config repeats the same ID;
-    // removal filters every matching entry from that provider in one mutation.
-    const model = findExactModel(provider, modelId)
-    return model === undefined ? [] : [{ model, provider }]
-  })
+  const selectedProviders = qualifiedProviders.length > 0 ? qualifiedProviders : requestedProviders
+  const searchedProviders = selectedProviders.length > 0 ? selectedProviders : config.providers
+  const candidates = searchedProviders.flatMap(provider =>
+    provider.models
+      .filter(model => model.id === modelId)
+      .map(model => ({ model, provider })),
+  )
 
   if (candidates.length === 0) {
-    return { modelId, status: 'missing' }
+    return { modelId, provider: selectedProviders[0], status: 'missing' }
+  }
+
+  const candidatesByIdentity = new Map<string, typeof candidates>()
+  for (const candidate of candidates) {
+    const identity = `${candidate.provider.id}/${candidate.model.id}`
+    candidatesByIdentity.set(identity, [...(candidatesByIdentity.get(identity) ?? []), candidate])
+  }
+
+  const duplicate = [...candidatesByIdentity.values()].find(matches => matches.length > 1)?.[0]
+  if (duplicate !== undefined) {
+    return {
+      modelId: duplicate.model.id,
+      providerId: duplicate.provider.id,
+      status: 'duplicate',
+    }
   }
 
   if (candidates.length > 1) {
@@ -79,12 +87,4 @@ export function resolveExactModelTarget(
   }
 
   return { ...candidates[0]!, status: 'found' }
-}
-
-function findExactModel(provider: ProviderDefinition, modelId: string): SetupModelDefinition | undefined {
-  const matches = provider.models.filter(model => model.id === modelId)
-
-  // Prefer the protected duplicate so callers cannot remove a default-aliased
-  // entry merely because malformed configuration placed another copy first.
-  return matches.find(model => model.aliases?.includes('default')) ?? matches[0]
 }
