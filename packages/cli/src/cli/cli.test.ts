@@ -1268,6 +1268,80 @@ local = "./plugins/local-plugin"
     expect(io.stderrText).toBe('')
   })
 
+  it('prioritizes a canonical model selector over a colliding raw model id', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [
+        {
+          endpoint: 'https://first.example/v1',
+          id: 'first',
+          models: [{ id: 'qwen', name: 'Qwen' }],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'https://second.example/v1',
+          id: 'second',
+          models: [{ id: 'first/qwen', name: 'Other Qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'show',
+      'first/qwen',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('provider: first\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it.each(['qwen', 'first/qwen'])(
+    'reports duplicate canonical model definitions for selector %s',
+    async (model) => {
+      const io = await createTestIo()
+
+      await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+        providers: [
+          {
+            endpoint: 'https://first.example/v1',
+            id: 'first',
+            models: [
+              { id: 'qwen', name: 'Qwen One' },
+              { aliases: ['shared'], id: 'qwen', name: 'Qwen Two' },
+            ],
+            type: 'openai-compatible',
+          },
+        ],
+        version: 1,
+      })
+
+      const exitCode = await executeCli([
+        'node',
+        'alint',
+        'config',
+        'models',
+        'show',
+        model,
+      ], io)
+
+      expect(exitCode).toBe(2)
+      expect(io.stderrText).toBe([
+        'model "first/qwen" is configured more than once.',
+        'remove duplicate provider/model definitions from the setup configuration.',
+        '',
+      ].join('\n'))
+      expect(io.stdoutText).toBe('')
+    },
+  )
+
   it('returns 2 when model is unknown', async () => {
     const io = await createTestIo()
 

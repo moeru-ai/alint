@@ -75,7 +75,14 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
 }
 
 export function findModels(config: SetupConfig, request: string): FlattenedModel[] {
-  return flattenModels(config).filter((candidate) => {
+  const candidates = flattenModels(config)
+  const canonicalCandidates = candidates.filter(candidate => canonicalIdentity(candidate) === request)
+
+  if (canonicalCandidates.length > 0) {
+    return canonicalCandidates
+  }
+
+  return candidates.filter((candidate) => {
     const names = [candidate.model.id, candidate.model.name, ...(candidate.model.aliases ?? [])]
       .filter((name): name is string => name !== undefined)
 
@@ -104,9 +111,27 @@ export function flattenModels(config: SetupConfig): FlattenedModel[] {
 }
 
 export function formatAmbiguousModels(request: string, candidates: FlattenedModel[]): string {
-  const choices = [...new Set(candidates.map(candidate =>
-    `${candidate.provider.id}/${candidate.model.id}`,
-  ))]
+  const candidatesByIdentity = new Map<string, FlattenedModel[]>()
+
+  for (const candidate of candidates) {
+    const identity = canonicalIdentity(candidate)
+    const matchingCandidates = candidatesByIdentity.get(identity) ?? []
+    matchingCandidates.push(candidate)
+    candidatesByIdentity.set(identity, matchingCandidates)
+  }
+
+  const duplicateIdentity = [...candidatesByIdentity]
+    .find(([, matchingCandidates]) => matchingCandidates.length > 1)?.[0]
+
+  if (duplicateIdentity !== undefined) {
+    return [
+      `model "${duplicateIdentity}" is configured more than once.`,
+      'remove duplicate provider/model definitions from the setup configuration.',
+      '',
+    ].join('\n')
+  }
+
+  const choices = [...candidatesByIdentity.keys()]
 
   return `${[
     `ambiguous model "${request}".`,
@@ -223,6 +248,10 @@ export async function probeModels(endpoint: string, headers: Record<string, stri
   return body.data
     .map(model => model.id)
     .filter((id): id is string => typeof id === 'string' && id.length > 0)
+}
+
+function canonicalIdentity(candidate: FlattenedModel): string {
+  return `${candidate.provider.id}/${candidate.model.id}`
 }
 
 function formatTable(rows: string[][]): string {
