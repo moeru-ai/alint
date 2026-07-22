@@ -1478,6 +1478,258 @@ local = "./plugins/local-plugin"
     }
   })
 
+  it('sets a provider endpoint in global setup config by default', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    await writeSetupConfig(globalPath, {
+      providers: [{
+        endpoint: 'https://global.example/v1',
+        id: 'example',
+        models: [{ id: 'global-only' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    await writeSetupConfig(localPath, {
+      providers: [{
+        endpoint: 'https://local.example/v1',
+        id: 'example',
+        models: [{ id: 'local-only' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'set',
+      '--provider',
+      'example',
+      'endpoint',
+      'https://changed.example/v1',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(globalPath)).providers[0]?.endpoint).toBe('https://changed.example/v1')
+    expect((await loadSetupConfig(globalPath)).providers[0]?.models[0]?.id).toBe('global-only')
+    expect((await loadSetupConfig(localPath)).providers[0]?.endpoint).toBe('https://local.example/v1')
+    expect(io.stdoutText).toBe('provider: example\nkey: endpoint\nscope: global\n')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('sets and unsets a provider header only in local setup config', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    await writeSetupConfig(globalPath, {
+      providers: [{
+        endpoint: 'https://global.example/v1',
+        headers: { Authorization: 'Bearer global' },
+        id: 'example',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    await writeSetupConfig(localPath, {
+      providers: [{
+        endpoint: 'https://local.example/v1',
+        headers: { Authorization: 'Bearer local' },
+        id: 'example',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const setCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'set',
+      '--provider',
+      'example',
+      '--local',
+      'headers.Authorization',
+      'Bearer replacement',
+    ], io)
+
+    expect(setCode).toBe(0)
+    expect(io.stdoutText).toBe('provider: example\nkey: headers.Authorization\nscope: local\n')
+    expect(io.stdoutText).not.toContain('Bearer replacement')
+    expect((await loadSetupConfig(globalPath)).providers[0]?.headers?.Authorization).toBe('Bearer global')
+    expect((await loadSetupConfig(localPath)).providers[0]?.headers?.Authorization).toBe('Bearer replacement')
+
+    io.stdoutText = ''
+    const unsetCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'unset',
+      '--provider',
+      'example',
+      '--local',
+      'headers.Authorization',
+    ], io)
+
+    expect(unsetCode).toBe(0)
+    expect(io.stdoutText).toBe('provider: example\nkey: headers.Authorization\nscope: local\n')
+    expect((await loadSetupConfig(globalPath)).providers[0]?.headers?.Authorization).toBe('Bearer global')
+    expect((await loadSetupConfig(localPath)).providers[0]?.headers?.Authorization).toBeUndefined()
+    expect(io.stderrText).toBe('')
+  })
+
+  it('keeps an empty provider header value instead of unsetting it', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        headers: { 'X-Empty': 'old' },
+        id: 'example',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      'set',
+      '--provider',
+      'example',
+      'headers.X-Empty',
+      '',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(configPath)).providers[0]?.headers).toEqual({ 'X-Empty': '' })
+  })
+
+  it.each([
+    { command: 'set', error: 'unsupported provider key "type". expected endpoint or headers.<name>.\n', tail: ['type', 'openai-compatible'] },
+    { command: 'set', error: 'unsupported provider key "headers.". expected endpoint or headers.<name>.\n', tail: ['headers.', 'secret'] },
+    { command: 'unset', error: 'unsupported provider key "type". expected headers.<name>.\n', tail: ['type'] },
+    { command: 'unset', error: 'unsupported provider key "headers.". expected headers.<name>.\n', tail: ['headers.'] },
+    { command: 'unset', error: 'provider endpoint cannot be unset.\n', tail: ['endpoint'] },
+  ])('rejects invalid provider field mutation: $command $tail', async ({ command, error, tail }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        headers: { Authorization: 'Bearer secret' },
+        id: 'example',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'example',
+      ...tail,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(error)
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it.each(['set', 'unset'])('requires a provider id for provider %s', async (command) => {
+    const io = await createTestIo()
+    const tail = command === 'set' ? ['endpoint', 'https://example.test/v1'] : ['headers.Authorization']
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      ...tail,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(`config providers ${command} requires --provider.\n`)
+  })
+
+  it.each(['set', 'unset'])('rejects repeated --provider for provider %s', async (command) => {
+    const io = await createTestIo()
+    const tail = command === 'set' ? ['endpoint', 'https://example.test/v1'] : ['headers.Authorization']
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'example',
+      '--provider',
+      'other',
+      ...tail,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(`config providers ${command} accepts --provider only once.\n`)
+  })
+
+  it.each(['set', 'unset'])('reports the selected scope when provider %s cannot find its provider', async (command) => {
+    const io = await createTestIo()
+    const tail = command === 'set' ? ['endpoint', 'https://example.test/v1'] : ['headers.Authorization']
+
+    const globalExitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'missing',
+      ...tail,
+    ], io)
+
+    expect(globalExitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing" in global setup config. Add --local to inspect project-local configuration.\n',
+    )
+
+    io.stderrText = ''
+    const localExitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'missing',
+      '--local',
+      ...tail,
+    ], io)
+
+    expect(localExitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing" in local setup config. Remove --local to inspect global configuration.\n',
+    )
+  })
+
   it('requires a provider id for provider updates', async () => {
     const io = await createTestIo()
 
