@@ -1682,8 +1682,10 @@ local = "./plugins/local-plugin"
   it.each([
     { command: 'set', error: 'unsupported provider key "type". expected endpoint or headers.<name>.\n', tail: ['type', 'openai-compatible'] },
     { command: 'set', error: 'unsupported provider key "headers.". expected endpoint or headers.<name>.\n', tail: ['headers.', 'secret'] },
+    { command: 'set', error: 'unsupported provider key "type\\nInjected". expected endpoint or headers.<name>.\n', tail: ['type\nInjected', 'secret'] },
     { command: 'unset', error: 'unsupported provider key "type". expected headers.<name>.\n', tail: ['type'] },
     { command: 'unset', error: 'unsupported provider key "headers.". expected headers.<name>.\n', tail: ['headers.'] },
+    { command: 'unset', error: 'unsupported provider key "type\\nInjected". expected headers.<name>.\n', tail: ['type\nInjected'] },
     { command: 'unset', error: 'provider endpoint cannot be unset.\n', tail: ['endpoint'] },
   ])('rejects invalid provider field mutation: $command $tail', async ({ command, error, tail }) => {
     const io = await createTestIo()
@@ -1949,7 +1951,16 @@ local = "./plugins/local-plugin"
     }
   })
 
-  it('rejects invalid update headers before probing or writing', async () => {
+  it.each([
+    {
+      error: 'Invalid provider header "invalid". Expected Key=Value.\n',
+      header: 'invalid',
+    },
+    {
+      error: 'Invalid provider header name. Expected an HTTP field-name token.\n',
+      header: 'Bad Header=Bearer replacement secret',
+    },
+  ])('rejects invalid update header $header before probing or writing', async ({ error, header }) => {
     const io = await createTestIo()
     const configPath = getGlobalSetupConfigPath(io.env)
     await writeSetupConfig(configPath, {
@@ -1981,11 +1992,12 @@ local = "./plugins/local-plugin"
         '--provider-endpoint',
         server.endpoint,
         '--provider-header',
-        'invalid',
+        header,
       ], io)
 
       expect(exitCode).toBe(2)
-      expect(io.stderrText).toBe('Invalid provider header "invalid". Expected Key=Value.\n')
+      expect(io.stderrText).toBe(error)
+      expect(io.stderrText).not.toContain('Bearer replacement secret')
       expect(probeCount).toBe(0)
       expect(await readFile(configPath, 'utf8')).toBe(before)
     }

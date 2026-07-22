@@ -83,7 +83,7 @@ async function runSetProviderCommand(
     nextConfig = setProviderHeader(config, providerId, headerName, value)
   }
   else {
-    context.io.stderr.write(`unsupported provider key "${key}". expected endpoint or headers.<name>.\n`)
+    context.io.stderr.write(`unsupported provider key ${JSON.stringify(key)}. expected endpoint or headers.<name>.\n`)
     return 2
   }
 

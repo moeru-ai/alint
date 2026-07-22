@@ -235,7 +235,13 @@ export function parseHeaderList(headers: string[]): Record<string, string> | und
       throw new Error(`Invalid provider header "${header}". Expected Key=Value.`)
     }
 
-    parsedHeaders[header.slice(0, separatorIndex)] = header.slice(separatorIndex + 1)
+    const name = header.slice(0, separatorIndex)
+
+    if (!isValidProviderHeaderName(name)) {
+      throw new Error('Invalid provider header name. Expected an HTTP field-name token.')
+    }
+
+    parsedHeaders[name] = header.slice(separatorIndex + 1)
   }
 
   return parsedHeaders
