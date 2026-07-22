@@ -29,6 +29,7 @@ export interface ExecutionTarget {
 export interface PreparedFile {
   configHash: string
   file: SourceFile
+  fileIndex: number
   ruleRuntimes: RuleRuntime[]
   targets: SourceTarget[]
 }
@@ -49,6 +50,8 @@ export interface RuleRuntime {
   executionState: AsyncLocalStorage<RuleRuntimeState>
   handlers: RuleHandlers
   ruleHash: string
+  // Zero-based enabled-registry position, distinct from a job's per-rule occurrence index.
+  ruleIndex: number
 }
 
 export interface RuleRuntimeState {

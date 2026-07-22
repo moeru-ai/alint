@@ -1,17 +1,15 @@
-import type { DirectoryTarget } from '../../dsl/types'
+import type { PreparedDirectoryInput } from '../preparation'
 import type { ExecutionTarget, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
 
-export interface PreparedDirectory {
-  configHash: string
+export interface PreparedDirectory extends PreparedDirectoryInput {
   ruleRuntimes: RuleRuntime[]
-  target: DirectoryTarget
 }
 
 export function createDirectoryExecutionPlans(
   directories: PreparedDirectory[],
   sourcePlanCount: number,
 ): TargetExecutionPlan[] {
-  return directories.map((directory, directoryOffset) => {
+  return directories.map((directory) => {
     const executions = directory.ruleRuntimes
       .map((runtime): RuleTargetExecution | undefined => {
         if (runtime.handlers.onTargetWith) {
@@ -46,7 +44,7 @@ export function createDirectoryExecutionPlans(
 
     return {
       id: `directory:${directory.target.path}`,
-      index: sourcePlanCount + directoryOffset + 1,
+      index: sourcePlanCount + directory.directoryIndex + 1,
       kind: 'directory',
       path: directory.target.path,
       planned: executions.length,

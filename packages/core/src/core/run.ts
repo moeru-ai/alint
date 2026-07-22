@@ -1,9 +1,10 @@
 import type { AgentAdapter } from '../agent/types'
 import type { SetupConfig } from '../config/types'
-import type { DirectoryTarget, RuleContext } from '../dsl/types'
+import type { RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 import type { CacheStore } from './cache'
 import type { RuleJobOutcome } from './execution/job'
+import type { PreparedRule } from './preparation'
 import type { ProjectFileSnapshot, ProjectIndex } from './project/types'
 import type { PreparedDirectory } from './targets/directory'
 import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from './targets/types'
@@ -12,17 +13,13 @@ import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressReporte
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { cwd as processCwd } from 'node:process'
 
-import { resolve } from 'pathe'
-
 import { combineAbortSignals } from '../agent'
 import { withAgentRetry } from '../agent/retry'
-import { resolveConfigForDirectory, resolveConfigForFile, resolveConfigForProject } from '../config/config-array'
-import { buildRuleRegistry } from '../dsl/registry'
 import { resolveModel } from '../models/resolve'
 import { createCacheStore, normalizeRunnerCacheConfig } from './cache'
 import { createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
 import { hashText, stableHash } from './hash'
-import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
+import { prepareRun } from './preparation'
 import { ProjectIndexBuilder } from './project'
 import { createSourceRuntime } from './source/runtime'
 import { createDirectoryExecutionPlans } from './targets/directory'
@@ -62,8 +59,8 @@ export class AlintRunError extends Error {
 export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const timeoutMs = resolveRuleExecutionTimeout(options.runner?.timeoutMs)
   const concurrency = resolveRuleConcurrency(options.runner?.ruleConcurrency)
+  const preparation = prepareRun(options)
   const cwd = options.cwd ?? processCwd()
-  const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
   const clock = Date.now
   const src = createSourceRuntime()
@@ -83,113 +80,69 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     }),
   }
 
-  const pendingFiles = [...(options.files ?? [])]
-  const pendingDirectories = [...(options.directories ?? [])]
-
-  const files = (await Promise.all(pendingFiles.map(async (filePath): Promise<PreparedFile | undefined> => {
-    const file = await src.readFile(resolve(cwd, filePath))
-
-    const resolvedConfig = resolveConfigForFile(file.path, config, { cwd })
-    if (resolvedConfig.ignored) {
-      return undefined
-    }
-
-    const effectiveConfig = resolvedConfig.config
-    const languageRegistry = createBuiltInLanguageRegistry()
-
-    for (const plugin of Object.values(effectiveConfig.plugins)) {
-      for (const language of Object.values(plugin.languages ?? {})) {
-        registerLanguage(languageRegistry, language)
-      }
-    }
-
-    const language = resolveLanguage(file, languageRegistry, { language: effectiveConfig.language })
-    const targets = await language.extract(file, { cwd, languageOptions: effectiveConfig.languageOptions, src })
-    const registry = buildRuleRegistry(effectiveConfig)
-
+  const files = await Promise.all(preparation.files.map(async (input): Promise<PreparedFile> => {
+    const file = await src.readFile(input.path)
+    const targets = await input.language.extract(file, {
+      cwd,
+      languageOptions: input.languageOptions,
+      src,
+    })
     const ruleRuntimes = createRuleRuntimes({
       cwd,
-      effectiveAgent: effectiveConfig.agent,
-      effectiveSettings: effectiveConfig.settings,
-      options,
+      effectiveAgent: input.agent,
+      effectiveSettings: input.settings,
       progress: options.progress,
-      registry,
+      rules: input.rules,
+      runOptions: options,
       setupConfig,
       src,
     })
 
     return {
-      configHash: stableHash({
-        language: effectiveConfig.language,
-        languageOptions: effectiveConfig.languageOptions,
-        processor: effectiveConfig.processor,
-        resolvedLanguage: language.name,
-        settings: effectiveConfig.settings,
-      }),
+      configHash: input.configHash,
       file,
+      fileIndex: input.fileIndex,
       ruleRuntimes,
       targets,
     }
-  }))).filter((file): file is PreparedFile => file !== undefined)
+  }))
 
-  const directories = pendingDirectories.map((directoryPath): PreparedDirectory | undefined => {
-    const target: DirectoryTarget = {
-      kind: 'directory',
-      path: resolve(cwd, directoryPath),
-    }
-
-    const resolvedConfig = resolveConfigForDirectory(target.path, config, { cwd })
-    if (resolvedConfig.ignored) {
-      return undefined
-    }
-
-    const effectiveConfig = resolvedConfig.config
-    const registry = buildRuleRegistry(effectiveConfig)
-
+  const directories = preparation.directories.map((input): PreparedDirectory => {
     return {
-      configHash: stableHash({
-        settings: effectiveConfig.settings,
-      }),
+      ...input,
       ruleRuntimes: createRuleRuntimes({
         cwd,
-        effectiveAgent: effectiveConfig.agent,
-        effectiveSettings: effectiveConfig.settings,
-        options,
+        effectiveAgent: input.agent,
+        effectiveSettings: input.settings,
         progress: options.progress,
-        registry,
+        rules: input.rules,
+        runOptions: options,
         setupConfig,
         src,
       }),
-      target,
     }
-  }).filter((directory): directory is PreparedDirectory => directory !== undefined)
+  })
 
-  const resolvedProjectConfig = resolveConfigForProject(cwd, config, { cwd })
-  const projectConfig = resolvedProjectConfig.config
-  const projectRuleRuntimes = resolvedProjectConfig.ignored
-    ? []
-    : createRuleRuntimes({
+  const projectRuleRuntimes = preparation.project
+    ? createRuleRuntimes({
         cwd,
-        effectiveAgent: projectConfig.agent,
-        effectiveSettings: projectConfig.settings,
-        options,
+        effectiveAgent: preparation.project.agent,
+        effectiveSettings: preparation.project.settings,
         progress: options.progress,
-        registry: buildRuleRegistry(projectConfig),
+        rules: preparation.project.rules,
+        runOptions: options,
         setupConfig,
         src,
       })
+    : []
   const filePlans = createSourceExecutionPlans(files, cwd, cacheStore)
   const directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
-  const projectPlan = canCreateProjectPlan(
-    resolvedProjectConfig.ignored,
-    options.projectTargets,
-    projectRuleRuntimes,
-  )
+  const projectPlan = preparation.project && canCreateProjectPlan(projectRuleRuntimes)
     ? createProjectExecutionPlan({
         cacheStore,
-        configHash: stableHash({ settings: projectConfig.settings }),
+        configHash: preparation.project.configHash,
         index: filePlans.length + directoryPlans.length + 1,
-        project: createProjectIndex(cwd, files),
+        project: createProjectIndex(preparation.project.root, files),
         ruleRuntimes: projectRuleRuntimes,
       })
     : undefined
@@ -291,17 +244,11 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   return result
 }
 
-function canCreateProjectPlan(
-  ignored: boolean,
-  projectTargets: boolean | undefined,
-  runtimes: RuleRuntime[],
-): boolean {
-  return !ignored
-    && projectTargets !== false
-    && runtimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
+function canCreateProjectPlan(runtimes: RuleRuntime[]): boolean {
+  return runtimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
 }
 
-function createProjectFileSnapshot(preparedFile: PreparedFile, fileIndex: number): ProjectFileSnapshot {
+function createProjectFileSnapshot(preparedFile: PreparedFile): ProjectFileSnapshot {
   return {
     configHash: preparedFile.configHash,
     file: {
@@ -310,7 +257,7 @@ function createProjectFileSnapshot(preparedFile: PreparedFile, fileIndex: number
       path: preparedFile.file.path,
       targetCount: preparedFile.targets.length,
     },
-    fileIndex,
+    fileIndex: preparedFile.fileIndex,
     targets: preparedFile.targets.map(target => ({
       descriptor: {
         filePath: target.file.path,
@@ -335,7 +282,7 @@ function createProjectFileSnapshot(preparedFile: PreparedFile, fileIndex: number
 function createProjectIndex(root: string, files: PreparedFile[]): ProjectIndex {
   const builder = new ProjectIndexBuilder(root)
 
-  files.forEach((file, fileIndex) => builder.add(createProjectFileSnapshot(file, fileIndex)))
+  files.forEach(file => builder.add(createProjectFileSnapshot(file)))
 
   return builder.build()
 }
@@ -344,19 +291,19 @@ function createRuleRuntimes(options: {
   cwd: string
   effectiveAgent: AgentAdapter | undefined
   effectiveSettings: Record<string, unknown>
-  options: RunOptions
   progress?: ProgressReporter
-  registry: ReturnType<typeof buildRuleRegistry>
+  rules: readonly PreparedRule[]
+  runOptions: RunOptions
   setupConfig: SetupConfig
   src: ReturnType<typeof createSourceRuntime>
 }): RuleRuntime[] {
-  return options.registry.enabledRules.map((enabledRule) => {
+  return options.rules.map(({ enabledRule, ruleIndex }) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const agent = options.effectiveAgent
       ? withAgentRetry(request => options.effectiveAgent!({
           ...request,
           signal: combineAbortSignals(executionState.getStore()?.signal, request.signal),
-        }), options.options.runner?.agentRetries, {
+        }), options.runOptions.runner?.agentRetries, {
           onRetry: ({ attempt, maxAttempts }) => {
             const state = executionState.getStore()
             if (!state)
@@ -409,7 +356,7 @@ function createRuleRuntimes(options: {
         },
       },
       model: async (selector) => {
-        const request = options.options.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
+        const request = options.runOptions.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
         const requirement = mergeModelRequirement(
           enabledRule.rule.model,
           typeof selector === 'string' ? undefined : selector,
@@ -429,7 +376,7 @@ function createRuleRuntimes(options: {
         return resolvedModel
       },
       options: enabledRule.options,
-      outputLanguage: options.options.outputLanguage,
+      outputLanguage: options.runOptions.outputLanguage,
       report: (descriptor) => {
         const state = executionState.getStore()
         // TODO: (planning-observations) Create-time diagnostics and usage are rejected because they have no rule-job order; revisit only with an owner-approved planning evidence contract.
@@ -490,6 +437,7 @@ function createRuleRuntimes(options: {
         options: enabledRule.options,
         severity: enabledRule.severity,
       }),
+      ruleIndex,
     }
   })
 }

@@ -71,6 +71,30 @@ describe('runAlint', () => {
     },
   )
 
+  it('rejects an unknown language in a later input before extracting or reading an earlier input', async () => {
+    const extract = vi.fn(() => [])
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract,
+          name: 'custom',
+        },
+      },
+    })
+
+    await expect(runAlint({
+      config: defineConfig([
+        { plugins: { company: plugin } },
+        { files: ['later.custom'], language: 'unknown' },
+      ]),
+      cwd: '/repo',
+      files: ['missing.custom', 'later.custom'],
+    })).rejects.toThrow('Unknown language "unknown".')
+
+    expect(extract).not.toHaveBeenCalled()
+  })
+
   function createConfig(
     rules: Record<string, RuleDefinition>,
     enabledRules: Record<string, RuleConfigEntry>,
@@ -4062,6 +4086,19 @@ describe('runAlint', () => {
   })
 
   describe('projectTargets', () => {
+    it('does not create project-only rule handlers when project targets are disabled', async () => {
+      const create = vi.fn(() => ({ onTargetProject: () => {} }))
+      const rule = defineRule({ create })
+
+      await runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        projectTargets: false,
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(create).not.toHaveBeenCalled()
+    })
+
     it('skips the project pass when projectTargets is false', async () => {
       const root = await mkdtemp(join(tmpdir(), 'alint-project-targets-off-'))
       const filePath = join(root, 'demo.ts')

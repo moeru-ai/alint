@@ -9,7 +9,7 @@ export function createSourceExecutionPlans(
   cwd: string,
   cacheStore: CacheStore,
 ): PreparedFileExecutionPlan[] {
-  return files.map((preparedFile, fileOffset) => {
+  return files.map((preparedFile) => {
     const cacheOwner = cacheStore.beginOwner({ kind: 'file', path: preparedFile.file.path })
     const targets = collectExecutionTargets(preparedFile, cacheOwner)
     const resolveTargetIdentity = createTargetIdentityResolver(
@@ -23,7 +23,7 @@ export function createSourceExecutionPlans(
     const filePlan: PreparedFileExecutionPlan = {
       cacheOwner,
       id: `source:${preparedFile.file.path}`,
-      index: fileOffset + 1,
+      index: preparedFile.fileIndex + 1,
       kind: 'source',
       path: preparedFile.file.path,
       planned: 0,
