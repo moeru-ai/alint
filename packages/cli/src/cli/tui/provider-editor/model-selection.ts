@@ -156,8 +156,8 @@ function createDefaultModelCandidateValue(providerId: string, modelId: string): 
 function firstModelsById(provider: ProviderDefinition | undefined): Map<string, SetupModelDefinition> {
   const models = new Map<string, SetupModelDefinition>()
 
-  // Setup loading normally rejects duplicates, but editor transforms keep the first
-  // configured definition so option ordering and metadata lookup share one policy.
+  // Duplicate model IDs are invalid, but editor transforms defensively keep the
+  // first definition so option ordering and metadata lookup share one policy.
   for (const model of provider?.models ?? []) {
     if (!models.has(model.id)) {
       models.set(model.id, model)
