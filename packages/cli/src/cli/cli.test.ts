@@ -339,6 +339,8 @@ describe('createProviderId', () => {
     expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi']))).toBe('cliproxyapi-2')
     expect(createProviderId('http://127.0.0.1:8317/v1', new Set(['cliproxyapi', 'cliproxyapi-2']))).toBe('cliproxyapi-3')
     expect(createProviderId('http://localhost:11434/v1', new Set())).toBe('ollama')
+    expect(createProviderId('https://api.cerebras.ai/v1', new Set())).toBe('cerebras')
+    expect(createProviderId('https://api.groq.com/openai/v1', new Set())).toBe('groq')
   })
 })
 
@@ -356,6 +358,20 @@ describe('interactive setup navigation', () => {
       label: 'Ollama',
       probeModels: true,
       value: 'ollama',
+    })
+    expect(providerSetupSources).toContainEqual({
+      defaultEndpoint: 'https://api.cerebras.ai/v1',
+      defaultProviderId: 'cerebras',
+      label: 'Cerebras',
+      probeModels: true,
+      value: 'cerebras',
+    })
+    expect(providerSetupSources).toContainEqual({
+      defaultEndpoint: 'https://api.groq.com/openai/v1',
+      defaultProviderId: 'groq',
+      label: 'Groq',
+      probeModels: true,
+      value: 'groq',
     })
   })
 

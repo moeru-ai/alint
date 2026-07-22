@@ -12,7 +12,7 @@ export interface ProviderSetupSource {
   defaultProviderId?: string
   label: string
   probeModels: boolean
-  value: 'cliProxyApi' | 'custom' | 'manual' | 'ollama'
+  value: 'cerebras' | 'cliProxyApi' | 'custom' | 'groq' | 'manual' | 'ollama'
 }
 
 export const providerSetupSources: ProviderSetupSource[] = [
@@ -27,6 +27,20 @@ export const providerSetupSources: ProviderSetupSource[] = [
     label: 'Custom OpenAI-compatible provider',
     probeModels: true,
     value: 'custom',
+  },
+  {
+    defaultEndpoint: 'https://api.cerebras.ai/v1',
+    defaultProviderId: 'cerebras',
+    label: 'Cerebras',
+    probeModels: true,
+    value: 'cerebras',
+  },
+  {
+    defaultEndpoint: 'https://api.groq.com/openai/v1',
+    defaultProviderId: 'groq',
+    label: 'Groq',
+    probeModels: true,
+    value: 'groq',
   },
   {
     defaultEndpoint: 'http://localhost:11434/v1',
