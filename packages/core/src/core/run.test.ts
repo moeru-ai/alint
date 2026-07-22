@@ -3,6 +3,7 @@ import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { PluginDefinition, ProjectTarget, RuleConfigEntry, RuleContext, RuleDefinition } from '../dsl/types'
 import type { ProgressJobRef, ProgressReporter } from '../index'
 
+import { getEventListeners } from 'node:events'
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -93,6 +94,42 @@ describe('runAlint', () => {
     })).rejects.toThrow('Unknown language "unknown".')
 
     expect(extract).not.toHaveBeenCalled()
+  })
+
+  it('closes the scheduler when project rule creation fails', async () => {
+    const controller = new AbortController()
+    const sentinel = new Error('project rule creation failed')
+    const rule = defineRule({
+      create: () => {
+        throw sentinel
+      },
+    })
+
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+    await expect(runAlint({
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+      signal: controller.signal,
+    })).rejects.toBe(sentinel)
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+  })
+
+  it('closes the scheduler when probing a project handler getter fails', async () => {
+    const controller = new AbortController()
+    const sentinel = new Error('project handler getter failed')
+    const rule = defineRule({
+      create: () => ({
+        get onTargetProject(): (target: ProjectTarget) => void {
+          throw sentinel
+        },
+      }),
+    })
+
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
+    await expect(runAlint({
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+      signal: controller.signal,
+    })).rejects.toBe(sentinel)
+    expect(getEventListeners(controller.signal, 'abort')).toHaveLength(0)
   })
 
   it('keeps unrelated source and directory jobs running after ordered read and extract failures', async () => {
@@ -368,7 +405,8 @@ describe('runAlint', () => {
     const secondPath = join(root, 'second.custom')
     await writeFile(firstPath, 'one\n')
     await writeFile(secondPath, 'one,two\n')
-    const fileReady: Array<{ inputPath: string, jobsAdded: number, jobsTotal: number }> = []
+    const fileReady: Array<{ inputPath: string, jobsAdded: number, jobsTotal: number, queuedForFile: number }> = []
+    const queuedByPath = new Map<string, number>()
     const rule = defineRule({ create: () => ({ onTargetFunction: () => {} }) })
 
     await runAlint({
@@ -400,15 +438,22 @@ describe('runAlint', () => {
           inputPath,
           jobsAdded,
           jobsTotal: progress.jobsTotal,
+          queuedForFile: queuedByPath.get(inputPath) ?? 0,
         }),
+        onJobQueued: ({ job }) => queuedByPath.set(job.inputPath, (queuedByPath.get(job.inputPath) ?? 0) + 1),
       },
       setupConfig: createSetupConfig(),
     })
 
-    expect(fileReady).toEqual([
-      { inputPath: firstPath, jobsAdded: 1, jobsTotal: 1 },
-      { inputPath: secondPath, jobsAdded: 2, jobsTotal: 3 },
-    ])
+    const readyByPath = new Map(fileReady.map(event => [event.inputPath, event]))
+    expect(fileReady).toHaveLength(2)
+    expect(readyByPath.get(firstPath)?.jobsAdded).toBe(1)
+    expect(readyByPath.get(firstPath)?.queuedForFile).toBe(1)
+    expect(readyByPath.get(secondPath)?.jobsAdded).toBe(2)
+    expect(readyByPath.get(secondPath)?.queuedForFile).toBe(2)
+    expect(fileReady[0]?.jobsTotal).toBe(fileReady[0]?.jobsAdded)
+    expect(fileReady[1]?.jobsTotal).toBe(3)
+    expect(fileReady.map(event => event.jobsTotal)).toEqual(fileReady.map(event => event.jobsTotal).toSorted((left, right) => left - right))
   })
 
   it('keeps file and job progress exact when a later file fails extraction', async () => {
@@ -688,12 +733,11 @@ describe('runAlint', () => {
       setupConfig: createSetupConfig(),
     })
 
-    expect(jobs.map(job => ({ index: job.index, keys: Object.keys(job).sort(), ruleId: job.ruleId }))).toEqual([
-      { index: 1, keys: ['id', 'index', 'inputPath', 'ruleId', 'target'], ruleId: 'company/one' },
-      { index: 2, keys: ['id', 'index', 'inputPath', 'ruleId', 'target'], ruleId: 'company/two' },
-      { index: 3, keys: ['id', 'index', 'inputPath', 'ruleId', 'target'], ruleId: 'company/one' },
-      { index: 4, keys: ['id', 'index', 'inputPath', 'ruleId', 'target'], ruleId: 'company/two' },
-    ])
+    const jobsByPath = Map.groupBy(jobs, job => job.inputPath)
+    expect(jobs.map(job => job.index)).toEqual([1, 2, 3, 4])
+    expect(jobs.every(job => Object.keys(job).sort().join(',') === 'id,index,inputPath,ruleId,target')).toBe(true)
+    expect(jobsByPath.get(firstPath)?.map(job => job.ruleId)).toEqual(['company/one', 'company/two'])
+    expect(jobsByPath.get(secondPath)?.map(job => job.ruleId)).toEqual(['company/one', 'company/two'])
   })
 
   it('assigns unique job IDs to repeated inputs', async () => {
@@ -1172,6 +1216,63 @@ describe('runAlint', () => {
     expect(entry?.fingerprint.targetHash).toBe(projectHash)
     expect(entry?.target.hash).toBe(projectHash)
     expect(entry?.target.kind).toBe('project')
+  })
+
+  it('clears stale project slots after a complete run removes every project handler', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-cache-remove-handlers-'))
+    const cachePath = join(root, '.alintcache')
+    const rule = defineRule({ create: () => ({ onTargetProject: () => {} }) })
+
+    await runAlint({
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+      cwd: root,
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })
+    const warmed = await readCacheBody(cachePath)
+    expect(Object.values(warmed.owners).find(owner => owner.kind === 'project')?.slots).toHaveLength(1)
+
+    await runAlint({
+      config: defineConfig([]),
+      cwd: root,
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })
+    const cleared = await readCacheBody(cachePath)
+    const projectOwner = Object.values(cleared.owners).find(owner => owner.kind === 'project')
+
+    expect(projectOwner?.slots).toEqual([])
+    expect(Object.values(cleared.entries).filter(entry => entry.target.kind === 'project')).toEqual([])
+  })
+
+  it('preserves stale project slots when source preparation fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-cache-source-failure-'))
+    const cachePath = join(root, '.alintcache')
+    const missingPath = join(root, 'missing.txt')
+    const rule = defineRule({ create: () => ({ onTargetProject: () => {} }) })
+
+    await runAlint({
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+      cwd: root,
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })
+    const warmed = await readCacheBody(cachePath)
+    const warmedSlots = Object.values(warmed.owners).find(owner => owner.kind === 'project')?.slots
+    expect(warmedSlots).toHaveLength(1)
+
+    await expect(runAlint({
+      config: defineConfig([]),
+      cwd: root,
+      files: [missingPath],
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })).rejects.toBeInstanceOf(AlintRunError)
+    const preserved = await readCacheBody(cachePath)
+    const projectOwner = Object.values(preserved.owners).find(owner => owner.kind === 'project')
+
+    expect(projectOwner?.slots).toEqual(warmedSlots)
+    expect(Object.values(preserved.entries).filter(entry => entry.target.kind === 'project')).toHaveLength(1)
   })
 
   it('keeps the existing source cache target hash alongside the project override', async () => {

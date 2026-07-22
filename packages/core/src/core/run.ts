@@ -98,18 +98,17 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     reporter: options.progress,
     signal: options.signal,
   })
-  const projectRuntimes = preparation.project ? createRuntimes(preparation.project) : []
-  const projectBuilder = preparation.project && projectRuntimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
-    ? new ProjectIndexBuilder(preparation.project.root)
-    : undefined
   const outcomes: RuleJobOutcome[] = []
   const fileFailures: AlintFileFailure[] = []
   let infrastructureError: unknown
   let infrastructureFailed = false
   let admissionFailed = false
-  let projectOwner: ReturnType<typeof cacheStore.beginOwner> | undefined
 
   try {
+    const projectRuntimes = preparation.project ? createRuntimes(preparation.project) : []
+    const projectBuilder = preparation.project && projectRuntimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
+      ? new ProjectIndexBuilder(preparation.project.root)
+      : undefined
     const sourceResults = await executeSourceSessions(preparation.files, {
       cacheStore,
       createRuleRuntimes: createRuntimes,
@@ -138,17 +137,24 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     })
     outcomes.push(...(await Promise.all(directoryBatches.map(batch => batch.outcomes))).flat())
 
-    if (fileFailures.length === 0 && projectBuilder && preparation.project && !options.signal?.aborted) {
-      const project = createProjectJobs({
-        cacheStore,
-        configHash: preparation.project.configHash,
-        project: projectBuilder.build(),
-        runtimes: projectRuntimes,
-      })
-      projectOwner = project.owner
-      const batch = scheduler.schedule(project.jobs)
-      outcomes.push(...await batch.outcomes)
-      projectOwner?.commit({ mode: options.signal?.aborted ? 'merge' : 'replace' })
+    if (fileFailures.length === 0 && preparation.project && !options.signal?.aborted) {
+      if (projectBuilder) {
+        const project = createProjectJobs({
+          cacheStore,
+          configHash: preparation.project.configHash,
+          project: projectBuilder.build(),
+          runtimes: projectRuntimes,
+        })
+        const projectOwner = project.owner
+        const batch = scheduler.schedule(project.jobs)
+        outcomes.push(...await batch.outcomes)
+        projectOwner?.commit({ mode: options.signal?.aborted ? 'merge' : 'replace' })
+      }
+      else if (!options.cacheOnly) {
+        // A complete run with no project handlers still replaces the prior config's slots,
+        // without retaining source descriptors solely to build an empty project index.
+        cacheStore.beginOwner({ kind: 'project', path: preparation.project.root }).commit({ mode: 'replace' })
+      }
     }
   }
   catch (error) {
