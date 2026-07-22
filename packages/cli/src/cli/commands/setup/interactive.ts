@@ -1,7 +1,8 @@
-import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@alint-js/config'
+import type { ProviderDefinition, SetupModelDefinition } from '@alint-js/config'
 import type * as ClackPrompts from '@clack/prompts'
 
 import type { ProviderSetupSource } from '../../provider-registry'
+import type { DefaultAliasTarget } from '../../tui/provider-editor/types'
 
 import process from 'node:process'
 
@@ -9,18 +10,7 @@ import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, m
 import { errorMessageFrom } from '@moeru/std/error'
 
 import { createProviderId, findProviderSetupSource, parseHeaderList, probeModels, providerSetupSources } from '../../provider-registry'
-
-export interface DefaultAliasTarget {
-  modelId: string
-  providerId: string
-}
-
-export interface DefaultModelCandidate extends DefaultAliasTarget {
-  isCurrentDefault: boolean
-  isNew: boolean
-  label: string
-  value: string
-}
+import { applyDefaultAlias, createDefaultModelCandidates } from '../../tui/provider-editor/model-selection'
 
 export interface InteractiveSetupIo {
   cwd: string
@@ -53,78 +43,6 @@ type SetupStep = 'confirm' | 'defaultAlias' | 'endpoint' | 'headers' | 'models' 
 
 const nonTtyMessage = 'interactive setup requires a TTY. Use -N/--no-interactive with --provider-id and --provider-endpoint.\n'
 const backValue = '__alint_back__'
-
-export function applyDefaultAlias(config: SetupConfig, target: DefaultAliasTarget): SetupConfig {
-  return {
-    ...config,
-    providers: config.providers.map(provider => ({
-      ...provider,
-      headers: provider.headers === undefined ? undefined : { ...provider.headers },
-      models: provider.models.map((model) => {
-        const aliasesWithoutDefault = (model.aliases ?? []).filter(alias => alias !== 'default')
-        const aliases = provider.id === target.providerId && model.id === target.modelId
-          ? [...aliasesWithoutDefault, 'default']
-          : aliasesWithoutDefault
-
-        return {
-          ...model,
-          aliases: aliases.length > 0 ? aliases : undefined,
-          capabilities: model.capabilities === undefined ? undefined : [...model.capabilities],
-          defaultParams: model.defaultParams === undefined ? undefined : { ...model.defaultParams },
-        }
-      }),
-    })),
-  }
-}
-
-export function createDefaultModelCandidates(
-  config: SetupConfig,
-  newProviderId: string,
-  newModelIds: string[],
-): DefaultModelCandidate[] {
-  const candidates: DefaultModelCandidate[] = []
-  const seen = new Set<string>()
-  const newModelIdSet = new Set(newModelIds)
-  const allModels = config.providers.flatMap(provider =>
-    provider.models.map(model => ({
-      isCurrentDefault: (model.aliases ?? []).includes('default'),
-      isNew: provider.id === newProviderId && newModelIdSet.has(model.id),
-      model,
-      provider,
-      value: createDefaultModelCandidateValue(provider.id, model.id),
-    })),
-  )
-
-  const addCandidate = (candidate: typeof allModels[number] | undefined): void => {
-    if (candidate === undefined || seen.has(candidate.value)) {
-      return
-    }
-
-    seen.add(candidate.value)
-    candidates.push({
-      isCurrentDefault: candidate.isCurrentDefault,
-      isNew: candidate.isNew,
-      label: `${candidate.provider.id} / ${candidate.model.id}`,
-      modelId: candidate.model.id,
-      providerId: candidate.provider.id,
-      value: candidate.value,
-    })
-  }
-
-  addCandidate(allModels.find(candidate => candidate.isCurrentDefault))
-
-  for (const modelId of newModelIds) {
-    addCandidate(allModels.find(candidate =>
-      candidate.provider.id === newProviderId && candidate.model.id === modelId,
-    ))
-  }
-
-  for (const candidate of allModels) {
-    addCandidate(candidate)
-  }
-
-  return candidates
-}
 
 export function formatProbeModelsFailure(endpoint: string, error: unknown): string {
   const hint = endpoint.startsWith('https://localhost:11434')
@@ -445,10 +363,6 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
 
 export function withBackOption<T extends string>(options: SelectOption<T>[]): Array<SelectOption<T | typeof backValue>> {
   return [...options, { label: 'Back', value: backValue }]
-}
-
-function createDefaultModelCandidateValue(providerId: string, modelId: string): string {
-  return `${providerId}\u0000${modelId}`
 }
 
 function createProviderConfig(
