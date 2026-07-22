@@ -8,7 +8,7 @@ import { basename, join, resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createFixtureContext, createFixtureIndex, fixtureHelper, FIXTURES_DIR } from '../../repo/fixtures'
-import { duplicatedHelperRule } from './rule'
+import { duplicatedHelperRule, resolveDuplicatedHelperAgent } from './rule'
 
 interface Run {
   agentRequests: AgentRequest[]
@@ -152,6 +152,10 @@ describe('no-duplicated-helper, the AST approach', () => {
 })
 
 describe('no-duplicated-helper, the agentic approach', () => {
+  it('provides a default agent so TOML configs can enable semantic duplicate review', () => {
+    expect(resolveDuplicatedHelperAgent(createFixtureContext())).toBeTypeOf('function')
+  })
+
   it('is never asked about a helper a fingerprint already settled', async () => {
     const run = createRun()
 

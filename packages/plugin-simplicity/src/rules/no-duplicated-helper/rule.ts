@@ -5,7 +5,7 @@ import type { AgentFinding } from './tools'
 
 import { createHash } from 'node:crypto'
 
-import { requireAgent } from '@alint-js/core/agent'
+import { createApeiraAdapter } from '@alint-js/agent-apeira'
 import { defineRule } from '@alint-js/plugin'
 import { errorMessageFrom } from '@moeru/std/error'
 import { minimatch } from 'minimatch'
@@ -76,6 +76,10 @@ export const duplicatedHelperRule = defineRule({
     }
   },
 })
+
+export function resolveDuplicatedHelperAgent(ctx: Pick<RuleContext, 'agent'>) {
+  return ctx.agent ?? createApeiraAdapter({ maxSteps: 16 })
+}
 
 function isIgnored(cwd: string, filePath: string, ignores: readonly string[]): boolean {
   const relativePath = relative(cwd, filePath)
@@ -175,7 +179,7 @@ async function review(
   const findings: AgentFinding[] = []
 
   try {
-    const agent = requireAgent(ctx)
+    const agent = resolveDuplicatedHelperAgent(ctx)
     const model = await ctx.model()
 
     const result = await agent({
