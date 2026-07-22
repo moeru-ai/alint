@@ -23,17 +23,22 @@ export interface ProviderEditorInput {
 }
 
 export interface ProviderEditorPromptPort {
-  confirm: (summary: string) => Promise<'back' | 'cancelled' | 'no' | 'yes'>
-  defaultAction: (firstModelId: string) => Promise<'back' | 'cancelled' | 'no' | 'selectAnother' | 'yes'>
-  defaultModel: (options: ModelOption[]) => Promise<'back' | 'cancelled' | string>
-  endpoint: (initialValue: string | undefined) => Promise<'back' | 'cancelled' | string>
-  headerInput: () => Promise<'back' | 'cancelled' | string>
-  manualModels: () => Promise<'back' | 'cancelled' | string[]>
-  models: (options: ModelOption[], initialValues: string[]) => Promise<'back' | 'cancelled' | string[]>
+  confirm: (summary: string) => Promise<ProviderEditorPromptResult<'no' | 'yes'>>
+  defaultAction: (firstModelId: string) => Promise<ProviderEditorPromptResult<'no' | 'selectAnother' | 'yes'>>
+  defaultModel: (options: ModelOption[]) => Promise<ProviderEditorPromptResult<string>>
+  endpoint: (initialValue: string | undefined) => Promise<ProviderEditorPromptResult<string>>
+  headerInput: () => Promise<ProviderEditorPromptResult<string>>
+  manualModels: () => Promise<ProviderEditorPromptResult<string[]>>
+  models: (options: ModelOption[], initialValues: string[]) => Promise<ProviderEditorPromptResult<string[]>>
   probe: (endpoint: string, headers: Record<string, string>) => Promise<string[]>
-  providerId: (initialValue: string, editable: boolean) => Promise<'back' | 'cancelled' | string>
-  retainedHeaders: (headerNames: string[]) => Promise<'back' | 'cancelled' | string[]>
+  providerId: (initialValue: string, editable: boolean) => Promise<ProviderEditorPromptResult<string>>
+  retainedHeaders: (headerNames: string[], initialValues: string[]) => Promise<ProviderEditorPromptResult<string[]>>
 }
+
+export type ProviderEditorPromptResult<T>
+  = | { status: 'back' }
+    | { status: 'cancelled' }
+    | { status: 'submitted', value: T }
 
 export type ProviderEditorResult
   = | { defaultAliasTarget?: DefaultAliasTarget, provider: ProviderDefinition, status: 'confirmed' }

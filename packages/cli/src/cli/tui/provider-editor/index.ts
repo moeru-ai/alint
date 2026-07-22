@@ -22,7 +22,8 @@ interface EditorDraft {
   defaultAliasTarget?: DefaultAliasTarget
   discoveredModels: string[]
   endpoint?: string
-  headerReplacements: Record<string, string>
+  headerValues: Record<string, string>
+  modelOptionIds?: string[]
   providerId?: string
   retainedHeaderNames: string[]
   selectedModelIds?: string[]
@@ -55,27 +56,27 @@ export async function runProviderEditor(
 ): Promise<ProviderEditorResult> {
   const prompts = promptPort ?? createProviderEditorPrompts(await import('@clack/prompts'))
   const existingProvider = input.mode === 'update' ? input.existingProvider : undefined
-  const existingHeaders = { ...existingProvider?.headers }
+  const initialHeaders = { ...existingProvider?.headers }
   const draft: EditorDraft = {
     discoveredModels: [],
     endpoint: existingProvider?.endpoint ?? input.source.defaultEndpoint,
-    headerReplacements: {},
+    headerValues: initialHeaders,
     providerId: existingProvider?.id,
-    retainedHeaderNames: Object.keys(existingHeaders),
+    retainedHeaderNames: Object.keys(initialHeaders),
   }
   let step: EditorStep = 'endpoint'
 
   while (true) {
     if (step === 'endpoint') {
       const endpoint = await prompts.endpoint(draft.endpoint)
-      if (endpoint === 'cancelled') {
+      if (endpoint.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (endpoint === 'back') {
+      if (endpoint.status === 'back') {
         return { status: 'back' }
       }
 
-      draft.endpoint = endpoint.trim()
+      draft.endpoint = endpoint.value.trim()
       step = 'providerId'
       continue
     }
@@ -86,46 +87,57 @@ export async function runProviderEditor(
         new Set(input.config.providers.map(provider => provider.id)),
       )
       const providerId = await prompts.providerId(initialProviderId, input.mode === 'create')
-      if (providerId === 'cancelled') {
+      if (providerId.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (providerId === 'back') {
+      if (providerId.status === 'back') {
         step = 'endpoint'
         continue
       }
 
-      draft.providerId = providerId.trim()
+      draft.providerId = providerId.value.trim()
       step = 'retainedHeaders'
       continue
     }
 
     if (step === 'retainedHeaders') {
-      const retainedHeaders = await prompts.retainedHeaders(Object.keys(existingHeaders))
-      if (retainedHeaders === 'cancelled') {
+      const headerNames = Object.keys(draft.headerValues)
+      const retainedHeaders = await prompts.retainedHeaders(
+        headerNames,
+        draft.retainedHeaderNames.filter(name => headerNames.includes(name)),
+      )
+      if (retainedHeaders.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (retainedHeaders === 'back') {
+      if (retainedHeaders.status === 'back') {
         step = 'providerId'
         continue
       }
 
-      draft.retainedHeaderNames = retainedHeaders
+      draft.retainedHeaderNames = retainedHeaders.value
       step = 'headerInput'
       continue
     }
 
     if (step === 'headerInput') {
       const headerInput = await prompts.headerInput()
-      if (headerInput === 'cancelled') {
+      if (headerInput.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (headerInput === 'back') {
+      if (headerInput.status === 'back') {
         step = 'retainedHeaders'
         continue
       }
 
-      draft.headerReplacements = parseHeaderList(splitInput(headerInput)) ?? {}
-      const headers = applyHeaderSelection(existingHeaders, draft.retainedHeaderNames, draft.headerReplacements) ?? {}
+      const replacements = parseHeaderList(splitInput(headerInput.value)) ?? {}
+      // Blank input is an additive no-op: selected draft headers may contain
+      // replacements whose values must remain hidden and survive Back.
+      draft.headerValues = { ...draft.headerValues, ...replacements }
+      draft.retainedHeaderNames = [...new Set([
+        ...draft.retainedHeaderNames,
+        ...Object.keys(replacements),
+      ])]
+      const headers = effectiveHeaders(draft) ?? {}
       draft.discoveredModels = input.source.probeModels
         ? await prompts.probe(draft.endpoint ?? '', headers)
         : []
@@ -135,33 +147,43 @@ export async function runProviderEditor(
 
     if (step === 'models') {
       const options = createModelOptions(existingProvider, draft.discoveredModels)
+      const optionIds = options.map(option => option.value)
+      // Compare with the previous option universe so prior deselections remain
+      // deselected while genuinely new probe results start selected.
+      const initialValues = draft.selectedModelIds === undefined || draft.modelOptionIds === undefined
+        ? optionIds
+        : optionIds.filter(modelId =>
+            draft.selectedModelIds?.includes(modelId) === true
+            || !draft.modelOptionIds?.includes(modelId),
+          )
+      draft.modelOptionIds = optionIds
       const selectedModels = options.length === 0
         ? await prompts.manualModels()
-        : await prompts.models(options, draft.selectedModelIds ?? options.map(option => option.value))
-      if (selectedModels === 'cancelled') {
+        : await prompts.models(options, initialValues)
+      if (selectedModels.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (selectedModels === 'back') {
+      if (selectedModels.status === 'back') {
         step = 'headerInput'
         continue
       }
 
-      draft.selectedModelIds = selectedModels
+      draft.selectedModelIds = selectedModels.value
       step = 'defaultAction'
       continue
     }
 
     if (step === 'defaultAction') {
       const defaultAction = await prompts.defaultAction(draft.selectedModelIds?.[0] ?? '')
-      if (defaultAction === 'cancelled') {
+      if (defaultAction.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (defaultAction === 'back') {
+      if (defaultAction.status === 'back') {
         step = 'models'
         continue
       }
 
-      draft.defaultAliasTarget = defaultAction === 'yes'
+      draft.defaultAliasTarget = defaultAction.value === 'yes'
         ? { modelId: draft.selectedModelIds?.[0] ?? '', providerId: draft.providerId ?? '' }
         : undefined
 
@@ -169,13 +191,13 @@ export async function runProviderEditor(
         model.aliases?.includes('default') === true
         && !draft.selectedModelIds?.includes(model.id),
       ) === true
-      step = defaultAction === 'selectAnother' || (defaultAction === 'no' && removesCurrentDefault)
+      step = defaultAction.value === 'selectAnother' || (defaultAction.value === 'no' && removesCurrentDefault)
         ? 'defaultModel'
         : 'confirm'
       continue
     }
 
-    const provider = createProvider(input, draft, existingHeaders)
+    const provider = createProvider(input, draft)
 
     if (step === 'defaultModel') {
       const provisionalConfig = input.mode === 'update'
@@ -191,15 +213,15 @@ export async function runProviderEditor(
         label: candidate.label,
         value: candidate.value,
       })))
-      if (selectedDefault === 'cancelled') {
+      if (selectedDefault.status === 'cancelled') {
         return { status: 'cancelled' }
       }
-      if (selectedDefault === 'back') {
+      if (selectedDefault.status === 'back') {
         step = 'defaultAction'
         continue
       }
 
-      const candidate = candidates.find(item => item.value === selectedDefault)
+      const candidate = candidates.find(item => item.value === selectedDefault.value)
       if (candidate === undefined) {
         return { status: 'cancelled' }
       }
@@ -210,10 +232,10 @@ export async function runProviderEditor(
     }
 
     const confirmed = await prompts.confirm(createSummary(input, provider, draft.defaultAliasTarget))
-    if (confirmed === 'cancelled' || confirmed === 'no') {
+    if (confirmed.status === 'cancelled' || (confirmed.status === 'submitted' && confirmed.value === 'no')) {
       return { status: 'cancelled' }
     }
-    if (confirmed === 'back') {
+    if (confirmed.status === 'back') {
       step = 'defaultAction'
       continue
     }
@@ -229,12 +251,11 @@ export async function runProviderEditor(
 function createProvider(
   input: ProviderEditorInput,
   draft: EditorDraft,
-  existingHeaders: Record<string, string>,
 ): ProviderDefinition {
   return {
     ...input.existingProvider,
     endpoint: draft.endpoint ?? '',
-    headers: applyHeaderSelection(existingHeaders, draft.retainedHeaderNames, draft.headerReplacements),
+    headers: effectiveHeaders(draft),
     id: draft.providerId ?? '',
     models: modelsFromSelection(input.existingProvider, draft.selectedModelIds ?? []),
     type: 'openai-compatible',
@@ -263,6 +284,10 @@ function createSummary(
     `Removed models: ${removals.join(', ') || '(none)'}`,
     `Default: ${defaultChange}`,
   ].join('\n')
+}
+
+function effectiveHeaders(draft: EditorDraft): Record<string, string> | undefined {
+  return applyHeaderSelection(draft.headerValues, draft.retainedHeaderNames, {})
 }
 
 function splitInput(value: string): string[] {

@@ -1,6 +1,6 @@
 import type { ProviderDefinition, SetupConfig } from '@alint-js/config'
 
-import type { ModelOption, ProviderEditorPromptPort } from './types'
+import type { ModelOption, ProviderEditorPromptPort, ProviderEditorPromptResult } from './types'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +16,13 @@ const source = {
   label: 'Custom OpenAI-compatible provider',
   probeModels: true,
   value: 'custom' as const,
+}
+
+const back = { status: 'back' } as const
+const cancelled = { status: 'cancelled' } as const
+
+function submitted<T>(value: T): ProviderEditorPromptResult<T> {
+  return { status: 'submitted', value }
 }
 
 const existingProvider: ProviderDefinition = {
@@ -47,16 +54,16 @@ const config: SetupConfig = {
 
 function createPromptPort(overrides: Partial<ProviderEditorPromptPort> = {}): ProviderEditorPromptPort {
   return {
-    confirm: vi.fn(async (): Promise<'yes'> => 'yes'),
-    defaultAction: vi.fn(async (): Promise<'no'> => 'no'),
-    defaultModel: vi.fn(async () => 'cancelled'),
-    endpoint: vi.fn(async () => 'https://next.example/v1'),
-    headerInput: vi.fn(async () => 'Authorization=Bearer replacement'),
-    manualModels: vi.fn(async () => ['manual']),
-    models: vi.fn(async (_options, initialValues) => [...initialValues]),
+    confirm: vi.fn(async () => submitted<'yes'>('yes')),
+    defaultAction: vi.fn(async () => submitted<'no'>('no')),
+    defaultModel: vi.fn(async () => cancelled),
+    endpoint: vi.fn(async () => submitted('https://next.example/v1')),
+    headerInput: vi.fn(async () => submitted('Authorization=Bearer replacement')),
+    manualModels: vi.fn(async () => submitted(['manual'])),
+    models: vi.fn(async (_options, initialValues) => submitted([...initialValues])),
     probe: vi.fn(async () => ['existing', 'new']),
-    providerId: vi.fn(async initialValue => initialValue),
-    retainedHeaders: vi.fn(async names => names),
+    providerId: vi.fn(async initialValue => submitted(initialValue)),
+    retainedHeaders: vi.fn(async (_names, initialValues) => submitted(initialValues)),
     ...overrides,
   }
 }
@@ -65,9 +72,9 @@ describe('runProviderEditor', () => {
   it('updates a provider without exposing secret values in prompts or the summary', async () => {
     const summaries: string[] = []
     const promptPort = createPromptPort({
-      confirm: vi.fn(async (summary: string): Promise<'yes'> => {
+      confirm: vi.fn(async (summary: string) => {
         summaries.push(summary)
-        return 'yes'
+        return submitted<'yes'>('yes')
       }),
     })
 
@@ -106,13 +113,13 @@ describe('runProviderEditor', () => {
       io,
       mode: 'update',
       source,
-    }, createPromptPort({ endpoint: vi.fn(async () => 'cancelled') }))
+    }, createPromptPort({ endpoint: vi.fn(async () => cancelled) }))
 
     expect(result).toEqual({ status: 'cancelled' })
   })
 
   it('returns Back from the first editor prompt to its caller', async () => {
-    const promptPort = createPromptPort({ endpoint: vi.fn(async () => 'back') })
+    const promptPort = createPromptPort({ endpoint: vi.fn(async () => back) })
 
     const result = await runProviderEditor({
       config,
@@ -146,8 +153,8 @@ describe('runProviderEditor', () => {
 
   it('forces replacement of a current default that is deselected', async () => {
     const promptPort = createPromptPort({
-      defaultModel: vi.fn(async (options: ModelOption[]) => options.find(option => option.value.includes('existing'))?.value ?? 'cancelled'),
-      models: vi.fn(async () => ['existing', 'new']),
+      defaultModel: vi.fn(async (options: ModelOption[]) => submitted(options.find(option => option.value.includes('existing'))?.value ?? 'cancelled')),
+      models: vi.fn(async () => submitted(['existing', 'new'])),
     })
 
     const result = await runProviderEditor({
@@ -181,10 +188,10 @@ describe('runProviderEditor', () => {
 
   it('derives the create provider id and offers scoped-config defaults from a provisional config', async () => {
     const promptPort = createPromptPort({
-      defaultAction: vi.fn(async (): Promise<'selectAnother'> => 'selectAnother'),
-      defaultModel: vi.fn(async (options: ModelOption[]) => options.find(option => option.value.includes('remote'))?.value ?? 'cancelled'),
-      endpoint: vi.fn(async () => 'http://127.0.0.1:8317/v1'),
-      headerInput: vi.fn(async () => ''),
+      defaultAction: vi.fn(async () => submitted<'selectAnother'>('selectAnother')),
+      defaultModel: vi.fn(async (options: ModelOption[]) => submitted(options.find(option => option.value.includes('remote'))?.value ?? 'cancelled')),
+      endpoint: vi.fn(async () => submitted('http://127.0.0.1:8317/v1')),
+      headerInput: vi.fn(async () => submitted('')),
       probe: vi.fn(async () => ['remote']),
     })
 
@@ -216,6 +223,134 @@ describe('runProviderEditor', () => {
     ])
     expect(result).toMatchObject({
       defaultAliasTarget: { modelId: 'remote', providerId: 'cliproxyapi' },
+      status: 'confirmed',
+    })
+  })
+
+  it('preserves header removals when navigating back through the header steps', async () => {
+    const summaries: string[] = []
+    const retainedHeaders = vi.fn()
+      .mockResolvedValueOnce(submitted(['X-Keep']))
+      .mockResolvedValueOnce(submitted(['X-Keep']))
+    const promptPort = createPromptPort({
+      confirm: vi.fn(async (summary: string) => {
+        summaries.push(summary)
+        return submitted<'yes'>('yes')
+      }),
+      headerInput: vi.fn()
+        .mockResolvedValueOnce(submitted('X-New=new-secret'))
+        .mockResolvedValueOnce(back)
+        .mockResolvedValueOnce(submitted('')),
+      models: vi.fn()
+        .mockResolvedValueOnce(back)
+        .mockImplementation(async (_options: ModelOption[], initialValues: string[]) => submitted(initialValues)),
+      retainedHeaders,
+    })
+
+    const result = await runProviderEditor({
+      config,
+      existingProvider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(retainedHeaders).toHaveBeenNthCalledWith(
+      2,
+      ['Authorization', 'X-Keep', 'X-New'],
+      ['X-Keep', 'X-New'],
+    )
+    expect(result).toMatchObject({
+      provider: { headers: { 'X-Keep': 'yes' } },
+      status: 'confirmed',
+    })
+    expect(promptPort.headerInput).toHaveBeenCalledWith()
+    expect(summaries[0]).not.toContain('old-secret')
+    expect(summaries[0]).not.toContain('new-secret')
+  })
+
+  it('preserves a secret replacement when blank input follows Back', async () => {
+    const summaries: string[] = []
+    const promptPort = createPromptPort({
+      confirm: vi.fn(async (summary: string) => {
+        summaries.push(summary)
+        return submitted<'yes'>('yes')
+      }),
+      headerInput: vi.fn()
+        .mockResolvedValueOnce(submitted('Authorization=Bearer replacement'))
+        .mockResolvedValueOnce(submitted('')),
+      models: vi.fn()
+        .mockResolvedValueOnce(back)
+        .mockImplementation(async (_options: ModelOption[], initialValues: string[]) => submitted(initialValues)),
+    })
+
+    const result = await runProviderEditor({
+      config,
+      existingProvider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(result).toMatchObject({
+      provider: {
+        headers: {
+          'Authorization': 'Bearer replacement',
+          'X-Keep': 'yes',
+        },
+      },
+      status: 'confirmed',
+    })
+    expect(promptPort.headerInput).toHaveBeenCalledWith()
+    expect(summaries[0]).not.toContain('old-secret')
+    expect(summaries[0]).not.toContain('replacement')
+  })
+
+  it('reconciles selections when navigating back and probing a changed model list', async () => {
+    const models = vi.fn()
+      .mockResolvedValueOnce(submitted(['existing', 'missing']))
+      .mockResolvedValueOnce(back)
+      .mockImplementation(async (_options: ModelOption[], initialValues: string[]) => submitted(initialValues))
+    const promptPort = createPromptPort({
+      defaultAction: vi.fn()
+        .mockResolvedValueOnce(back)
+        .mockResolvedValueOnce(submitted<'no'>('no')),
+      headerInput: vi.fn(async () => submitted('')),
+      models,
+      probe: vi.fn()
+        .mockResolvedValueOnce(['existing', 'common-new', 'first-only'])
+        .mockResolvedValueOnce(['existing', 'common-new', 'second-only']),
+    })
+
+    await runProviderEditor({
+      config,
+      existingProvider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(models).toHaveBeenNthCalledWith(3, [
+      { hint: undefined, label: 'existing', value: 'existing' },
+      { hint: 'not reported by provider', label: 'missing', value: 'missing' },
+      { hint: 'new', label: 'common-new', value: 'common-new' },
+      { hint: 'new', label: 'second-only', value: 'second-only' },
+    ], ['existing', 'missing', 'second-only'])
+  })
+
+  it('accepts endpoint and provider-id text that matches internal control labels', async () => {
+    const result = await runProviderEditor({
+      config: { providers: [], version: 1 },
+      io,
+      mode: 'create',
+      source,
+    }, createPromptPort({
+      endpoint: vi.fn(async () => submitted('back')),
+      providerId: vi.fn(async () => submitted('cancelled')),
+    }))
+
+    expect(result).toMatchObject({
+      provider: { endpoint: 'back', id: 'cancelled' },
       status: 'confirmed',
     })
   })

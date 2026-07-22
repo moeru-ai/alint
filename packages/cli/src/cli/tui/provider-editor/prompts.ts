@@ -1,6 +1,6 @@
 import type * as ClackPrompts from '@clack/prompts'
 
-import type { ProviderEditorPromptPort } from './types'
+import type { ProviderEditorPromptPort, ProviderEditorPromptResult } from './types'
 
 import { errorMessageFrom } from '@moeru/std/error'
 
@@ -30,8 +30,8 @@ const backValue = '__alint_back__'
  * Downstream:
  * - Clack terminal prompts and {@link probeModels}
  *
- * Cancellation becomes `cancelled`, text `..` and selection Back become `back`,
- * and probe failures are rendered by the spinner before returning no models.
+ * Cancellation and Back use tagged results, so submitted text cannot collide
+ * with control values. Probe failures render in the spinner and return no models.
  */
 export function createProviderEditorPrompts(prompts: typeof ClackPrompts): ProviderEditorPromptPort {
   return {
@@ -105,7 +105,9 @@ export function createProviderEditorPrompts(prompts: typeof ClackPrompts): Provi
       })
 
       const value = textResult(prompts, result)
-      return typeof value === 'string' ? splitInput(value) : value
+      return value.status === 'submitted'
+        ? submitted(splitInput(value.value))
+        : value
     },
     async models(options, initialValues) {
       const result = await prompts.multiselect<string>({
@@ -116,10 +118,12 @@ export function createProviderEditorPrompts(prompts: typeof ClackPrompts): Provi
       })
 
       if (prompts.isCancel(result)) {
-        return 'cancelled'
+        return { status: 'cancelled' }
       }
 
-      return result.includes(backValue) ? 'back' : result
+      return result.includes(backValue)
+        ? { status: 'back' }
+        : submitted(result)
     },
     async probe(endpoint, headers) {
       const spinner = prompts.spinner()
@@ -137,7 +141,7 @@ export function createProviderEditorPrompts(prompts: typeof ClackPrompts): Provi
     },
     async providerId(initialValue, editable) {
       if (!editable) {
-        return initialValue
+        return submitted(initialValue)
       }
 
       const result = await prompts.text({
@@ -148,23 +152,25 @@ export function createProviderEditorPrompts(prompts: typeof ClackPrompts): Provi
 
       return textResult(prompts, result)
     },
-    async retainedHeaders(headerNames) {
+    async retainedHeaders(headerNames, initialValues) {
       if (headerNames.length === 0) {
-        return []
+        return submitted([])
       }
 
       const result = await prompts.multiselect<string>({
-        initialValues: headerNames,
+        initialValues,
         message: 'Select existing headers to keep',
         options: withBackOption(headerNames.map(name => ({ label: name, value: name }))),
         required: false,
       })
 
       if (prompts.isCancel(result)) {
-        return 'cancelled'
+        return { status: 'cancelled' }
       }
 
-      return result.includes(backValue) ? 'back' : result
+      return result.includes(backValue)
+        ? { status: 'back' }
+        : submitted(result)
     },
   }
 }
@@ -188,25 +194,31 @@ export function withBackOption<T extends string>(options: SelectOption<T>[]): Ar
 function selectionResult<T extends string>(
   prompts: typeof ClackPrompts,
   result: symbol | T,
-): 'back' | 'cancelled' | Exclude<T, typeof backValue> {
+): ProviderEditorPromptResult<Exclude<T, typeof backValue>> {
   if (prompts.isCancel(result)) {
-    return 'cancelled'
+    return { status: 'cancelled' }
   }
 
-  return result === backValue ? 'back' : result as Exclude<T, typeof backValue>
+  return result === backValue
+    ? { status: 'back' }
+    : submitted(result as Exclude<T, typeof backValue>)
 }
 
 function splitInput(value: string): string[] {
   return value.split(',').map(item => item.trim()).filter(Boolean)
 }
 
+function submitted<T>(value: T): ProviderEditorPromptResult<T> {
+  return { status: 'submitted', value }
+}
+
 function textResult(
   prompts: typeof ClackPrompts,
   result: string | symbol,
-): 'back' | 'cancelled' | string {
+): ProviderEditorPromptResult<string> {
   if (prompts.isCancel(result)) {
-    return 'cancelled'
+    return { status: 'cancelled' }
   }
 
-  return isBackInput(result) ? 'back' : result
+  return isBackInput(result) ? { status: 'back' } : submitted(result)
 }
