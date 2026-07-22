@@ -39,12 +39,12 @@ export function formatMiniBar(options: MiniBarOptions): string {
       return '░'
     }
 
-    if (index < phase - 1)
+    if (index < phase)
       return '█'
-    if (index === phase - 1)
-      return '░'
     if (index === phase)
       return '▓'
+    if (index === phase + 1 && index <= frontierIndex)
+      return '░'
     if (index <= frontierIndex)
       return '█'
     return '░'

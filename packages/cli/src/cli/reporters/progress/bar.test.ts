@@ -3,13 +3,13 @@ import { describe, expect, it } from 'vitest'
 import { formatMiniBar } from './bar'
 
 describe('formatMiniBar', () => {
-  it('renders an adaptive bar with a sweeping frontier cell', () => {
+  it('renders an adaptive bar with a leading sweep highlight', () => {
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 0, width: 10 })).toBe('[▓█████░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 1, width: 10 })).toBe('[░▓████░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 2, width: 10 })).toBe('[█░▓███░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 3, width: 10 })).toBe('[██░▓██░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 4, width: 10 })).toBe('[███░▓█░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 5, width: 10 })).toBe('[████░▓░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 1, width: 10 })).toBe('[█▓░███░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 2, width: 10 })).toBe('[██▓░██░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 3, width: 10 })).toBe('[███▓░█░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 4, width: 10 })).toBe('[████▓░░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 5, width: 10 })).toBe('[█████▓░░░░]')
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 6, width: 10 })).toBe('[█████░░░░░]')
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 7, width: 10 })).toBe('[▓█████░░░░]')
   })

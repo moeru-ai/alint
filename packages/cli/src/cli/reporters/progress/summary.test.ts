@@ -208,8 +208,8 @@ describe('createSummaryProgressReporter', () => {
     reporter.tick()
 
     const rows = reporter.getRows().join('\n')
-    expect(rows).toContain(`██░▓██`)
-    expect(rows).toContain(`▓██\u001B[90m░░░░\u001B[39m]`)
+    expect(rows).toContain('███▓░█')
+    expect(rows).toContain(`▓░█\u001B[90m░░░░\u001B[39m]`)
   })
 
   it('drops the mini bar before important footer text on narrow terminals', () => {
@@ -432,6 +432,31 @@ describe('createSummaryProgressReporter', () => {
 
     expect(colored.getRows()[0]).toContain('\u001B[36m⠋')
     expect(colored.getRows().at(-2)).toContain('\u001B[36m1 concurrency')
+  })
+
+  it('continues the bar sweep when the spinner frame wraps', () => {
+    const reporter = createSummaryProgressReporter({
+      color: false,
+      columns: 120,
+      cwd: '/repo',
+      spinnerFrames: ['⠋', '⠙'],
+    })
+
+    reporter.onRunStart?.({ jobsTotal: 10, startedAt: 0 })
+    for (let index = 1; index <= 5; index++) {
+      const current = { ...job(index), ruleId: 'rule/progress', ruleIndex: index, ruleTotal: 10 }
+      reporter.onJobQueued?.({ job: current })
+      reporter.onJobStart?.({ job: current, startedAt: 0 })
+      reporter.onJobEnd?.({ cache: 'miss', job: current, startedAt: 0, state: 'completed' })
+    }
+
+    const running = { ...job(6), ruleId: 'rule/progress', ruleIndex: 6, ruleTotal: 10 }
+    reporter.onJobQueued?.({ job: running })
+    reporter.onJobStart?.({ job: running, startedAt: 0 })
+    reporter.tick()
+    reporter.tick()
+
+    expect(reporter.getRows()[0]).toContain('⠋ rule/progress 5/10 50% [██▓░██░░░░]')
   })
 
   it('resets the spinner frame on run start', () => {
