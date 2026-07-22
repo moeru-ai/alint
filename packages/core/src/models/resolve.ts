@@ -15,29 +15,38 @@ export function resolveModel(
 
   if (options.request !== undefined) {
     const request = options.request
-    const canonicalCandidates = candidates.filter(({ model, provider }) =>
-      `${provider.id}/${model.id}` === request,
-    )
+    const canonicalCandidates = candidates.filter(candidate => canonicalIdentity(candidate) === request)
 
     if (canonicalCandidates.length > 1) {
-      throw new Error(
-        `Model "${request}" is configured more than once.\nRemove duplicate provider/model definitions from the setup configuration.`,
-      )
+      throw duplicateDefinitionError(request)
     }
 
     let candidate = canonicalCandidates[0]
 
     if (candidate === undefined) {
       const matchingCandidates = candidates.filter(candidate => matchesRequest(candidate, request))
+      const matchesByCanonical = new Map<string, ModelCandidate[]>()
+
+      for (const matchingCandidate of matchingCandidates) {
+        const identity = canonicalIdentity(matchingCandidate)
+        const matches = matchesByCanonical.get(identity) ?? []
+        matches.push(matchingCandidate)
+        matchesByCanonical.set(identity, matches)
+      }
+
+      const duplicateIdentity = [...matchesByCanonical]
+        .find(([, matches]) => matches.length > 1)?.[0]
+
+      if (duplicateIdentity !== undefined) {
+        throw duplicateDefinitionError(duplicateIdentity)
+      }
 
       if (matchingCandidates.length === 0) {
         throw new Error(`Unknown model "${request}".`)
       }
 
       if (matchingCandidates.length > 1) {
-        const choices = [...new Set(
-          matchingCandidates.map(({ model, provider }) => `${provider.id}/${model.id}`),
-        )]
+        const choices = [...matchesByCanonical.keys()]
 
         throw new Error(
           `Ambiguous model "${request}".\nSpecify a provider-qualified model:\n${choices.map(choice => `  ${choice}`).join('\n')}`,
@@ -67,6 +76,16 @@ export function resolveModel(
   }
 
   return toResolvedModel(candidate, options.requirement)
+}
+
+function canonicalIdentity({ model, provider }: ModelCandidate): string {
+  return `${provider.id}/${model.id}`
+}
+
+function duplicateDefinitionError(identity: string): Error {
+  return new Error(
+    `Model "${identity}" is configured more than once.\nRemove duplicate provider/model definitions from the setup configuration.`,
+  )
 }
 
 function flattenModels(registry: SetupConfig): ModelCandidate[] {

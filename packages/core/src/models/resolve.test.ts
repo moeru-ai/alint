@@ -164,6 +164,14 @@ describe('resolveModel', () => {
     )
   })
 
+  it('rejects unqualified selectors for duplicate canonical model definitions', () => {
+    expect(() => resolveModel(duplicateCanonicalRegistry, { request: 'qwen' })).toThrowError(
+      new Error(
+        'Model "first/qwen" is configured more than once.\nRemove duplicate provider/model definitions from the setup configuration.',
+      ),
+    )
+  })
+
   it('retains deterministic automatic selection for ambiguous registries', () => {
     const model = resolveModel(ambiguousRegistry)
 
