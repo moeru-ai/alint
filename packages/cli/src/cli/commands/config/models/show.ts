@@ -1,17 +1,22 @@
-import { findModel, formatModelShow } from '../../../provider-registry'
+import { findModels, formatAmbiguousModels, formatModelShow } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { loadMergedSetupConfig } from '../setup-config'
 
 export const show = defineCommand({
   async action(context, model: string) {
-    const candidate = findModel(await loadMergedSetupConfig(context.io), model)
+    const candidates = findModels(await loadMergedSetupConfig(context.io), model)
 
-    if (candidate === undefined) {
+    if (candidates.length === 0) {
       context.io.stderr.write(`unknown model "${model}".\n`)
       return 2
     }
 
-    context.io.stdout.write(formatModelShow(candidate))
+    if (candidates.length > 1) {
+      context.io.stderr.write(formatAmbiguousModels(model, candidates))
+      return 2
+    }
+
+    context.io.stdout.write(formatModelShow(candidates[0]!))
     return 0
   },
   arguments: '<model>',

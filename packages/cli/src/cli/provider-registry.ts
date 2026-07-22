@@ -2,6 +2,8 @@ import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@ali
 
 import { getBorderCharacters, table } from 'table'
 
+import { escapeLineValue } from './output'
+
 export interface FlattenedModel {
   model: SetupModelDefinition
   provider: ProviderDefinition
@@ -13,6 +15,14 @@ export interface ProviderSetupSource {
   label: string
   probeModels: boolean
   value: 'cerebras' | 'cliProxyApi' | 'custom' | 'groq' | 'manual' | 'ollama'
+}
+
+export function formatDuplicateModelIdentity(identity: string): string {
+  return [
+    `model "${escapeLineValue(identity)}" is configured more than once.`,
+    'remove duplicate provider/model definitions from the setup configuration.',
+    '',
+  ].join('\n')
 }
 
 export const providerSetupSources: ProviderSetupSource[] = [
@@ -88,10 +98,22 @@ export function createProviderId(endpoint: string, existingIds: Set<string>): st
   }
 }
 
-export function findModel(config: SetupConfig, request: string): FlattenedModel | undefined {
-  return flattenModels(config).find(({ model }) =>
-    model.id === request || model.name === request || (model.aliases ?? []).includes(request),
-  )
+export function findModels(config: SetupConfig, request: string): FlattenedModel[] {
+  const candidates = flattenModels(config)
+  const canonicalCandidates = candidates.filter(candidate => canonicalIdentity(candidate) === request)
+
+  if (canonicalCandidates.length > 0) {
+    return canonicalCandidates
+  }
+
+  return candidates.filter((candidate) => {
+    const names = [candidate.model.id, candidate.model.name, ...(candidate.model.aliases ?? [])]
+      .filter((name): name is string => name !== undefined)
+
+    return names.some(name =>
+      name === request || `${candidate.provider.id}/${name}` === request,
+    )
+  })
 }
 
 export function findProviderSetupSource(value: ProviderSetupSource['value']): ProviderSetupSource | undefined {
@@ -110,6 +132,32 @@ export function flattenModels(config: SetupConfig): FlattenedModel[] {
   return config.providers.flatMap(provider =>
     provider.models.map(model => ({ model, provider })),
   )
+}
+
+export function formatAmbiguousModels(request: string, candidates: FlattenedModel[]): string {
+  const candidatesByIdentity = new Map<string, FlattenedModel[]>()
+
+  for (const candidate of candidates) {
+    const identity = canonicalIdentity(candidate)
+    const matchingCandidates = candidatesByIdentity.get(identity) ?? []
+    matchingCandidates.push(candidate)
+    candidatesByIdentity.set(identity, matchingCandidates)
+  }
+
+  const duplicateIdentity = [...candidatesByIdentity]
+    .find(([, matchingCandidates]) => matchingCandidates.length > 1)?.[0]
+
+  if (duplicateIdentity !== undefined) {
+    return formatDuplicateModelIdentity(duplicateIdentity)
+  }
+
+  const choices = [...candidatesByIdentity.keys()]
+
+  return `${[
+    `ambiguous model "${escapeLineValue(request)}".`,
+    'specify a provider-qualified model:',
+    ...choices.map(choice => `  ${escapeLineValue(choice)}`),
+  ].join('\n')}\n`
 }
 
 export function formatModelList(config: SetupConfig): string {
@@ -185,6 +233,14 @@ export function formatProviderShow(provider: ProviderDefinition): string {
   return `${lines.join('\n')}\n`
 }
 
+// NOTICE: This matches Undici's HTTP token grammar so unsafe field names never enter provider config.
+// Adapted from `https://github.com/nodejs/undici/blob/a0922b0b6b5db878881017abb6fca3bbcdea555a/lib/core/util.js#L746-L760`.
+const httpTokenPattern = /^[\w^`\-!#$%&'*+.|~]+$/u
+
+export function isValidProviderHeaderName(name: string): boolean {
+  return httpTokenPattern.test(name)
+}
+
 export function parseHeaderList(headers: string[]): Record<string, string> | undefined {
   if (headers.length === 0) {
     return undefined
@@ -196,10 +252,16 @@ export function parseHeaderList(headers: string[]): Record<string, string> | und
     const separatorIndex = header.indexOf('=')
 
     if (separatorIndex <= 0) {
-      throw new Error(`Invalid provider header "${header}". Expected Key=Value.`)
+      throw new Error('Invalid provider header. Expected Key=Value.')
     }
 
-    parsedHeaders[header.slice(0, separatorIndex)] = header.slice(separatorIndex + 1)
+    const name = header.slice(0, separatorIndex)
+
+    if (!isValidProviderHeaderName(name)) {
+      throw new Error('Invalid provider header name. Expected an HTTP field-name token.')
+    }
+
+    parsedHeaders[name] = header.slice(separatorIndex + 1)
   }
 
   return parsedHeaders
@@ -212,14 +274,16 @@ export async function probeModels(endpoint: string, headers: Record<string, stri
     throw new Error(`GET ${buildModelsUrl(endpoint)} returned ${response.status}.`)
   }
 
-  const body = await response.json() as { data?: Array<{ id?: unknown }> }
-  if (!Array.isArray(body.data)) {
+  const body: unknown = await response.json()
+  if (!isRecord(body) || !Array.isArray(body.data) || !body.data.every(isModelRecord)) {
     throw new TypeError('Expected OpenAI-compatible models response with data array.')
   }
 
-  return body.data
-    .map(model => model.id)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  return body.data.map(model => model.id)
+}
+
+function canonicalIdentity(candidate: FlattenedModel): string {
+  return `${candidate.provider.id}/${candidate.model.id}`
 }
 
 function formatTable(rows: string[][]): string {
@@ -235,6 +299,14 @@ function formatTable(rows: string[][]): string {
     },
     drawHorizontalLine: () => false,
   })
+}
+
+function isModelRecord(value: unknown): value is Record<string, unknown> & { id: string } {
+  return isRecord(value) && typeof value.id === 'string' && value.id.length > 0
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeProviderIdBase(value: string): string {

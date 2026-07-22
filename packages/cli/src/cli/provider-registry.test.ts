@@ -1,0 +1,124 @@
+import { createServer } from 'node:http'
+
+import { describe, expect, it } from 'vitest'
+
+import { formatAmbiguousModels, probeModels } from './provider-registry'
+
+const invalidResponseMessage = 'Expected OpenAI-compatible models response with data array.'
+
+async function withJsonServer<T>(body: unknown, run: (endpoint: string) => Promise<T>): Promise<T> {
+  const server = createServer((_request, response) => {
+    response.statusCode = 200
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify(body))
+  })
+
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve))
+  const address = server.address()
+
+  if (address === null || typeof address === 'string') {
+    throw new TypeError('Expected TCP test server address.')
+  }
+
+  try {
+    return await run(`http://127.0.0.1:${address.port}/v1/`)
+  }
+  finally {
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => {
+        if (error) {
+          reject(error)
+          return
+        }
+
+        resolve()
+      })
+    })
+  }
+}
+
+describe('probeModels', () => {
+  it.each([
+    { body: null, label: 'null' },
+    { body: [], label: 'an array body' },
+    { body: {}, label: 'an object without data' },
+    { body: { data: null }, label: 'null data' },
+    { body: { data: {} }, label: 'non-array data' },
+  ])('rejects $label with the stable response-shape error', async ({ body }) => {
+    await withJsonServer(body, async (endpoint) => {
+      await expect(probeModels(endpoint)).rejects.toThrowError(
+        new TypeError(invalidResponseMessage),
+      )
+    })
+  })
+
+  it.each([null, 'model', 42])(
+    'rejects a non-object data member %j with the stable response-shape error',
+    async (member) => {
+      await withJsonServer({ data: [member] }, async (endpoint) => {
+        await expect(probeModels(endpoint)).rejects.toThrowError(
+          new TypeError(invalidResponseMessage),
+        )
+      })
+    },
+  )
+
+  it.each([
+    {},
+    { id: null },
+    { id: 42 },
+    { id: '' },
+    [{ id: 'nested' }],
+  ])('rejects an object data member without a non-empty string id: %j', async (member) => {
+    await withJsonServer({ data: [member] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).rejects.toThrowError(
+        new TypeError(invalidResponseMessage),
+      )
+    })
+  })
+
+  it('rejects a mixed valid and invalid data array', async () => {
+    await withJsonServer({ data: [{ id: 'valid' }, {}] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).rejects.toThrowError(
+        new TypeError(invalidResponseMessage),
+      )
+    })
+  })
+
+  it('accepts an empty data array', async () => {
+    await withJsonServer({ data: [] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).resolves.toEqual([])
+    })
+  })
+})
+
+describe('formatAmbiguousModels', () => {
+  it('escapes line-oriented request and candidate identities', () => {
+    expect(formatAmbiguousModels('shared\u0085request', [
+      {
+        model: { id: 'model\u001Bid' },
+        provider: {
+          endpoint: 'https://example.test/v1',
+          id: 'first\u2028provider',
+          models: [],
+          type: 'openai-compatible',
+        },
+      },
+      {
+        model: { id: 'other' },
+        provider: {
+          endpoint: 'https://example.test/v1',
+          id: 'second',
+          models: [],
+          type: 'openai-compatible',
+        },
+      },
+    ])).toBe([
+      'ambiguous model "shared\\u0085request".',
+      'specify a provider-qualified model:',
+      '  first\\u2028provider/model\\u001bid',
+      '  second/other',
+      '',
+    ].join('\n'))
+  })
+})

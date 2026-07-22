@@ -34,10 +34,22 @@ export const config = defineCommand({
       'alint config providers probe --endpoint https://openrouter.ai/api/v1',
       'alint config models probe --endpoint https://openrouter.ai/api/v1',
     ].join('\n'),
+    [
+      '# Probe and add newly reported provider models',
+      'alint config providers update --provider openrouter',
+    ].join('\n'),
+    [
+      '# Remove one model or prune models missing from a provider',
+      'alint config models rm qwen --provider ollama',
+      'alint config models prune --provider ollama -N --yes',
+    ].join('\n'),
   ],
   help: [
     'Inspect and update alint setup/configuration state.',
     'Use these commands to understand the effective config for a file, inspect saved provider/model setup, and probe OpenAI-compatible endpoints before using them in model-backed rules.',
+    'Configuration writes use global scope by default. Pass --local to read and write the current project\'s .alint/config.toml instead.',
+    'Provider updates are additive by default. They do not automatically remove configured models merely because the remote provider no longer reports them.',
+    'Interactive TUI deselection can remove a configured model. Model pruning is destructive and requires confirmation.',
   ].join('\n\n'),
   name: 'config',
 })
