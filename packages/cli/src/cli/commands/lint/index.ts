@@ -112,6 +112,11 @@ async function runLintCommand(
     if (statsTarget && statsCollector)
       await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
   }
+  const writeResult = (runResult: Awaited<ReturnType<typeof runAlint>>): void => {
+    io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
+      color: io.stdout.isTTY === true,
+    }))
+  }
   let result: Awaited<ReturnType<typeof runAlint>>
 
   try {
@@ -135,12 +140,14 @@ async function runLintCommand(
 
     if (error instanceof AlintRunError) {
       await persistStats(error.result)
+      writeResult(error.result)
       io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
       return 2
     }
 
     if (error instanceof AlintRunCancelledError) {
       await persistStats(error.result)
+      writeResult(error.result)
       io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
       return 2
     }
@@ -153,9 +160,7 @@ async function runLintCommand(
 
   await persistStats(result)
 
-  io.stdout.write(formatDiagnostics(options.format as ReporterName, result, {
-    color: io.stdout.isTTY === true,
-  }))
+  writeResult(result)
   return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
