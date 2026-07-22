@@ -2,7 +2,7 @@ import type { ExecutionCounts } from '../types'
 
 import { describe, expect, it } from 'vitest'
 
-import { createRunProgress, groupJobsForAdmission } from './progress'
+import { createRunProgress } from './progress'
 
 function counts(overrides: Partial<ExecutionCounts> = {}): ExecutionCounts {
   return {
@@ -97,28 +97,5 @@ describe('createRunProgress', () => {
       execution: { planned: Number.MAX_SAFE_INTEGER, queued: Number.MAX_SAFE_INTEGER },
       jobsTotal: Number.MAX_SAFE_INTEGER,
     })
-  })
-
-  it('classifies each job exactly once for linear admission', () => {
-    const jobs = Array.from({ length: 10_200 }, (_, index) => ({
-      id: index,
-      orderKey: {
-        inputIndex: Math.floor(index / 100),
-        scope: index < 10_000 ? 'source' as const : index % 2 === 0 ? 'directory' as const : 'project' as const,
-      },
-    }))
-
-    const grouped = groupJobsForAdmission(jobs)
-    const classified = [
-      ...grouped.sourceByInput.flatMap(bucket => bucket ?? []),
-      ...grouped.nonSource,
-    ]
-
-    expect(grouped.sourceByInput).toHaveLength(100)
-    expect(grouped.sourceByInput.every(bucket => bucket?.length === 100)).toBe(true)
-    expect(grouped.nonSource).toHaveLength(200)
-    expect(classified).toHaveLength(jobs.length)
-    expect(new Set(classified.map(item => item.index)).size).toBe(jobs.length)
-    expect(classified.map(item => item.job.id).sort((left, right) => left - right)).toEqual(jobs.map(job => job.id))
   })
 })

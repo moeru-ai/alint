@@ -1,5 +1,6 @@
 import type { SetupConfig } from '../config/types'
 import type { CacheStore } from './cache'
+import type { ScheduledRuleBatch } from './execution/scheduler'
 import type { RuleJobOutcome } from './execution/types'
 import type { ProjectFileSnapshot, ProjectIndex } from './project/types'
 import type { PreparedDirectory } from './targets/directory'
@@ -9,10 +10,11 @@ import type { AlintRunFailure, InferenceUsageRecord, RunOptions, RunResult, RunU
 import { cwd as processCwd } from 'node:process'
 
 import { createCacheStore, normalizeRunnerCacheConfig } from './cache'
-import { compareJobOrder, createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
-import { createRunProgress, groupJobsForAdmission } from './execution/progress'
-import { snapshotDiagnostics, snapshotProgressJobRef, snapshotUsageRecords } from './execution/records'
+import { compareJobOrder, createRuleJobFactory, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
+import { createRunProgress } from './execution/progress'
+import { snapshotDiagnostics, snapshotUsageRecords } from './execution/records'
 import { createRuleRuntimes } from './execution/runtime'
+import { resolveRuleConcurrency, RuleScheduler } from './execution/scheduler'
 import { hashText, stableHash } from './hash'
 import { prepareRun } from './preparation'
 import { ProjectIndexBuilder } from './project'
@@ -150,114 +152,69 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         ruleRuntimes: projectRuleRuntimes,
       })
     : undefined
-  const allPlans = [...filePlans, ...directoryPlans, ...(projectPlan ? [projectPlan] : [])]
-  const jobs = createRuleJobs(allPlans)
-  const settledOutcomes = new Array<RuleJobOutcome | undefined>(jobs.length)
-  const lifecycles: Array<'queued' | 'running' | 'terminal' | 'unadmitted'> = jobs.map(() => 'unadmitted')
-  const admissionGroups = groupJobsForAdmission(jobs)
+  const jobFactory = createRuleJobFactory()
+  const batches: ScheduledRuleBatch[] = []
+  const scheduler = new RuleScheduler({
+    clock,
+    concurrency,
+    execute: (job, _startedAt) => executeRuleJob(job, {
+      cache: cacheContext,
+      cacheOnly: options.cacheOnly,
+      progress: options.progress,
+      runProgress,
+      runSignal: options.signal,
+      timeoutMs,
+    }),
+    progress: runProgress,
+    reporter: options.progress,
+    signal: options.signal,
+  })
   let infrastructureError: unknown
   let infrastructureFailed = false
   let admissionFailed = false
-  let shouldReconcile = false
 
   try {
-    for (const [fileIndex, file] of files.entries()) {
-      let jobsAdded = 0
-      for (const { index: jobIndex, job } of admissionGroups.sourceByInput[fileIndex] ?? []) {
-        const progress = runProgress.queue()
-        lifecycles[jobIndex] = 'queued'
-        jobsAdded += 1
-        options.progress?.onJobQueued?.({ job: snapshotProgressJobRef(job.jobRef), progress })
-      }
+    for (const [fileIndex, filePlan] of filePlans.entries()) {
+      const batch = scheduler.schedule(jobFactory.create([filePlan]))
+      batches.push(batch)
+      const file = files[fileIndex]!
       options.progress?.onFileReady?.({
         fileIndex: file.fileIndex,
         inputPath: file.file.path,
-        jobsAdded,
+        jobsAdded: batch.jobsAdded,
         progress: runProgress.snapshot(),
       })
     }
-    for (const { index: jobIndex, job } of admissionGroups.nonSource) {
-      const progress = runProgress.queue()
-      lifecycles[jobIndex] = 'queued'
-      options.progress?.onJobQueued?.({ job: snapshotProgressJobRef(job.jobRef), progress })
-    }
-    shouldReconcile = true
-
-    let cursor = 0
-    const worker = async (): Promise<void> => {
-      while (cursor < jobs.length && !infrastructureFailed) {
-        const index = cursor
-        cursor += 1
-        const job = jobs[index]!
-        if (lifecycles[index] !== 'queued')
-          continue
-        if (options.signal?.aborted) {
-          cancelQueuedJob(job, runProgress, options.progress, clock, (outcome) => {
-            settledOutcomes[index] = outcome
-            lifecycles[index] = 'terminal'
-          })
-          continue
-        }
-        try {
-          const startedAt = clock()
-          const progress = runProgress.start()
-          lifecycles[index] = 'running'
-          options.progress?.onJobStart?.({ job: snapshotProgressJobRef(job.jobRef), progress, startedAt })
-          const outcome = await executeRuleJob(job, {
-            cache: cacheContext,
-            cacheOnly: options.cacheOnly,
-            clock,
-            onTerminal: (terminalOutcome) => {
-              settledOutcomes[index] = terminalOutcome
-              lifecycles[index] = 'terminal'
-            },
-            progress: options.progress,
-            runProgress,
-            runSignal: options.signal,
-            startedAt,
-            timeoutMs,
-          })
-          settledOutcomes[index] = outcome
-        }
-        catch (error) {
-          if (!infrastructureFailed) {
-            infrastructureError = error
-            infrastructureFailed = true
-          }
-        }
-      }
-    }
-    await Promise.all(Array.from({ length: Math.min(concurrency, jobs.length) }, worker))
+    for (const plan of directoryPlans)
+      batches.push(scheduler.schedule(jobFactory.create([plan])))
+    if (projectPlan)
+      batches.push(scheduler.schedule(jobFactory.create([projectPlan])))
   }
   catch (error) {
+    scheduler.cancelWithError(error)
     infrastructureError = error
     infrastructureFailed = true
     admissionFailed = true
   }
   finally {
+    const batchResults = Promise.all(batches.map(batch => batch.outcomes))
+    const [outcomesResult, closeResult] = await Promise.allSettled([batchResults, scheduler.close()])
+    if (outcomesResult.status === 'rejected' || closeResult.status === 'rejected') {
+      infrastructureError ??= outcomesResult.status === 'rejected' ? outcomesResult.reason : closeResult.status === 'rejected' ? closeResult.reason : undefined
+      infrastructureFailed = true
+    }
     // cacheOnly runs are strictly read-only: reconciling a partial cache snapshot could
     // discard entries for the jobs deliberately skipped by this run.
-    if (shouldReconcile && !options.cacheOnly)
+    if (!admissionFailed && !options.cacheOnly)
       await reconcileCache(filePlans, projectPlan, cacheStore, options.signal?.aborted === true)
-  }
-
-  for (const [index, lifecycle] of lifecycles.entries()) {
-    if (lifecycle === 'queued') {
-      settledOutcomes[index] = cancelQueuedJob(jobs[index]!, runProgress)
-      lifecycles[index] = 'terminal'
-    }
-    else if (lifecycle === 'running') {
-      runProgress.finish('running', 'cancelled')
-      settledOutcomes[index] = cancelledOutcome(jobs[index]!)
-      lifecycles[index] = 'terminal'
-    }
   }
 
   runProgress.finalize()
   if (admissionFailed)
     throw infrastructureError
 
-  const outcomes = settledOutcomes.filter((outcome): outcome is RuleJobOutcome => outcome !== undefined)
+  const settledBatches = await Promise.allSettled(batches.map(batch => batch.outcomes))
+  const outcomes = settledBatches.flatMap(result => result.status === 'fulfilled' ? result.value : [])
     .sort((left, right) => compareJobOrder(left.orderKey, right.orderKey))
   const failedOutcomes = outcomes.filter(
     (outcome): outcome is Extract<RuleJobOutcome, { state: 'failed' }> => outcome.state === 'failed',
@@ -291,37 +248,6 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   }
 
   return result
-}
-
-function cancelledOutcome(job: ReturnType<typeof createRuleJobs>[number]): RuleJobOutcome {
-  return {
-    cache: 'miss',
-    diagnostics: [],
-    jobRef: snapshotProgressJobRef(job.jobRef),
-    orderKey: { ...job.orderKey },
-    state: 'cancelled',
-    usage: [],
-  }
-}
-
-function cancelQueuedJob(
-  job: ReturnType<typeof createRuleJobs>[number],
-  progress: ReturnType<typeof createRunProgress>,
-  reporter?: RunOptions['progress'],
-  clock?: () => number,
-  onTerminal?: (outcome: RuleJobOutcome) => void,
-): RuleJobOutcome {
-  const outcome = cancelledOutcome(job)
-  const snapshot = progress.finish('queued', 'cancelled')
-  onTerminal?.(outcome)
-  reporter?.onJobEnd?.({
-    cache: 'miss',
-    endedAt: clock?.(),
-    job: snapshotProgressJobRef(job.jobRef),
-    progress: snapshot,
-    state: 'cancelled',
-  })
-  return outcome
 }
 
 function canCreateProjectPlan(runtimes: RuleRuntime[]): boolean {
@@ -405,14 +331,6 @@ async function reconcileCache(
   catch {
     // Cache writes are opportunistic and must not mask lint results.
   }
-}
-
-function resolveRuleConcurrency(ruleConcurrency: number | undefined): number {
-  if (ruleConcurrency === undefined)
-    return 4
-  if (!Number.isFinite(ruleConcurrency) || !Number.isInteger(ruleConcurrency) || ruleConcurrency <= 0)
-    throw new TypeError('Rule execution concurrency must be a finite positive integer.')
-  return ruleConcurrency
 }
 
 function runUsage(outcomes: RuleJobOutcome[]): RunUsage {

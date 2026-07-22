@@ -12,16 +12,17 @@ import { snapshotDiagnostic, snapshotDiagnostics, snapshotFailure, snapshotProgr
 export interface ExecuteRuleJobOptions {
   cache: CacheRunContext
   cacheOnly?: boolean
-  clock: () => number
-  onTerminal?: (outcome: RuleJobOutcome) => void
   progress?: ProgressReporter
   runProgress: RunProgress
   runSignal?: AbortSignal
-  startedAt: number
   timeoutMs?: number
 }
 
 export type { RuleJob, RuleJobOutcome } from './types'
+
+export interface RuleJobFactory {
+  create: (plans: readonly TargetExecutionPlan[]) => RuleJob[]
+}
 
 class CacheReplayProcessingError {
   constructor(readonly cause: unknown) {}
@@ -34,50 +35,27 @@ export function compareJobOrder(left: JobOrderKey, right: JobOrderKey): number {
     || left.ruleIndex - right.ruleIndex
 }
 
-export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
-  const jobs: RuleJob[] = []
+export function createRuleJobFactory(): RuleJobFactory {
+  let nextIndex = 1
   const inputIndexes: Record<JobScope, number> = { directory: 0, project: 0, source: 0 }
 
-  for (const plan of plans) {
-    const scope = jobScope(plan.kind)
-    const inputIndex = inputIndexes[scope]
-    inputIndexes[scope] += 1
-    for (const [targetIndex, target] of plan.targets.entries()) {
-      for (const execution of target.executions) {
-        const ruleId = execution.runtime.enabledRule.id
-        const index = jobs.length + 1
-        jobs.push({
-          execution,
-          jobRef: {
-            id: stableHash({ index, planId: plan.id, ruleId, targetIdentity: target.identity }),
-            index,
-            inputPath: plan.path,
-            ruleId,
-            target: {
-              identity: target.identity,
-              kind: target.kind,
-              name: target.name,
-            },
-          },
-          orderKey: {
-            inputIndex,
-            ruleIndex: execution.runtime.ruleIndex,
-            scope,
-            targetIndex,
-          },
-          target,
-        })
-      }
-    }
+  return {
+    create: plans => createRuleJobBatch(plans, inputIndexes, () => {
+      const index = nextIndex
+      nextIndex += 1
+      return index
+    }),
   }
+}
 
-  return jobs
+export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
+  return createRuleJobFactory().create(plans)
 }
 
 export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOptions): Promise<RuleJobOutcome> {
   const bucket: RuleExecutionBucket = { diagnostics: [], usage: [] }
   if (options.runSignal?.aborted)
-    return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
+    return finish(job, bucket, { cache: 'miss', state: 'cancelled' })
 
   const slot: CacheSlotIdentity | undefined = job.target.cacheOwner && job.execution.runtime.cacheable
     ? {
@@ -96,18 +74,18 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
       if (!(error instanceof CacheReplayProcessingError))
         throw error
       job.target.cacheOwner?.discard(slot)
-      return finish(job, options, bucket, {
+      return finish(job, bucket, {
         cache: 'hit',
         failure: failure(error.cause, job, 'cache-replay'),
         state: 'failed',
       })
     }
 
-    return finish(job, options, bucket, { cache: 'hit', state: 'cached' })
+    return finish(job, bucket, { cache: 'hit', state: 'cached' })
   }
 
   if (options.cacheOnly)
-    return finish(job, options, bucket, { cache: 'miss', state: 'skipped' })
+    return finish(job, bucket, { cache: 'miss', state: 'skipped' })
 
   const controller = new AbortController()
   let timedOut = false
@@ -159,10 +137,10 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     throw state.reporterCause
 
   if (options.runSignal?.aborted)
-    return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
+    return finish(job, bucket, { cache: 'miss', state: 'cancelled' })
 
   if (timedOut) {
-    return finish(job, options, bucket, {
+    return finish(job, bucket, {
       cache: 'miss',
       failure: failure(deadlineError, job, 'timeout'),
       state: 'failed',
@@ -170,7 +148,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   }
 
   if (handlerFailed) {
-    return finish(job, options, bucket, {
+    return finish(job, bucket, {
       cache: 'miss',
       failure: failure(handlerCause, job, 'handler'),
       state: 'failed',
@@ -187,7 +165,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     }
   }
 
-  return finish(job, options, bucket, { cache: 'miss', state: 'completed' })
+  return finish(job, bucket, { cache: 'miss', state: 'completed' })
 }
 
 export function resolveRuleExecutionTimeout(timeoutMs: number | undefined): number | undefined {
@@ -230,6 +208,49 @@ function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
   }
 }
 
+function createRuleJobBatch(
+  plans: readonly TargetExecutionPlan[],
+  inputIndexes: Record<JobScope, number>,
+  nextIndex: () => number,
+): RuleJob[] {
+  const jobs: RuleJob[] = []
+
+  for (const plan of plans) {
+    const scope = jobScope(plan.kind)
+    const inputIndex = inputIndexes[scope]
+    inputIndexes[scope] += 1
+    for (const [targetIndex, target] of plan.targets.entries()) {
+      for (const execution of target.executions) {
+        const ruleId = execution.runtime.enabledRule.id
+        const index = nextIndex()
+        jobs.push({
+          execution,
+          jobRef: {
+            id: stableHash({ index, planId: plan.id, ruleId, targetIdentity: target.identity }),
+            index,
+            inputPath: plan.path,
+            ruleId,
+            target: {
+              identity: target.identity,
+              kind: target.kind,
+              name: target.name,
+            },
+          },
+          orderKey: {
+            inputIndex,
+            ruleIndex: execution.runtime.ruleIndex,
+            scope,
+            targetIndex,
+          },
+          target,
+        })
+      }
+    }
+  }
+
+  return jobs
+}
+
 function createTargetHash(job: RuleJob): string {
   const target = job.target
   return target.cacheTargetHash ?? stableHash({
@@ -262,7 +283,6 @@ function failureMessage(cause: unknown): string {
 
 function finish(
   job: RuleJob,
-  options: ExecuteRuleJobOptions,
   bucket: RuleExecutionBucket,
   terminal: TerminalOutcome,
 ): RuleJobOutcome {
@@ -276,17 +296,6 @@ function finish(
     usage: snapshotUsageRecords(bucket.usage),
     ...detachedTerminal,
   }
-  const progress = options.runProgress.finish('running', outcome.state)
-  options.onTerminal?.(outcome)
-  options.progress?.onJobEnd?.({
-    cache: outcome.cache,
-    endedAt: options.clock(),
-    failure: outcome.failure ? snapshotFailure(outcome.failure) : undefined,
-    job: snapshotProgressJobRef(job.jobRef),
-    progress,
-    startedAt: options.startedAt,
-    state: outcome.state,
-  })
   return outcome
 }
 

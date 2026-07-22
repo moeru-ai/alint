@@ -1,15 +1,5 @@
 import type { ExecutionCounts, ProgressSnapshot } from '../types'
 
-export interface IndexedAdmissionJob<T> {
-  index: number
-  job: T
-}
-
-export interface JobAdmissionGroups<T> {
-  nonSource: Array<IndexedAdmissionJob<T>>
-  sourceByInput: Array<Array<IndexedAdmissionJob<T>> | undefined>
-}
-
 export interface RunProgress {
   finalize: () => ProgressSnapshot
   finish: (from: ActiveState, to: TerminalState) => ProgressSnapshot
@@ -72,27 +62,6 @@ export function createRunProgress(filesTotal: number): RunProgress {
       return snapshot()
     },
   }
-}
-
-export function groupJobsForAdmission<T extends { orderKey: { inputIndex: number, scope: 'directory' | 'project' | 'source' } }>(
-  jobs: readonly T[],
-): JobAdmissionGroups<T> {
-  const nonSource: Array<IndexedAdmissionJob<T>> = []
-  const sourceByInput: Array<Array<IndexedAdmissionJob<T>> | undefined> = []
-
-  for (const [index, job] of jobs.entries()) {
-    const indexed = { index, job }
-    if (job.orderKey.scope === 'source') {
-      const bucket = sourceByInput[job.orderKey.inputIndex] ?? []
-      bucket.push(indexed)
-      sourceByInput[job.orderKey.inputIndex] = bucket
-    }
-    else {
-      nonSource.push(indexed)
-    }
-  }
-
-  return { nonSource, sourceByInput }
 }
 
 function assertMutable(final: boolean): void {

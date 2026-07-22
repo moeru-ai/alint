@@ -389,6 +389,52 @@ describe('runAlint', () => {
     expect(ended).toBe(false)
   })
 
+  it('cancels admitted jobs without running handlers when file-ready reporting fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-file-ready-reporter-failure-'))
+    const filePath = join(root, 'demo.txt')
+    const sentinel = new Error('file-ready reporter failed')
+    const terminalSentinel = new Error('terminal reporter failed during cancellation')
+    const visited: string[] = []
+    const ended: string[] = []
+    await writeFile(filePath, 'hello\n')
+    const first = defineRule({
+      create: () => ({
+        onTargetFile: () => {
+          visited.push('first')
+        },
+      }),
+    })
+    const second = defineRule({
+      create: () => ({
+        onTargetFile: () => {
+          visited.push('second')
+        },
+      }),
+    })
+
+    await expect(runAlint({
+      config: createConfig(
+        { first, second },
+        { 'company/first': 'warn', 'company/second': 'warn' },
+        {},
+        { language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      progress: {
+        onFileReady: () => { throw sentinel },
+        onJobEnd: ({ state }) => {
+          ended.push(state)
+          throw terminalSentinel
+        },
+      },
+      setupConfig: createSetupConfig(),
+    })).rejects.toBe(sentinel)
+
+    expect(visited).toEqual([])
+    expect(ended).toEqual(['cancelled', 'cancelled'])
+  })
+
   it('finalizes admitted jobs after a start reporter failure before rethrowing it', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-start-reporter-failure-'))
     const filePath = join(root, 'demo.txt')
@@ -416,6 +462,53 @@ describe('runAlint', () => {
 
     expect(finalProgress).toMatchObject({ final: true, jobsCompleted: 2, jobsStarted: 2, jobsTotal: 2 })
     expect(finalProgress?.execution).toMatchObject({ cancelled: 2, planned: 2, queued: 0, running: 0 })
+  })
+
+  it('preserves completed outcomes when a later start reporter fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-partial-infrastructure-result-'))
+    const filePath = join(root, 'demo.txt')
+    const sentinel = new Error('second start reporter failed')
+    const diagnostics: string[] = []
+    let execution: Parameters<NonNullable<ProgressReporter['onRunEnd']>>[0]['execution'] | undefined
+    let inputTokens: number | undefined
+    await writeFile(filePath, 'hello\n')
+    const first = defineRule({
+      create: ctx => ({
+        onTargetFile: () => {
+          ctx.report({ message: 'first completed' })
+          ctx.metering.recordUsage({ inputTokens: 3, modelId: 'model', providerId: 'provider' })
+        },
+      }),
+    })
+    const second = defineRule({ create: () => ({ onTargetFile: () => {} }) })
+
+    await expect(runAlint({
+      config: createConfig(
+        { first, second },
+        { 'company/first': 'warn', 'company/second': 'warn' },
+        {},
+        { language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      progress: {
+        onJobStart: ({ job }) => {
+          if (job.index === 2)
+            throw sentinel
+        },
+        onRunEnd: (payload) => {
+          diagnostics.push(...payload.diagnostics.map(diagnostic => diagnostic.message))
+          execution = payload.execution
+          inputTokens = payload.usage.inputTokens
+        },
+      },
+      runner: { cache: false, ruleConcurrency: 1 },
+      setupConfig: createSetupConfig(),
+    })).rejects.toBe(sentinel)
+
+    expect(diagnostics).toEqual(['first completed'])
+    expect(execution).toMatchObject({ cancelled: 1, completed: 1, planned: 2, queued: 0, running: 0 })
+    expect(inputTokens).toBe(3)
   })
 
   it('keeps queued job references limited to stable job and target identity', async () => {
@@ -3415,7 +3508,7 @@ describe('runAlint', () => {
     expect((runError as AlintRunCancelledError).cause).toBe('stop')
     expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 4, queued: 0, running: 0 })
     expect(starts).toEqual([1])
-    expect(ends).toEqual([1, 2, 3, 4])
+    expect(ends).toEqual([2, 3, 4, 1])
   })
 
   it('aborts the running handler signal and never starts queued jobs after run cancellation', async () => {
@@ -3495,7 +3588,7 @@ describe('runAlint', () => {
 
     expect(runError).toBeInstanceOf(AlintRunCancelledError)
     expect((runError as AlintRunCancelledError).cause).toBe(reason)
-    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 1, queued: 0, running: 0 })
+    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 0, planned: 0, queued: 0, running: 0 })
     expect(events).toEqual([])
   })
 

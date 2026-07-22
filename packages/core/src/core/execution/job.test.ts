@@ -10,7 +10,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { expect, it } from 'vitest'
 
 import { defineRule } from '../../dsl/define'
-import { compareJobOrder, createRuleJobs, executeRuleJob } from './job'
+import { compareJobOrder, createRuleJobFactory, createRuleJobs, executeRuleJob } from './job'
 import { createRunProgress } from './progress'
 import { createRuleRuntimes } from './runtime'
 
@@ -85,9 +85,7 @@ it('detaches a completed outcome from the active rule job', async () => {
 
   const outcome = await executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
-    clock: () => 2,
     runProgress: startedProgress(),
-    startedAt: 1,
   })
 
   expect(outcome).toEqual({
@@ -127,9 +125,7 @@ it.each([
 
   await expect(executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
-    clock: () => 2,
     runProgress: startedProgress(),
-    startedAt: 1,
   })).resolves.toMatchObject({
     cache: 'miss',
     failure: {
@@ -154,42 +150,28 @@ it.each([
     },
   }), {
     cache: { modelHash: 'model-hash' },
-    clock: () => 2,
     runProgress: startedProgress(),
-    startedAt: 1,
   })
 
   expect(outcome).toMatchObject({ failure: { message }, state: 'failed' })
 })
 
-it('isolates the failed outcome from onJobEnd mutations', async () => {
+it('detaches a failed outcome from the active rule job', async () => {
   const executionState = new AsyncLocalStorage<RuleRuntimeState>()
   const rule = defineRule({ create: () => ({}) })
-  let endedJob: ProgressJobRef | undefined
-  const outcome = await executeRuleJob(createTestJob({
+  const job = createTestJob({
     executionState,
     rule,
     run: () => {
       throw new Error('original failure')
     },
-  }), {
-    cache: { modelHash: 'model-hash' },
-    clock: () => 2,
-    progress: {
-      onJobEnd: ({ failure, job }) => {
-        endedJob = job
-        job.id = 'mutated end id'
-        job.target.name = 'mutated end target'
-        if (failure) {
-          failure.message = 'mutated end failure'
-          failure.job.id = 'mutated failure job'
-          Object.assign(failure, { backlink: 'attached failure sentinel' })
-        }
-      },
-    },
-    runProgress: startedProgress(),
-    startedAt: 1,
   })
+  const outcome = await executeRuleJob(job, {
+    cache: { modelHash: 'model-hash' },
+    runProgress: startedProgress(),
+  })
+  job.jobRef.id = 'mutated job id'
+  job.jobRef.target.identity = 'mutated target'
 
   expect(outcome).toMatchObject({
     failure: {
@@ -199,9 +181,8 @@ it('isolates the failed outcome from onJobEnd mutations', async () => {
     jobRef: { id: 'job-1', target: { identity: 'source.ts', kind: 'file' } },
     state: 'failed',
   })
-  expect(endedJob).not.toBe(outcome.jobRef)
   expect(outcome.state === 'failed' && outcome.failure.job).not.toBe(outcome.jobRef)
-  expect(JSON.stringify(outcome)).not.toContain('attached failure sentinel')
+  expect(JSON.stringify(outcome)).not.toContain('mutated')
 })
 
 it('seals terminal records and isolates progress, cache, and outcome snapshots', async () => {
@@ -307,9 +288,7 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
 
   const outcome = await executeRuleJob(job, {
     cache: { modelHash: 'model-hash' },
-    clock: () => 2,
     runProgress,
-    startedAt: 1,
   })
 
   job.target.loc.start.line = 42
@@ -436,6 +415,13 @@ it('counts zero-job plans in the scope-local input index', () => {
     ruleIndex: 3,
     scope: 'source',
     targetIndex: 0,
+  })
+
+  const factory = createRuleJobFactory()
+  expect(factory.create([plans[0]!])).toEqual([])
+  expect(factory.create([plans[1]!])[0]).toMatchObject({
+    jobRef: { index: 1 },
+    orderKey: { inputIndex: 1, scope: 'source' },
   })
 })
 
