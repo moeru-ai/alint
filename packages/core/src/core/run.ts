@@ -4,6 +4,7 @@ import type { DirectoryTarget, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 import type { CacheStore } from './cache'
 import type { RuleJobOutcome } from './execution/job'
+import type { ProjectFileSnapshot, ProjectIndex } from './project/types'
 import type { PreparedDirectory } from './targets/directory'
 import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from './targets/types'
 import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressReporter, RunOptions, RunResult, RunUsage, RunUsageTotals } from './types'
@@ -22,6 +23,7 @@ import { createCacheStore, normalizeRunnerCacheConfig } from './cache'
 import { createRuleJobs, executeRuleJob, resolveRuleExecutionTimeout } from './execution/job'
 import { hashText, stableHash } from './hash'
 import { createBuiltInLanguageRegistry, registerLanguage, resolveLanguage } from './languages'
+import { ProjectIndexBuilder } from './project'
 import { createSourceRuntime } from './source/runtime'
 import { createDirectoryExecutionPlans } from './targets/directory'
 import { createProjectExecutionPlan } from './targets/project'
@@ -178,16 +180,19 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       })
   const filePlans = createSourceExecutionPlans(files, cwd, cacheStore)
   const directoryPlans = createDirectoryExecutionPlans(directories, filePlans.length)
-  const projectPlan = resolvedProjectConfig.ignored || options.projectTargets === false
-    ? undefined
-    : createProjectExecutionPlan({
+  const projectPlan = canCreateProjectPlan(
+    resolvedProjectConfig.ignored,
+    options.projectTargets,
+    projectRuleRuntimes,
+  )
+    ? createProjectExecutionPlan({
         cacheStore,
         configHash: stableHash({ settings: projectConfig.settings }),
-        files,
         index: filePlans.length + directoryPlans.length + 1,
-        root: cwd,
+        project: createProjectIndex(cwd, files),
         ruleRuntimes: projectRuleRuntimes,
       })
+    : undefined
   const allPlans = [...filePlans, ...directoryPlans, ...(projectPlan ? [projectPlan] : [])]
   const jobs = createRuleJobs(allPlans)
   const runStartedAt = clock()
@@ -284,6 +289,55 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   }
 
   return result
+}
+
+function canCreateProjectPlan(
+  ignored: boolean,
+  projectTargets: boolean | undefined,
+  runtimes: RuleRuntime[],
+): boolean {
+  return !ignored
+    && projectTargets !== false
+    && runtimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
+}
+
+function createProjectFileSnapshot(preparedFile: PreparedFile, fileIndex: number): ProjectFileSnapshot {
+  return {
+    configHash: preparedFile.configHash,
+    file: {
+      contentHash: hashText(preparedFile.file.text),
+      language: preparedFile.file.language,
+      path: preparedFile.file.path,
+      targetCount: preparedFile.targets.length,
+    },
+    fileIndex,
+    targets: preparedFile.targets.map(target => ({
+      descriptor: {
+        filePath: target.file.path,
+        identity: target.identity,
+        kind: target.kind,
+        ...(target.name === undefined ? {} : { name: target.name }),
+        ...(target.range === undefined ? {} : { range: target.range }),
+      },
+      semanticHash: stableHash({
+        language: target.language,
+        loc: target.loc,
+        metadata: target.metadata,
+        name: target.name,
+        origin: target.origin,
+        range: target.range,
+        text: target.text,
+      }),
+    })),
+  }
+}
+
+function createProjectIndex(root: string, files: PreparedFile[]): ProjectIndex {
+  const builder = new ProjectIndexBuilder(root)
+
+  files.forEach((file, fileIndex) => builder.add(createProjectFileSnapshot(file, fileIndex)))
+
+  return builder.build()
 }
 
 function createRuleRuntimes(options: {

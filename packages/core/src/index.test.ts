@@ -1,8 +1,15 @@
+import type { ProjectFileEntry, ProjectTargetEntry } from './index'
+
 import { readFile } from 'node:fs/promises'
 
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 describe('core public entrypoints', () => {
+  it('exports compact project descriptors from the root entrypoint', () => {
+    expectTypeOf<keyof ProjectFileEntry>().toEqualTypeOf<'contentHash' | 'language' | 'path' | 'targetCount'>()
+    expectTypeOf<keyof ProjectTargetEntry>().toEqualTypeOf<'filePath' | 'identity' | 'kind' | 'name' | 'range'>()
+  })
+
   it('keeps JavaScript language extraction behind a dedicated export', async () => {
     const [rootEntry, packageJsonText] = await Promise.all([
       readFile(new URL('./index.ts', import.meta.url), 'utf8'),

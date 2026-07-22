@@ -5,7 +5,7 @@ import type { ProgressJob } from '../index'
 
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 
 import { number, object, optional } from 'valibot'
 import { describe, expect, it, vi } from 'vitest'
@@ -13,6 +13,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { requireAgent, RetryableAgentError } from '../agent'
 import { defineConfig, definePlugin, defineRule } from '../dsl/define'
 import { readCacheBody } from './cache'
+import { hashText, stableHash } from './hash'
+import { ProjectIndexBuilder } from './project'
 import { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './run'
 
 describe('runAlint', () => {
@@ -697,7 +699,7 @@ describe('runAlint', () => {
     expect(runEndEvents).toEqual(['1:1/1'])
   })
 
-  it('runs onTargetProject once at cwd', async () => {
+  it('runs one project target at cwd', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-project-target-'))
     const visited: string[] = []
 
@@ -723,12 +725,209 @@ describe('runAlint', () => {
     ])
 
     const cacheFile = await readCacheBody(join(root, '.alintcache'))
+    const entry = Object.values(cacheFile.entries)[0]
+    const projectHash = new ProjectIndexBuilder(root).build().hash
 
     expect(Object.keys(cacheFile.entries)).toHaveLength(1)
-    expect(Object.values(cacheFile.entries)[0]?.target.kind).toBe('project')
+    expect(entry?.fingerprint.targetHash).toBe(projectHash)
+    expect(entry?.target.hash).toBe(projectHash)
+    expect(entry?.target.kind).toBe('project')
   })
 
-  it('provides one project target containing prepared files and source targets', async () => {
+  it('keeps the existing source cache target hash alongside the project override', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-source-cache-hash-'))
+    const filePath = join(root, 'demo.txt')
+    const text = 'source text\n'
+
+    await writeFile(filePath, text)
+
+    const rule = defineRule({
+      create: () => ({ onTargetWith: () => {} }),
+    })
+
+    await runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+        {},
+        { language: 'text/plain' },
+      ),
+      cwd: root,
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    const cacheFile = await readCacheBody(join(root, '.alintcache'))
+    const sourceEntry = Object.values(cacheFile.entries).find(entry => entry.target.kind === 'file')
+    const sourceHash = stableHash({
+      language: 'text/plain',
+      origin: { physicalPath: filePath },
+      text,
+    })
+
+    expect(sourceEntry?.fingerprint.targetHash).toBe(sourceHash)
+    expect(sourceEntry?.target.hash).toBe(sourceHash)
+  })
+
+  it('does not inspect extracted target metadata when project targets are disabled', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-disabled-index-'))
+    const filePath = join(root, 'demo.custom')
+
+    await writeFile(filePath, 'unchanged\n')
+
+    const rule = defineRule({ create: () => ({ onTargetProject: () => {} }) })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: file => [{
+            file,
+            identity: 'file',
+            kind: 'file',
+            language: 'custom/plain',
+            metadata: { value: 1n },
+            text: file.text,
+          }],
+          name: 'custom/plain',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    const result = await runAlint({
+      config: defineConfig([
+        { plugins: { company: plugin }, rules: { 'company/review': 'warn' } },
+        { files: ['**/*.custom'], language: 'custom/plain' },
+      ]),
+      cwd: root,
+      files: [filePath],
+      projectTargets: false,
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.execution.planned).toBe(0)
+  })
+
+  it('does not inspect extracted target metadata without project handlers', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-no-handlers-index-'))
+    const filePath = join(root, 'demo.custom')
+
+    await writeFile(filePath, 'unchanged\n')
+
+    const rule = defineRule({ create: () => ({}) })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: file => [{
+            file,
+            identity: 'file',
+            kind: 'file',
+            language: 'custom/plain',
+            metadata: { value: 1n },
+            text: file.text,
+          }],
+          name: 'custom/plain',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    const result = await runAlint({
+      config: defineConfig([
+        { plugins: { company: plugin }, rules: { 'company/review': 'warn' } },
+        { files: ['**/*.custom'], language: 'custom/plain' },
+      ]),
+      cwd: root,
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.execution.planned).toBe(0)
+  })
+
+  it('does not inspect extracted target metadata when the project is ignored', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-ignored-index-'))
+    const filePath = join(root, 'demo.custom')
+    const cyclicMetadata: Record<string, unknown> = {}
+    cyclicMetadata.self = cyclicMetadata
+    let extractionCalls = 0
+
+    await writeFile(filePath, 'unchanged\n')
+
+    const rule = defineRule({ create: () => ({ onTargetProject: () => {} }) })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: (file) => {
+            extractionCalls += 1
+            return [{
+              file,
+              identity: 'file',
+              kind: 'file',
+              language: 'custom/plain',
+              metadata: cyclicMetadata,
+              text: file.text,
+            }]
+          },
+          name: 'custom/plain',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    const result = await runAlint({
+      config: defineConfig([
+        { basePath: tmpdir(), extends: [{ ignores: [basename(root)] }] },
+        { plugins: { company: plugin }, rules: { 'company/review': 'warn' } },
+        { files: ['**/*.custom'], language: 'custom/plain' },
+      ]),
+      cwd: root,
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(extractionCalls).toBe(1)
+    expect(result.execution.planned).toBe(0)
+  })
+
+  it('keeps project cache hashes distinct for observable roots sharing one cache', async () => {
+    const firstRoot = await mkdtemp(join(tmpdir(), 'alint-project-cache-root-a-'))
+    const secondRoot = await mkdtemp(join(tmpdir(), 'alint-project-cache-root-b-'))
+    const cacheRoot = await mkdtemp(join(tmpdir(), 'alint-project-cache-shared-'))
+    const cachePath = join(cacheRoot, '.alintcache')
+    let handlerCalls = 0
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetProject: (target) => {
+          handlerCalls += 1
+          ctx.report({ filePath: target.root, message: target.root })
+        },
+      }),
+    })
+    const config = createConfig({ review: rule }, { 'company/review': 'warn' })
+
+    const first = await runAlint({
+      config,
+      cwd: firstRoot,
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })
+    const second = await runAlint({
+      config,
+      cwd: secondRoot,
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(handlerCalls).toBe(2)
+    expect(first.diagnostics[0]?.message).toBe(firstRoot)
+    expect(second.diagnostics[0]?.message).toBe(secondRoot)
+  })
+
+  it('provides one project target containing compact file and target descriptors', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-project-content-'))
     const firstPath = join(root, 'first.ts')
     const secondPath = join(root, 'second.ts')
@@ -760,14 +959,26 @@ describe('runAlint', () => {
       kind: 'project',
       root,
     })
-    expect(visited[0]?.files.map(file => file.path)).toEqual([
-      firstPath,
-      secondPath,
+    expect(visited[0]?.files).toEqual([
+      {
+        contentHash: hashText('export const second = 2\n'),
+        language: 'typescript',
+        path: secondPath,
+        targetCount: 1,
+      },
+      {
+        contentHash: hashText('export const first = 1\n'),
+        language: 'typescript',
+        path: firstPath,
+        targetCount: 1,
+      },
     ])
-    expect(visited[0]?.targets).toEqual(visited[0]?.files.map(file => expect.objectContaining({
-      file,
-      kind: 'file',
-    })))
+    expect(visited[0]?.targets).toEqual([
+      expect.objectContaining({ filePath: secondPath, identity: 'file', kind: 'file' }),
+      expect.objectContaining({ filePath: firstPath, identity: 'file', kind: 'file' }),
+    ])
+    expect(JSON.stringify(visited[0])).not.toContain('export const')
+    expect(JSON.stringify(visited[0])).not.toContain('metadata')
 
     const cacheFile = await readCacheBody(join(root, '.alintcache'))
     const projectEntryKeys = Object.entries(cacheFile.entries)
@@ -780,6 +991,71 @@ describe('runAlint', () => {
     )
   })
 
+  it('keeps project descriptors in input order when extraction completes out of order', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-project-order-'))
+    const firstPath = join(root, 'first.custom')
+    const secondPath = join(root, 'second.custom')
+    const firstMayFinish = Promise.withResolvers<void>()
+    const visited: ProjectTarget[] = []
+
+    await writeFile(firstPath, 'first\n')
+    await writeFile(secondPath, 'second\n')
+
+    const rule = defineRule({
+      create: () => ({
+        onTargetProject: (target) => {
+          visited.push(target)
+        },
+      }),
+    })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: async (file) => {
+            if (file.path === firstPath)
+              await firstMayFinish.promise
+            else
+              firstMayFinish.resolve()
+
+            return [{
+              file,
+              identity: 'file',
+              kind: 'file',
+              language: 'custom/plain',
+              origin: { physicalPath: file.path },
+              text: file.text,
+            }]
+          },
+          name: 'custom/plain',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    await runAlint({
+      config: defineConfig([
+        {
+          plugins: { company: plugin },
+          rules: { 'company/review': 'warn' },
+        },
+        {
+          files: ['**/*.custom'],
+          language: 'custom/plain',
+        },
+      ]),
+      cwd: root,
+      files: [firstPath, secondPath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(visited[0]?.files.map(file => file.path)).toEqual([firstPath, secondPath])
+    expect(visited[0]?.targets).toEqual([
+      expect.objectContaining({ filePath: firstPath, identity: 'file', kind: 'file' }),
+      expect.objectContaining({ filePath: secondPath, identity: 'file', kind: 'file' }),
+    ])
+  })
+
   it('invalidates the project cache when participating file content changes', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-project-cache-content-'))
     const filePath = join(root, 'demo.ts')
@@ -789,11 +1065,12 @@ describe('runAlint', () => {
 
     const rule = defineRule({
       create: ctx => ({
-        onTargetProject: (target) => {
+        onTargetProject: async (target) => {
           handlerCalls += 1
+          const file = await ctx.src.readFile(target.files[0]!.path)
           ctx.report({
-            filePath: target.files[0]?.path,
-            message: target.files[0]?.text ?? '',
+            filePath: file.path,
+            message: file.text,
           })
         },
       }),
@@ -838,7 +1115,7 @@ describe('runAlint', () => {
           handlerCalls += 1
           ctx.report({
             filePath: target.files[0]?.path,
-            message: String(target.targets[0]?.metadata?.version),
+            message: 'project config changed',
           })
         },
       }),
@@ -893,7 +1170,7 @@ describe('runAlint', () => {
     })
 
     expect(handlerCalls).toBe(2)
-    expect(second.diagnostics[0]?.message).toBe('2')
+    expect(second.diagnostics[0]?.message).toBe('project config changed')
     expect(ruleEndEvents).toEqual(['project:miss'])
   })
 
@@ -912,7 +1189,7 @@ describe('runAlint', () => {
           handlerCalls += 1
           ctx.report({
             filePath: target.files[0]?.path,
-            message: `${target.targets[0]?.text}:${target.targets[0]?.metadata?.version}`,
+            message: 'extracted target changed',
           })
         },
       }),
@@ -960,7 +1237,7 @@ describe('runAlint', () => {
     })
 
     expect(handlerCalls).toBe(2)
-    expect(second.diagnostics[0]?.message).toBe('extracted-2:2')
+    expect(second.diagnostics[0]?.message).toBe('extracted target changed')
     expect(ruleEndEvents).toEqual(['project:miss'])
   })
 

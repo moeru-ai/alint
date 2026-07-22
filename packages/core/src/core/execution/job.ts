@@ -213,7 +213,7 @@ function createCacheEntry(job: RuleJob, fingerprint: CacheFingerprint, bucket: R
     diagnostics: bucket.diagnostics,
     fingerprint,
     target: {
-      hash: createTargetHash(job),
+      hash: fingerprint.targetHash,
       identity: job.target.identity,
       kind: job.target.kind,
       loc: job.target.loc,
@@ -235,7 +235,7 @@ function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
 
 function createTargetHash(job: RuleJob): string {
   const target = job.target
-  return stableHash({
+  return target.cacheTargetHash ?? stableHash({
     language: target.language,
     loc: target.loc,
     metadata: target.metadata,

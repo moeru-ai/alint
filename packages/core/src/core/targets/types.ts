@@ -12,6 +12,7 @@ export interface CacheRunContext {
 export interface ExecutionTarget {
   activeFilePath?: string
   cacheOwner?: CacheOwnerTransaction
+  cacheTargetHash?: string
   configHash: string
   executions: RuleTargetExecution[]
   identity: string

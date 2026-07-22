@@ -1,19 +1,15 @@
-import type { ProjectTarget } from '../../dsl/types'
 import type { CacheStore } from '../cache'
-import type { ExecutionTarget, PreparedFile, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
-
-import { normalizeCachePath } from '../cache'
-import { hashText, stableHash } from '../hash'
+import type { ProjectIndex } from '../project/types'
+import type { ExecutionTarget, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
 
 export function createProjectExecutionPlan(options: {
   cacheStore: CacheStore
   configHash: string
-  files: PreparedFile[]
   index: number
-  root: string
+  project: ProjectIndex
   ruleRuntimes: RuleRuntime[]
 }): TargetExecutionPlan | undefined {
-  const project = createProjectTarget(options.root, options.files)
+  const { hash, target: project } = options.project
   const executions = options.ruleRuntimes
     .map((runtime): RuleTargetExecution | undefined => {
       if (runtime.handlers.onTargetWith) {
@@ -39,73 +35,22 @@ export function createProjectExecutionPlan(options: {
   }
 
   const target: ExecutionTarget = {
-    cacheOwner: options.cacheStore.beginOwner({ kind: 'project', path: options.root }),
+    cacheOwner: options.cacheStore.beginOwner({ kind: 'project', path: project.root }),
+    cacheTargetHash: hash,
     configHash: options.configHash,
     executions,
     identity: 'project',
     kind: 'project',
     language: 'project',
-    text: stableHash({
-      files: options.files
-        .map(file => ({
-          configHash: file.configHash,
-          contentHash: hashText(file.file.text),
-          path: normalizeCachePath(options.root, file.file.path),
-        }))
-        .sort((left, right) => left.path.localeCompare(right.path)),
-      targets: project.targets.map(target => ({
-        filePath: normalizeCachePath(options.root, target.file.path),
-        identity: target.identity,
-        kind: target.kind,
-        language: target.language,
-        loc: target.loc,
-        metadata: target.metadata,
-        name: target.name,
-        origin: target.origin,
-        range: target.range,
-        text: target.text,
-      })),
-      tree: createProjectTreeShape(options.files, options.root),
-    }),
+    text: hash,
   }
 
   return {
-    id: `project:${options.root}`,
+    id: `project:${project.root}`,
     index: options.index,
     kind: 'project',
-    path: options.root,
+    path: project.root,
     planned: executions.length,
     targets: [target],
-  }
-}
-
-export function createProjectTarget(root: string, files: PreparedFile[]): ProjectTarget {
-  const preparedFiles = [...files].sort((left, right) => left.file.path.localeCompare(right.file.path))
-
-  return {
-    files: preparedFiles.map(file => file.file),
-    kind: 'project',
-    root,
-    targets: preparedFiles.flatMap(file => file.targets),
-  }
-}
-
-function createProjectTreeShape(files: PreparedFile[], root: string): { directories: string[], files: string[] } {
-  const directories = new Set<string>()
-  const paths = files
-    .map(file => normalizeCachePath(root, file.file.path))
-    .sort()
-
-  for (const path of paths) {
-    const parts = path.split('/')
-
-    for (let index = 1; index < parts.length; index += 1) {
-      directories.add(parts.slice(0, index).join('/'))
-    }
-  }
-
-  return {
-    directories: [...directories].sort(),
-    files: paths,
   }
 }
