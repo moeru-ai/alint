@@ -6,6 +6,7 @@ import {
   writeSetupConfig,
 } from '@alint-js/config'
 
+import { escapeLineValue } from '../../../output'
 import { isValidProviderHeaderName } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
@@ -19,6 +20,7 @@ export const set = defineCommand({
   action: runSetProviderCommand,
   arguments: '<key> <value>',
   description: 'Set a provider configuration field',
+  exactArguments: true,
   name: 'set',
   options: [
     { description: 'Provider id', flags: '--provider <id>' },
@@ -88,7 +90,7 @@ async function runSetProviderCommand(
   }
 
   await writeSetupConfig(path, nextConfig)
-  context.io.stdout.write(`provider: ${providerId}\nkey: ${key}\nscope: ${scope}\n`)
+  context.io.stdout.write(`provider: ${escapeLineValue(providerId)}\nkey: ${escapeLineValue(key)}\nscope: ${scope}\n`)
   return 0
 }
 

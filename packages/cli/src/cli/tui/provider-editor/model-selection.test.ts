@@ -78,6 +78,14 @@ describe('provider editor model selection', () => {
     )).toEqual({ 'Authorization': 'Bearer replacement', 'X-New': 'true' })
   })
 
+  it('reconciles HTTP header names case-insensitively when replacing them', () => {
+    expect(applyHeaderSelection(
+      { 'Authorization': 'Bearer secret', 'X-Keep': 'value' },
+      ['AUTHORIZATION', 'x-keep'],
+      { authorization: 'Bearer replacement' },
+    )).toEqual({ 'authorization': 'Bearer replacement', 'X-Keep': 'value' })
+  })
+
   it('returns undefined when no headers remain', () => {
     expect(applyHeaderSelection({ Authorization: 'Bearer secret' }, [], {})).toBeUndefined()
   })

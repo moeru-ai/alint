@@ -140,9 +140,9 @@ export function formatAmbiguousModels(request: string, candidates: FlattenedMode
   const choices = [...candidatesByIdentity.keys()]
 
   return `${[
-    `ambiguous model "${request}".`,
+    `ambiguous model "${escapeLineValue(request)}".`,
     'specify a provider-qualified model:',
-    ...choices.map(choice => `  ${choice}`),
+    ...choices.map(choice => `  ${escapeLineValue(choice)}`),
   ].join('\n')}\n`
 }
 
@@ -261,13 +261,11 @@ export async function probeModels(endpoint: string, headers: Record<string, stri
   }
 
   const body: unknown = await response.json()
-  if (!isRecord(body) || !Array.isArray(body.data) || !body.data.every(isRecord)) {
+  if (!isRecord(body) || !Array.isArray(body.data) || !body.data.every(isModelRecord)) {
     throw new TypeError('Expected OpenAI-compatible models response with data array.')
   }
 
-  return body.data
-    .map(model => model.id)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0)
+  return body.data.map(model => model.id)
 }
 
 function canonicalIdentity(candidate: FlattenedModel): string {
@@ -287,6 +285,10 @@ function formatTable(rows: string[][]): string {
     },
     drawHorizontalLine: () => false,
   })
+}
+
+function isModelRecord(value: unknown): value is Record<string, unknown> & { id: string } {
+  return isRecord(value) && typeof value.id === 'string' && value.id.length > 0
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

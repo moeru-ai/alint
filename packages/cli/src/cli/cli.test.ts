@@ -955,7 +955,6 @@ local = "./plugins/local-plugin"
           data: [
             { id: 'qwen:8b' },
             { id: 'qwen:32b' },
-            { id: 123 },
           ],
         },
       }
@@ -2586,6 +2585,12 @@ local = "./plugins/local-plugin"
       status: 200,
     },
     {
+      body: { data: [{ id: 'keep-unchanged' }, {}] },
+      rawBody: undefined,
+      reason: 'provider returned an invalid models response',
+      status: 200,
+    },
+    {
       body: undefined,
       rawBody: '{',
       reason: 'provider returned invalid JSON',
@@ -3044,6 +3049,74 @@ local = "./plugins/local-plugin"
 
     expect(exitCode).toBe(0)
     expect((await loadSetupConfig(configPath)).providers[0]?.headers).toEqual({ 'X-Empty': '' })
+  })
+
+  it.each([
+    {
+      command: 'set',
+      expected: 'unexpected argument "truncated\\u0085tail". usage: alint config providers set <key> <value>.\n',
+      tail: ['headers.Authorization', 'Bearer', 'truncated\u0085tail'],
+    },
+    {
+      command: 'unset',
+      expected: 'unexpected argument "accidental\\u2028extra". usage: alint config providers unset <key>.\n',
+      tail: ['headers.Authorization', 'accidental\u2028extra'],
+    },
+  ])('rejects extra positional arguments before loading config for provider $command', async ({ command, expected, tail }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await mkdir(join(io.env?.XDG_CONFIG_HOME ?? '', 'alint'), { recursive: true })
+    await writeFile(configPath, 'invalid = [', 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'example',
+      ...tail,
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(expected)
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe('invalid = [')
+  })
+
+  it.each(['set', 'unset'])('escapes successful provider %s output fields', async (command) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        headers: { 'X-Key': 'secret' },
+        id: 'provider\u0085name',
+        models: [],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const key = 'headers.X-Key'
+    const tail = command === 'set' ? [key, 'replacement-secret'] : [key]
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'providers',
+      command,
+      '--provider',
+      'provider\u0085name',
+      ...tail,
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe(
+      'provider: provider\\u0085name\nkey: headers.X-Key\nscope: global\n',
+    )
+    expect(io.stdoutText).not.toContain('secret')
   })
 
   it.each([

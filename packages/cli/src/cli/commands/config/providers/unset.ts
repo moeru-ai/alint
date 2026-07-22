@@ -2,6 +2,7 @@ import type { CommandContext } from '../../command'
 
 import { unsetProviderHeader, writeSetupConfig } from '@alint-js/config'
 
+import { escapeLineValue } from '../../../output'
 import { isValidProviderHeaderName } from '../../../provider-registry'
 import { defineCommand } from '../../command'
 import { formatUnknownProvider, loadScopedSetupConfig } from '../setup-config'
@@ -15,6 +16,7 @@ export const unset = defineCommand({
   action: runUnsetProviderCommand,
   arguments: '<key>',
   description: 'Unset a provider configuration field',
+  exactArguments: true,
   name: 'unset',
   options: [
     { description: 'Provider id', flags: '--provider <id>' },
@@ -81,7 +83,7 @@ async function runUnsetProviderCommand(
 
   const nextConfig = unsetProviderHeader(config, providerId, headerName)
   await writeSetupConfig(path, nextConfig)
-  context.io.stdout.write(`provider: ${providerId}\nkey: ${key}\nscope: ${scope}\n`)
+  context.io.stdout.write(`provider: ${escapeLineValue(providerId)}\nkey: ${escapeLineValue(key)}\nscope: ${scope}\n`)
   return 0
 }
 

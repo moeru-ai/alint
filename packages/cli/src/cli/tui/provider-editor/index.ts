@@ -9,12 +9,14 @@ import type {
 
 import { mergeSetupConfigs, replaceSetupProvider } from '@alint-js/config'
 
+import { escapeLineValue } from '../../output'
 import { createProviderId, parseHeaderList } from '../../provider-registry'
 import {
   applyHeaderSelection,
   createDefaultModelCandidates,
   createModelOptions,
   modelsFromSelection,
+  normalizeHeaderName,
 } from './model-selection'
 import { createProviderEditorPrompts } from './prompts'
 
@@ -56,7 +58,12 @@ export async function runProviderEditor(
 ): Promise<ProviderEditorResult> {
   const prompts = promptPort ?? createProviderEditorPrompts(await import('@clack/prompts'))
   const existingProvider = input.mode === 'update' ? input.existingProvider : undefined
-  const initialHeaders = { ...existingProvider?.headers }
+  const configuredHeaders = { ...existingProvider?.headers }
+  const initialHeaders = applyHeaderSelection(
+    configuredHeaders,
+    Object.keys(configuredHeaders),
+    {},
+  ) ?? {}
   const draft: EditorDraft = {
     discoveredModels: [],
     endpoint: existingProvider?.endpoint ?? input.source.defaultEndpoint,
@@ -132,11 +139,17 @@ export async function runProviderEditor(
       const replacements = parseHeaderList(splitInput(headerInput.value)) ?? {}
       // Blank input is an additive no-op: selected draft headers may contain
       // replacements whose values must remain hidden and survive Back.
-      draft.headerValues = { ...draft.headerValues, ...replacements }
-      draft.retainedHeaderNames = [...new Set([
+      const retainedLogicalNames = new Set([
         ...draft.retainedHeaderNames,
         ...Object.keys(replacements),
-      ])]
+      ].map(normalizeHeaderName))
+      draft.headerValues = applyHeaderSelection(
+        draft.headerValues,
+        Object.keys(draft.headerValues),
+        replacements,
+      ) ?? {}
+      draft.retainedHeaderNames = Object.keys(draft.headerValues)
+        .filter(name => retainedLogicalNames.has(normalizeHeaderName(name)))
       const headers = effectiveHeaders(draft) ?? {}
       draft.discoveredModels = input.source.probeModels
         ? await prompts.probe(draft.endpoint ?? '', headers)
@@ -277,17 +290,21 @@ function createSummary(
 
   return [
     `${input.mode === 'create' ? 'Create' : 'Update'} provider?`,
-    `Provider: ${provider.id}`,
-    `Endpoint: ${provider.endpoint}`,
-    `Headers: ${Object.keys(provider.headers ?? {}).join(', ') || '(none)'}`,
-    `Added models: ${additions.join(', ') || '(none)'}`,
-    `Removed models: ${removals.join(', ') || '(none)'}`,
-    `Default: ${defaultChange}`,
+    `Provider: ${escapeLineValue(provider.id)}`,
+    `Endpoint: ${escapeLineValue(provider.endpoint)}`,
+    `Headers: ${formatSummaryValues(Object.keys(provider.headers ?? {}))}`,
+    `Added models: ${formatSummaryValues(additions)}`,
+    `Removed models: ${formatSummaryValues(removals)}`,
+    `Default: ${defaultAliasTarget === undefined ? defaultChange : escapeLineValue(defaultChange)}`,
   ].join('\n')
 }
 
 function effectiveHeaders(draft: EditorDraft): Record<string, string> | undefined {
   return applyHeaderSelection(draft.headerValues, draft.retainedHeaderNames, {})
+}
+
+function formatSummaryValues(values: readonly string[]): string {
+  return values.length > 0 ? values.map(escapeLineValue).join(', ') : '(none)'
 }
 
 function splitInput(value: string): string[] {

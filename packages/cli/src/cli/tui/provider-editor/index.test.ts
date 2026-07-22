@@ -306,6 +306,106 @@ describe('runProviderEditor', () => {
     expect(summaries[0]).not.toContain('replacement')
   })
 
+  it('replaces differently-cased logical header names in editor state and probe headers', async () => {
+    const promptPort = createPromptPort({
+      headerInput: vi.fn(async () => submitted('authorization=Bearer replacement')),
+    })
+
+    const result = await runProviderEditor({
+      config,
+      existingProvider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(promptPort.probe).toHaveBeenCalledWith('https://next.example/v1', {
+      'authorization': 'Bearer replacement',
+      'X-Keep': 'yes',
+    })
+    expect(result).toMatchObject({
+      provider: {
+        headers: {
+          'authorization': 'Bearer replacement',
+          'X-Keep': 'yes',
+        },
+      },
+      status: 'confirmed',
+    })
+  })
+
+  it('collapses differently-cased configured headers before retention and probing', async () => {
+    const provider: ProviderDefinition = {
+      ...existingProvider,
+      headers: {
+        'Authorization': 'Bearer stale',
+        'authorization': 'Bearer current',
+        'X-Keep': 'yes',
+      },
+    }
+    const promptPort = createPromptPort({ headerInput: vi.fn(async () => submitted('')) })
+
+    await runProviderEditor({
+      config: { providers: [provider], version: 1 },
+      existingProvider: provider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(promptPort.retainedHeaders).toHaveBeenCalledWith(
+      ['authorization', 'X-Keep'],
+      ['authorization', 'X-Keep'],
+    )
+    expect(promptPort.probe).toHaveBeenCalledWith('https://next.example/v1', {
+      'authorization': 'Bearer current',
+      'X-Keep': 'yes',
+    })
+  })
+
+  it('escapes every untrusted confirmation summary value without exposing secrets', async () => {
+    const summaries: string[] = []
+    const unsafeProvider: ProviderDefinition = {
+      endpoint: 'https://old.example/v1',
+      headers: { 'X-Old\u0085Header': 'old-secret' },
+      id: 'old',
+      models: [{ aliases: ['default'], id: 'old\u2028model' }],
+      type: 'openai-compatible',
+    }
+    const promptPort = createPromptPort({
+      confirm: vi.fn(async (summary: string) => {
+        summaries.push(summary)
+        return submitted<'yes'>('yes')
+      }),
+      defaultAction: vi.fn(async () => submitted<'yes'>('yes')),
+      endpoint: vi.fn(async () => submitted('https://next.example/v1\u2028path')),
+      headerInput: vi.fn(async () => submitted('X-New=top-secret')),
+      models: vi.fn(async () => submitted(['new\u001Bmodel'])),
+      probe: vi.fn(async () => ['new\u001Bmodel']),
+      providerId: vi.fn(async () => submitted('provider\nname')),
+    })
+
+    await runProviderEditor({
+      config: { providers: [unsafeProvider], version: 1 },
+      existingProvider: unsafeProvider,
+      io,
+      mode: 'update',
+      source,
+    }, promptPort)
+
+    expect(summaries[0]).toBe([
+      'Update provider?',
+      'Provider: provider\\nname',
+      'Endpoint: https://next.example/v1\\u2028path',
+      'Headers: X-Old\\u0085Header, X-New',
+      'Added models: new\\u001bmodel',
+      'Removed models: old\\u2028model',
+      'Default: provider\\nname/new\\u001bmodel',
+    ].join('\n'))
+    expect(summaries[0]).not.toContain('old-secret')
+    expect(summaries[0]).not.toContain('top-secret')
+  })
+
   it('reconciles selections when navigating back and probing a changed model list', async () => {
     const models = vi.fn()
       .mockResolvedValueOnce(submitted(['existing', 'missing']))

@@ -2,7 +2,7 @@ import { createServer } from 'node:http'
 
 import { describe, expect, it } from 'vitest'
 
-import { probeModels } from './provider-registry'
+import { formatAmbiguousModels, probeModels } from './provider-registry'
 
 const invalidResponseMessage = 'Expected OpenAI-compatible models response with data array.'
 
@@ -63,17 +63,62 @@ describe('probeModels', () => {
     },
   )
 
-  it('filters object members whose id is absent or non-string', async () => {
-    await withJsonServer({
-      data: [
-        {},
-        { id: null },
-        { id: 42 },
-        { id: '' },
-        { id: 'valid' },
-      ],
-    }, async (endpoint) => {
-      await expect(probeModels(endpoint)).resolves.toEqual(['valid'])
+  it.each([
+    {},
+    { id: null },
+    { id: 42 },
+    { id: '' },
+    [{ id: 'nested' }],
+  ])('rejects an object data member without a non-empty string id: %j', async (member) => {
+    await withJsonServer({ data: [member] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).rejects.toThrowError(
+        new TypeError(invalidResponseMessage),
+      )
     })
+  })
+
+  it('rejects a mixed valid and invalid data array', async () => {
+    await withJsonServer({ data: [{ id: 'valid' }, {}] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).rejects.toThrowError(
+        new TypeError(invalidResponseMessage),
+      )
+    })
+  })
+
+  it('accepts an empty data array', async () => {
+    await withJsonServer({ data: [] }, async (endpoint) => {
+      await expect(probeModels(endpoint)).resolves.toEqual([])
+    })
+  })
+})
+
+describe('formatAmbiguousModels', () => {
+  it('escapes line-oriented request and candidate identities', () => {
+    expect(formatAmbiguousModels('shared\u0085request', [
+      {
+        model: { id: 'model\u001Bid' },
+        provider: {
+          endpoint: 'https://example.test/v1',
+          id: 'first\u2028provider',
+          models: [],
+          type: 'openai-compatible',
+        },
+      },
+      {
+        model: { id: 'other' },
+        provider: {
+          endpoint: 'https://example.test/v1',
+          id: 'second',
+          models: [],
+          type: 'openai-compatible',
+        },
+      },
+    ])).toBe([
+      'ambiguous model "shared\\u0085request".',
+      'specify a provider-qualified model:',
+      '  first\\u2028provider/model\\u001bid',
+      '  second/other',
+      '',
+    ].join('\n'))
   })
 })

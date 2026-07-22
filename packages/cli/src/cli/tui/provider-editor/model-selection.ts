@@ -35,12 +35,22 @@ export function applyHeaderSelection(
   retainedNames: readonly string[],
   replacements: Record<string, string>,
 ): Record<string, string> | undefined {
-  const retained = Object.fromEntries(
-    retainedNames
-      .filter(name => existingHeaders[name] !== undefined)
-      .map(name => [name, existingHeaders[name]!]),
-  )
-  const headers = { ...retained, ...replacements }
+  const selectedNames = new Set(retainedNames.map(normalizeHeaderName))
+  const headersByName = new Map<string, readonly [string, string]>()
+
+  for (const [name, value] of Object.entries(existingHeaders)) {
+    const normalizedName = normalizeHeaderName(name)
+
+    if (selectedNames.has(normalizedName)) {
+      headersByName.set(normalizedName, [name, value])
+    }
+  }
+
+  for (const [name, value] of Object.entries(replacements)) {
+    headersByName.set(normalizeHeaderName(name), [name, value])
+  }
+
+  const headers = Object.fromEntries(headersByName.values())
 
   return Object.keys(headers).length > 0 ? headers : undefined
 }
@@ -138,6 +148,10 @@ export function modelsFromSelection(
   }
 
   return models
+}
+
+export function normalizeHeaderName(name: string): string {
+  return name.toLowerCase()
 }
 
 function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
