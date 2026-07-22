@@ -1,4 +1,5 @@
 import type { SetupConfig } from '@alint-js/config'
+import type { RunResult } from '@alint-js/core'
 
 import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
@@ -174,6 +175,42 @@ export default [
     },
     rules: {
       'review/language': 'warn',
+    },
+  },
+]
+`)
+}
+
+async function writePartialFailureFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: {
+        rules: {
+          finding: {
+            create: ctx => ({
+              onTargetFile: target => ctx.report({
+                filePath: target.file.path,
+                message: 'Partial finding',
+              }),
+            }),
+          },
+          review: {
+            create: () => ({
+              onTargetFile: () => {
+                throw new Error('Remote sent 403 response: {"error":{"message":"The request is prohibited due to a violation of provider Terms Of Service.","code":403},"user_id":"secret"}')
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'company/finding': 'warn',
+      'company/review': 'warn',
     },
   },
 ]
@@ -3189,30 +3226,7 @@ export default [
     const io = await createTestIo()
     clearCiEnv(io.env)
 
-    await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
-    await writeFile(join(io.cwd, 'alint.config.ts'), `
-export default [
-  {
-    files: ['**/*.ts'],
-    plugins: {
-      company: {
-        rules: {
-        review: {
-          create: () => ({
-            onTargetFile: () => {
-              throw new Error('Remote sent 403 response: {"error":{"message":"The request is prohibited due to a violation of provider Terms Of Service.","code":403},"user_id":"secret"}')
-            },
-          }),
-        },
-      },
-    },
-    },
-    rules: {
-      'company/review': 'warn',
-    },
-  },
-]
-`)
+    await writePartialFailureFixture(io.cwd)
 
     const exitCode = await executeCli([
       'node',
@@ -3231,11 +3245,37 @@ export default [
     expect(io.stderrText).toContain('Remote sent 403 response:')
     expect(io.stderrText).toContain('"error"')
     expect(io.stderrText).toContain('user_id')
-    expect(io.stdoutText).toBe('')
+    expect(io.stdoutText).toContain('Partial finding')
+    expect(io.stdoutText).toContain('company/finding')
+    expect(io.stderrText).not.toContain('Partial finding')
     const statsFiles = await readdir(statsDirOf(io))
     const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
     expect(statsRecord.ruleCounts.failed).toBe(1)
     expect(statsRecord.ruleCounts.cancelled).toBe(0)
+  })
+
+  it('keeps JSON stdout parseable when a rule execution fails after partial diagnostics', async () => {
+    const io = await createTestIo()
+    clearCiEnv(io.env)
+
+    await writePartialFailureFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stdoutText).not.toBe('')
+    const output: RunResult = JSON.parse(io.stdoutText)
+    expect(output.diagnostics).toHaveLength(1)
+    expect(output.diagnostics[0]?.message).toBe('Partial finding')
+    expect(output.diagnostics[0]?.ruleId).toBe('company/finding')
+    expect(io.stderrText).toContain('Failed Rules 1')
+    expect(io.stderrText).not.toContain('Partial finding')
   })
 
   it('propagates progress reporter failures through the generic CLI error path', async () => {
@@ -3256,8 +3296,13 @@ export default [
   it('returns execution-failure exit code for cancelled runs', async () => {
     const io = await createTestIo()
     clearCiEnv(io.env)
-    const result = {
-      diagnostics: [],
+    const result: RunResult = {
+      diagnostics: [{
+        filePath: join(io.cwd, 'demo.ts'),
+        message: 'Finding before cancellation',
+        ruleId: 'company/review',
+        severity: 'warn',
+      }],
       execution: { cached: 0, cancelled: 1, completed: 0, failed: 0, planned: 1, queued: 0, running: 0, skipped: 0 },
       usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
     }
@@ -3270,6 +3315,9 @@ export default [
 
       expect(exitCode).toBe(2)
       expect(io.stderrText).toContain('error Alint run cancelled.')
+      expect(io.stdoutText).toContain('Finding before cancellation')
+      expect(io.stdoutText).toContain('company/review')
+      expect(io.stderrText).not.toContain('Finding before cancellation')
       const statsFiles = await readdir(statsDirOf(io))
       const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
       expect(statsRecord.ruleCounts).toEqual({ cached: 0, cancelled: 1, completed: 0, failed: 0, planned: 1 })
