@@ -2496,6 +2496,18 @@ local = "./plugins/local-plugin"
       status: 200,
     },
     {
+      body: null,
+      rawBody: undefined,
+      reason: 'provider returned an invalid models response',
+      status: 200,
+    },
+    {
+      body: { data: [null] },
+      rawBody: undefined,
+      reason: 'provider returned an invalid models response',
+      status: 200,
+    },
+    {
       body: undefined,
       rawBody: '{',
       reason: 'provider returned invalid JSON',

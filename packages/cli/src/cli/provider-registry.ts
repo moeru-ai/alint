@@ -260,8 +260,8 @@ export async function probeModels(endpoint: string, headers: Record<string, stri
     throw new Error(`GET ${buildModelsUrl(endpoint)} returned ${response.status}.`)
   }
 
-  const body = await response.json() as { data?: Array<{ id?: unknown }> }
-  if (!Array.isArray(body.data)) {
+  const body: unknown = await response.json()
+  if (!isRecord(body) || !Array.isArray(body.data) || !body.data.every(isRecord)) {
     throw new TypeError('Expected OpenAI-compatible models response with data array.')
   }
 
@@ -287,6 +287,10 @@ function formatTable(rows: string[][]): string {
     },
     drawHorizontalLine: () => false,
   })
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 function normalizeProviderIdBase(value: string): string {
