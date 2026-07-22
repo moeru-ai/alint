@@ -7,13 +7,20 @@ import { join } from 'node:path'
 import { getDescription } from 'valibot'
 import { describe, expect, it } from 'vitest'
 
+import { reviewRepository } from './agents/repository-review'
+import { resolveRepositoryReviewAgent } from './agents/repository-review/agent'
 import {
   collectResponsibilityBoundaryContext,
   createGoPlugin,
   createReportFindingsToolParameters,
   createResponsibilityBoundaryMessages,
   createTools,
+  duplicatedConversionKnowledgeInstructions,
+  duplicatedConversionKnowledgePrompt,
   goPlugin,
+  noRawSqlBypassingEntInstructions,
+  noRawSqlBypassingEntPrompt,
+  privateProtobufToolkitPrompt,
   reportResponsibilityBoundaryFindings,
   responsibilityBoundaryFindingSchema,
   responsibilityBoundaryPrompt,
@@ -110,6 +117,9 @@ describe('goPlugin', () => {
   it('creates the Go boundary plugin without requiring callers to inject an agent adapter', () => {
     const plugin = createGoPlugin()
 
+    expect(plugin.rules?.['duplicated-conversion-knowledge']).toBeDefined()
+    expect(plugin.rules?.['no-raw-sql-bypassing-ent']).toBeDefined()
+    expect(plugin.rules?.['private-protobuf-toolkit']).toBeDefined()
     expect(plugin.rules?.['responsibility-boundary']).toBeDefined()
     expect(plugin.configs?.example).toEqual(goPlugin.configs?.example)
   })
@@ -121,6 +131,8 @@ describe('goPlugin', () => {
         files: ['**/*.go'],
         language: 'text/plain',
         rules: {
+          'go/duplicated-conversion-knowledge': 'warn',
+          'go/private-protobuf-toolkit': 'warn',
           'go/responsibility-boundary': 'warn',
         },
       },
@@ -147,6 +159,62 @@ describe('goPlugin', () => {
     await getResponsibilityBoundaryRule().create(context).onTargetFile?.(createSourceTarget('file', '/repo/internal/billing/service.ts'))
 
     expect(modelRequests).toBe(0)
+  })
+
+  it('documents Go conversion smells with prompt-only rule modules', () => {
+    expect(privateProtobufToolkitPrompt).toContain('private boundary-translation toolkit')
+    expect(privateProtobufToolkitPrompt).toContain('cluster of at least two local helper functions')
+    expect(privateProtobufToolkitPrompt).toContain('Do not report a short helper solely because it is short')
+
+    expect(duplicatedConversionKnowledgePrompt).toContain('duplicated boundary-translation knowledge')
+    expect(duplicatedConversionKnowledgeInstructions).toContain('Use repository search tools')
+    expect(duplicatedConversionKnowledgeInstructions).toContain('futureFailure')
+    expect(privateProtobufToolkitPrompt).not.toMatch(/protobuf|grpc|structpb|timestamppb|durationpb/i)
+    expect(duplicatedConversionKnowledgePrompt).not.toMatch(/protobuf|grpc|structpb|timestamppb|durationpb/i)
+    expect(duplicatedConversionKnowledgeInstructions).not.toMatch(/protobuf|grpc|structpb|timestamppb|durationpb/i)
+  })
+
+  it('keeps Ent raw SQL bypass review manually opt-in', () => {
+    const exampleConfig = goPlugin.configs?.example
+
+    expect(Array.isArray(exampleConfig)).toBe(true)
+
+    if (!Array.isArray(exampleConfig)) {
+      throw new TypeError('Expected example config to be an array')
+    }
+
+    expect(exampleConfig[0]?.rules).not.toHaveProperty('go/no-raw-sql-bypassing-ent')
+    expect(noRawSqlBypassingEntPrompt).toContain('raw SQL bypasses generated Ent schema ownership')
+    expect(noRawSqlBypassingEntInstructions).toContain('Use repository search tools')
+    expect(noRawSqlBypassingEntInstructions).toContain('escape hatch')
+  })
+
+  it('provides a default repository review agent so TOML configs can enable Go repository rules', () => {
+    expect(resolveRepositoryReviewAgent(createRuleContext())).toBeTypeOf('function')
+  })
+
+  it('keeps exploratory repository read failures inside the agent review', async () => {
+    const context = createRuleContext()
+    context.agent = async (request) => {
+      const readFile = request.tools.find(tool => tool.name === 'read_file')
+      const submitReview = request.tools.find(tool => tool.name === 'submit_review')
+
+      if (!readFile || !submitReview) {
+        throw new Error('Expected repository review tools')
+      }
+
+      await expect(readFile.execute({ path: 'internal/missing.go' })).resolves.toContain('read_file failed:')
+      await submitReview.execute({ findings: [] })
+
+      return { answer: 'submitted' }
+    }
+
+    await expect(reviewRepository(context, createSourceTarget('file'), {
+      allowedCategories: ['example'],
+      instructions: 'Review example.',
+      operation: 'test-review',
+      prompt: 'Review example.',
+    })).resolves.toEqual([])
   })
 })
 
