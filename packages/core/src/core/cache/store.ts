@@ -3,6 +3,7 @@ import type { FileHandle } from 'node:fs/promises'
 import type { RunnerConfig } from '../../config/types'
 import type { ProgressTargetKind } from '../types'
 import type {
+  CachedOwner,
   CacheEntry,
   CacheFileBody,
   CacheFingerprint,
@@ -196,18 +197,27 @@ export async function createCacheStore(options: CacheStoreOptions): Promise<Cach
 
 export function createTargetIdentityResolver(targets: TargetIdentityInput[]) {
   const baseCounts = new Map<string, number>()
+  const duplicateCandidateCounts = new Map<string, number>()
   for (const target of targets) {
     const base = createBaseTargetIdentity(target)
     baseCounts.set(base, (baseCounts.get(base) ?? 0) + 1)
   }
+  for (const target of targets) {
+    const base = createBaseTargetIdentity(target)
+    if ((baseCounts.get(base) ?? 0) <= 1)
+      continue
+    const candidate = target.range ? `${base}:${target.range.start}:${target.range.end}` : base
+    duplicateCandidateCounts.set(candidate, (duplicateCandidateCounts.get(candidate) ?? 0) + 1)
+  }
 
-  return (target: TargetIdentityInput): string => {
+  return (target: TargetIdentityInput, targetIndex: number): string => {
     const base = createBaseTargetIdentity(target)
     if ((baseCounts.get(base) ?? 0) <= 1)
       return base
-    if (target.range)
-      return `${base}:${target.range.start}:${target.range.end}`
-    return base
+    const candidate = target.range ? `${base}:${target.range.start}:${target.range.end}` : base
+    if ((duplicateCandidateCounts.get(candidate) ?? 0) <= 1)
+      return candidate
+    return `${candidate}:${targetIndex}`
   }
 }
 
@@ -259,24 +269,18 @@ function beginOwner(body: CacheFileBody, owner: CacheOwnerIdentity, cwd: string)
   const normalizedOwner = { kind: owner.kind, path: normalizeCachePath(cwd, owner.path) }
   const key = ownerKey(normalizedOwner, cwd)
   const previousOwner = body.owners[key]
-  const previousEntries = new Map<string, CacheEntry>()
-  for (const previousSlot of previousOwner?.slots ?? []) {
-    const previousEntry = body.entries[previousSlot]
-    if (previousEntry)
-      previousEntries.set(previousSlot, previousEntry)
-  }
   const nextEntries = new Map<string, CacheEntry>()
 
   return {
     commit: (metadata = {}) => {
       const committedEntries = metadata.mode === 'merge'
-        ? new Map(previousEntries)
+        ? ownerEntries(body, body.owners[key])
         : new Map<string, CacheEntry>()
       for (const [entryKey, cacheEntry] of nextEntries)
         committedEntries.set(entryKey, cacheEntry)
 
-      // A later overlapping transaction owns the final snapshot. Clear both what it
-      // observed at begin and what another transaction committed in the meantime.
+      // Replace owns the final snapshot; merge rebases on the current snapshot. Clear every
+      // slot visible to either boundary before publishing the computed owner atomically.
       const replacedSlots = new Set([
         ...(previousOwner?.slots ?? []),
         ...(body.owners[key]?.slots ?? []),
@@ -498,6 +502,16 @@ async function loadCacheBody(location: string, expectedHeader: string, readOnly:
       await rm(location, { force: true }).catch(() => {})
     return createEmptyCacheBody()
   }
+}
+
+function ownerEntries(body: CacheFileBody, owner: CachedOwner | undefined): Map<string, CacheEntry> {
+  const entries = new Map<string, CacheEntry>()
+  for (const slot of owner?.slots ?? []) {
+    const cacheEntry = body.entries[slot]
+    if (cacheEntry)
+      entries.set(slot, cacheEntry)
+  }
+  return entries
 }
 
 function ownerKey(owner: CacheOwnerIdentity, cwd: string): string {

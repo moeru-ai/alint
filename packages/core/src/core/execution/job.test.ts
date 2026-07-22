@@ -1,16 +1,15 @@
 import type { EnabledRule } from '../../dsl/types'
 import type { CacheEntry, CacheOwnerTransaction } from '../cache'
 import type { FileTarget } from '../source/types'
-import type { RuleRuntime, RuleRuntimeState, TargetExecutionPlan } from '../targets/types'
 import type { ProgressJobRef } from '../types'
-import type { JobOrderKey, RuleJob } from './types'
+import type { JobOrderKey, RuleJob, RuleRuntime, RuleRuntimeState } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { expect, it } from 'vitest'
 
 import { defineRule } from '../../dsl/define'
-import { compareJobOrder, createRuleJobFactory, createRuleJobs, executeRuleJob } from './job'
+import { compareJobOrder, executeRuleJob } from './job'
 import { createRunProgress } from './progress'
 import { createRuleRuntimes } from './runtime'
 
@@ -75,7 +74,6 @@ it('detaches a completed outcome from the active rule job', async () => {
     target: {
       cacheOwner,
       configHash: 'config-hash',
-      executions: [],
       identity: 'source.ts',
       kind: 'file' as const,
       language: 'typescript',
@@ -368,63 +366,6 @@ it('compares job order by scope, input, target, then prepared rule index', () =>
   ])
 })
 
-it('counts zero-job plans in the scope-local input index', () => {
-  const rule = defineRule({ create: () => ({}) })
-  const runtime: RuleRuntime = {
-    cacheable: false,
-    enabledRule: {
-      id: 'company/review',
-      localId: 'review',
-      options: [],
-      rule,
-      severity: 'warn',
-    },
-    executionState: new AsyncLocalStorage<RuleRuntimeState>(),
-    handlers: {},
-    ruleHash: 'rule-hash',
-    ruleIndex: 3,
-  }
-  const plans: TargetExecutionPlan[] = [
-    {
-      id: 'source:empty.ts',
-      index: 1,
-      kind: 'source',
-      path: '/repo/empty.ts',
-      planned: 0,
-      targets: [],
-    },
-    {
-      id: 'source:review.ts',
-      index: 2,
-      kind: 'source',
-      path: '/repo/review.ts',
-      planned: 1,
-      targets: [{
-        configHash: 'config-hash',
-        executions: [{ run: () => {}, runtime }],
-        identity: 'review.ts',
-        kind: 'file',
-        language: 'typescript',
-        text: 'source',
-      }],
-    },
-  ]
-
-  expect(createRuleJobs(plans)[0]?.orderKey).toEqual({
-    inputIndex: 1,
-    ruleIndex: 3,
-    scope: 'source',
-    targetIndex: 0,
-  })
-
-  const factory = createRuleJobFactory()
-  expect(factory.create([plans[0]!])).toEqual([])
-  expect(factory.create([plans[1]!])[0]).toMatchObject({
-    jobRef: { index: 1 },
-    orderKey: { inputIndex: 1, scope: 'source' },
-  })
-})
-
 function createTestJob(options: {
   cacheOwner?: CacheOwnerTransaction
   executionState: AsyncLocalStorage<RuleRuntimeState>
@@ -460,7 +401,6 @@ function createTestJob(options: {
       activeFilePath: '/repo/source.ts',
       cacheOwner: options.cacheOwner,
       configHash: 'config-hash',
-      executions: [],
       identity: 'source.ts',
       kind: 'file',
       language: 'typescript',

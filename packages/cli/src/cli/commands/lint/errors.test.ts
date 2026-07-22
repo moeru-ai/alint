@@ -11,15 +11,17 @@ const EMPTY_RESULT: RunResult = {
   usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
 }
 
+type AlintRuleFailure = Extract<AlintRunFailure, { job: unknown }>
+
 function failure(
   index: number,
-  kind: AlintRunFailure['kind'],
+  kind: AlintRuleFailure['kind'],
   planPath: string,
-  targetKind: AlintRunFailure['job']['target']['kind'],
+  targetKind: AlintRuleFailure['job']['target']['kind'],
   ruleId: string,
   message: string,
   targetName?: string,
-): AlintRunFailure {
+): AlintRuleFailure {
   return {
     job: {
       id: `job-${index}`,
@@ -63,7 +65,7 @@ describe('formatRunError', () => {
     ].join('\n'))
   })
 
-  it('counts failed rule groups and keeps repeated rule targets in planned order', () => {
+  it('counts failed rule groups and preserves core failure order', () => {
     const error = new AlintRunError('2 rule executions failed', EMPTY_RESULT, {
       failures: [
         failure(2, 'handler', 'src/later.ts', 'file', 'rule/a', 'later target failed'),
@@ -77,10 +79,10 @@ describe('formatRunError', () => {
       'Failed Rules 1',
       '',
       'FAIL rule/a 2 targets',
-      '  src/earlier.ts > file',
-      '    [handler] earlier target failed',
       '  src/later.ts > file',
       '    [handler] later target failed',
+      '  src/earlier.ts > file',
+      '    [handler] earlier target failed',
       '',
     ].join('\n'))
   })
@@ -92,6 +94,37 @@ describe('formatRunError', () => {
     expect(output).toContain('\u001B[41m\u001B[1m FAIL \u001B[22m\u001B[49m rule/a 1 target')
     expect(output).toContain('src/a.ts > function parse')
     expect(output).toContain('[handler] boom')
+  })
+
+  it('formats file failures before rule failures without admission-index sorting', () => {
+    const mixed: AlintRunFailure[] = [
+      { file: { index: 0, path: 'src/read.ts' }, kind: 'read', message: 'cannot read' },
+      { file: { index: 1, path: 'src/extract.ts' }, kind: 'extract', message: 'cannot parse' },
+      failure(9, 'handler', 'src/later.ts', 'file', 'rule/a', 'later failed'),
+      failure(2, 'timeout', 'src/earlier.ts', 'function', 'rule/a', 'earlier timed out', 'parse'),
+    ]
+    const error = new AlintRunError('4 alint executions failed.', EMPTY_RESULT, { failures: mixed })
+
+    expect(formatRunError(error, false)).toBe([
+      'error 4 alint executions failed.',
+      '',
+      'Failed Files 2',
+      '',
+      'FAIL src/read.ts',
+      '  [read] cannot read',
+      '',
+      'FAIL src/extract.ts',
+      '  [extract] cannot parse',
+      '',
+      'Failed Rules 1',
+      '',
+      'FAIL rule/a 2 targets',
+      '  src/later.ts > file',
+      '    [handler] later failed',
+      '  src/earlier.ts > function parse',
+      '    [timeout] earlier timed out',
+      '',
+    ].join('\n'))
   })
 })
 

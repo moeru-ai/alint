@@ -65,12 +65,20 @@ describe('cache helpers', () => {
     const resolveIdentity = createTargetIdentityResolver([
       { kind: 'function', name: 'handler', range: { end: 20, start: 10 } },
       { kind: 'function', name: 'handler', range: { end: 40, start: 30 } },
+      { identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } },
+      { identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } },
+      { identity: 'no-range', kind: 'function' },
+      { identity: 'no-range', kind: 'function' },
       { kind: 'function', name: 'unique', range: { end: 60, start: 50 } },
     ])
 
-    expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 20, start: 10 } })).toBe('function:handler:10:20')
-    expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 40, start: 30 } })).toBe('function:handler:30:40')
-    expect(resolveIdentity({ kind: 'function', name: 'unique', range: { end: 60, start: 50 } })).toBe('function:unique')
+    expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 20, start: 10 } }, 0)).toBe('function:handler:10:20')
+    expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 40, start: 30 } }, 1)).toBe('function:handler:30:40')
+    expect(resolveIdentity({ identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } }, 2)).toBe('function:same-range:10:20:2')
+    expect(resolveIdentity({ identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } }, 3)).toBe('function:same-range:10:20:3')
+    expect(resolveIdentity({ identity: 'no-range', kind: 'function' }, 4)).toBe('function:no-range:4')
+    expect(resolveIdentity({ identity: 'no-range', kind: 'function' }, 5)).toBe('function:no-range:5')
+    expect(resolveIdentity({ kind: 'function', name: 'unique', range: { end: 60, start: 50 } }, 6)).toBe('function:unique')
   })
 })
 
@@ -186,6 +194,29 @@ describe('cache store', () => {
     expect(owner?.slots).toHaveLength(1)
     expect(Object.keys(body.entries).sort()).toEqual(owner?.slots)
     expect(Object.values(body.entries)[0]?.fingerprint.targetHash).toBe('second')
+  })
+
+  it('rebases an overlapping merge on entries committed after the transaction began', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const completed = store.beginOwner({ kind: 'file', path: sourcePath })
+    const partial = store.beginOwner({ kind: 'file', path: sourcePath })
+    completed.put(slot, entry('completed'))
+    partial.put({ ...slot, ruleId: 'demo/partial' }, entry('partial'))
+
+    completed.commit({ contentHash: 'completed' })
+    partial.commit({ contentHash: 'partial', mode: 'merge' })
+    await store.reconcile()
+    const body = await readCacheBody(cachePath)
+    const owner = Object.values(body.owners)[0]
+
+    expect(owner?.slots).toHaveLength(2)
+    expect(Object.keys(body.entries).sort()).toEqual(owner?.slots)
+    expect(Object.values(body.entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['completed', 'partial'])
+    expect(owner?.contentHash).toBe('partial')
   })
 
   it('removes cache bodies with orphan entries', async () => {

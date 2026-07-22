@@ -1,7 +1,9 @@
 import type { ProjectFileEntry, ProjectTargetEntry } from '../../dsl/types'
+import type { CacheOwnerTransaction, CacheStore } from '../cache'
+import type { RuleJob, RuleRuntime, RuleTargetExecution } from '../execution/types'
 import type { ProjectFileSnapshot, ProjectIndex, ProjectTargetSnapshot } from './types'
 
-import { createStableHasher } from '../hash'
+import { createStableHasher, stableHash } from '../hash'
 
 export class ProjectIndexBuilder {
   private readonly files: ProjectFileEntry[] = []
@@ -69,6 +71,46 @@ export class ProjectIndexBuilder {
   }
 }
 
+export function createProjectJobs(options: {
+  cacheStore: CacheStore
+  configHash: string
+  project: ProjectIndex
+  runtimes: RuleRuntime[]
+}): { jobs: RuleJob[], owner?: CacheOwnerTransaction } {
+  const executions = options.runtimes
+    .map(runtime => projectExecution(runtime, options.project.target))
+    .filter((execution): execution is RuleTargetExecution => execution !== undefined)
+  if (executions.length === 0)
+    return { jobs: [] }
+
+  const owner = options.cacheStore.beginOwner({ kind: 'project', path: options.project.target.root })
+  const target = {
+    cacheOwner: owner,
+    cacheTargetHash: options.project.hash,
+    configHash: options.configHash,
+    identity: 'project',
+    kind: 'project' as const,
+    language: 'project',
+    text: options.project.hash,
+  }
+  const jobs = executions.map((execution): RuleJob => {
+    const ruleId = execution.runtime.enabledRule.id
+    return {
+      execution,
+      jobRef: {
+        id: stableHash({ input: options.project.target.root, ruleId, targetIdentity: 'project', targetIndex: 0 }),
+        index: 0,
+        inputPath: options.project.target.root,
+        ruleId,
+        target: { identity: 'project', kind: 'project' },
+      },
+      orderKey: { inputIndex: 0, ruleIndex: execution.runtime.ruleIndex, scope: 'project', targetIndex: 0 },
+      target,
+    }
+  })
+  return { jobs, owner }
+}
+
 function copyDescriptor(descriptor: ProjectTargetEntry): ProjectTargetEntry {
   return {
     filePath: descriptor.filePath,
@@ -102,6 +144,14 @@ function copyTargetSnapshot(target: ProjectTargetSnapshot): ProjectTargetSnapsho
     descriptor: copyDescriptor(target.descriptor),
     semanticHash: target.semanticHash,
   }
+}
+
+function projectExecution(runtime: RuleRuntime, target: ProjectIndex['target']): RuleTargetExecution | undefined {
+  if (runtime.handlers.onTargetWith)
+    return { run: () => runtime.handlers.onTargetWith?.(target), runtime }
+  if (runtime.handlers.onTargetProject)
+    return { run: () => runtime.handlers.onTargetProject?.(target), runtime }
+  return undefined
 }
 
 export type { ProjectFileSnapshot, ProjectIndex, ProjectTargetSnapshot } from './types'

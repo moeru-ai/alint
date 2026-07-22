@@ -95,6 +95,65 @@ describe('runAlint', () => {
     expect(extract).not.toHaveBeenCalled()
   })
 
+  it('keeps unrelated source and directory jobs running after ordered read and extract failures', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-file-failures-'))
+    const missingPath = join(root, 'missing.txt')
+    const badPath = join(root, 'bad.custom')
+    const goodPath = join(root, 'good.custom')
+    let sourceCalls = 0
+    let directoryCalls = 0
+    let projectCalls = 0
+    await writeFile(badPath, 'bad')
+    await writeFile(goodPath, 'good')
+    const rule = defineRule({
+      create: () => ({
+        onTargetDirectory: () => { directoryCalls += 1 },
+        onTargetFile: () => { sourceCalls += 1 },
+        onTargetProject: () => { projectCalls += 1 },
+      }),
+    })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: (file) => {
+            if (file.text === 'bad')
+              throw new Error('custom extraction failed')
+            return [{ file, identity: 'file', kind: 'file', language: 'custom', text: file.text }]
+          },
+          name: 'custom',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    let runError: unknown
+    try {
+      await runAlint({
+        config: defineConfig([
+          { plugins: { company: plugin }, rules: { 'company/review': 'warn' } },
+          { files: ['**/*.custom'], language: 'custom' },
+        ]),
+        cwd: root,
+        directories: [root],
+        files: [missingPath, badPath, goodPath],
+        runner: { cache: false },
+        setupConfig: createSetupConfig(),
+      })
+    }
+    catch (error) {
+      runError = error
+    }
+
+    expect(runError).toBeInstanceOf(AlintRunError)
+    expect((runError as AlintRunError).message).toBe('2 alint executions failed.')
+    expect((runError as AlintRunError).failures[0]).toMatchObject({ file: { index: 0, path: missingPath }, kind: 'read' })
+    expect((runError as AlintRunError).failures[1]).toEqual({ file: { index: 1, path: badPath }, kind: 'extract', message: 'custom extraction failed' })
+    expect(sourceCalls).toBe(1)
+    expect(directoryCalls).toBe(1)
+    expect(projectCalls).toBe(0)
+  })
+
   function createConfig(
     rules: Record<string, RuleDefinition>,
     enabledRules: Record<string, RuleConfigEntry>,
@@ -350,6 +409,98 @@ describe('runAlint', () => {
       { inputPath: firstPath, jobsAdded: 1, jobsTotal: 1 },
       { inputPath: secondPath, jobsAdded: 2, jobsTotal: 3 },
     ])
+  })
+
+  it('keeps file and job progress exact when a later file fails extraction', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-later-extract-progress-'))
+    const firstPath = join(root, 'first.custom')
+    const secondPath = join(root, 'second.custom')
+    const failingPath = join(root, 'failing.custom')
+    await writeFile(firstPath, 'one')
+    await writeFile(secondPath, 'one,two')
+    await writeFile(failingPath, 'fail')
+    const fileReady: Array<{ inputPath: string, jobsAdded: number, jobsTotal: number }> = []
+    let filesTotal: number | undefined
+    let executeEnd: undefined | { final: boolean, jobsTotal: number }
+    let runEnd: undefined | { final: boolean, jobsTotal: number }
+    let projectCalls = 0
+    const rule = defineRule({
+      create: () => ({
+        onTargetFunction: () => {},
+        onTargetProject: () => { projectCalls += 1 },
+      }),
+    })
+    const plugin = definePlugin({
+      languages: {
+        custom: {
+          extensions: ['.custom'],
+          extract: (file) => {
+            if (file.text === 'fail')
+              throw new Error('later extraction failed')
+            return file.text.split(',').map((name, index) => ({
+              file,
+              identity: `${name}:${index}`,
+              kind: 'function' as const,
+              language: 'custom',
+              name,
+              text: name,
+            }))
+          },
+          name: 'custom',
+        },
+      },
+      rules: { review: rule },
+    })
+
+    let runError: unknown
+    try {
+      await runAlint({
+        config: defineConfig([
+          { plugins: { company: plugin }, rules: { 'company/review': 'warn' } },
+          { files: ['**/*.custom'], language: 'custom' },
+        ]),
+        cwd: root,
+        files: [firstPath, secondPath, failingPath],
+        progress: {
+          onExecuteEnd: ({ progress }) => {
+            executeEnd = { final: progress.final, jobsTotal: progress.jobsTotal }
+          },
+          onFileReady: ({ inputPath, jobsAdded, progress }) => {
+            fileReady.push({ inputPath, jobsAdded, jobsTotal: progress.jobsTotal })
+          },
+          onPrepareEnd: (payload) => { filesTotal = payload.filesTotal },
+          onRunEnd: ({ progress }) => {
+            runEnd = { final: progress.final, jobsTotal: progress.jobsTotal }
+          },
+        },
+        runner: { cache: false, ruleConcurrency: 1 },
+        setupConfig: createSetupConfig(),
+      })
+    }
+    catch (error) {
+      runError = error
+    }
+
+    expect(filesTotal).toBe(3)
+    expect(fileReady).toHaveLength(2)
+    expect(fileReady[0]?.inputPath).toBe(firstPath)
+    expect(fileReady[0]?.jobsAdded).toBe(1)
+    expect(fileReady[0]?.jobsTotal).toBe(1)
+    expect(fileReady[1]?.inputPath).toBe(secondPath)
+    expect(fileReady[1]?.jobsAdded).toBe(2)
+    expect(fileReady[1]?.jobsTotal).toBe(3)
+    expect(executeEnd?.final).toBe(true)
+    expect(executeEnd?.jobsTotal).toBe(3)
+    expect(runEnd?.final).toBe(true)
+    expect(runEnd?.jobsTotal).toBe(3)
+    expect(projectCalls).toBe(0)
+    expect(runError).toBeInstanceOf(AlintRunError)
+    expect((runError as AlintRunError).failures[0]).toEqual({
+      file: { index: 2, path: failingPath },
+      kind: 'extract',
+      message: 'later extraction failed',
+    })
+    expect((runError as AlintRunError).result.execution.planned).toBe(3)
   })
 
   it.each([1, 2])('cleans up only admitted jobs when queued reporter call %i fails', async (failureCall) => {
@@ -3105,6 +3256,76 @@ describe('runAlint', () => {
         'beta',
       ])
     })
+
+    it('caches duplicate target identities with the same range in distinct slots', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-duplicate-target-identity-'))
+      const filePath = join(root, 'demo.custom')
+      const cachePath = join(root, '.alintcache')
+      const coldIdentities: string[] = []
+      const warmIdentities: string[] = []
+      let handlerCalls = 0
+      await writeFile(filePath, 'source')
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: (target) => {
+            handlerCalls += 1
+            ctx.report({ message: target.text })
+          },
+        }),
+      })
+      const config = createConfig(
+        { duplicate: rule },
+        { 'company/duplicate': 'warn' },
+        {
+          languages: {
+            custom: {
+              extensions: ['.custom'],
+              extract: file => ['first', 'second'].map(text => ({
+                file,
+                identity: 'same',
+                kind: 'function' as const,
+                language: 'custom',
+                range: { end: 1, start: 0 },
+                text,
+              })),
+              name: 'custom',
+            },
+          },
+        },
+        { language: 'custom' },
+      )
+
+      const cold = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        progress: { onJobQueued: ({ job }) => coldIdentities.push(job.target.identity) },
+        projectTargets: false,
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+      const warm = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        progress: { onJobQueued: ({ job }) => warmIdentities.push(job.target.identity) },
+        projectTargets: false,
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+      const body = await readCacheBody(cachePath)
+
+      expect(handlerCalls).toBe(2)
+      expect(cold.execution.completed).toBe(2)
+      expect(cold.diagnostics.map(diagnostic => diagnostic.message)).toEqual(['first', 'second'])
+      expect(new Set(coldIdentities).size).toBe(2)
+      expect(warmIdentities).toEqual(coldIdentities)
+      expect(warm.execution.cached).toBe(2)
+      expect(warm.execution.completed).toBe(0)
+      expect(warm.diagnostics.map(diagnostic => diagnostic.message)).toEqual(['first', 'second'])
+      expect(Object.values(body.owners)[0]?.slots).toHaveLength(2)
+      expect(Object.keys(body.entries)).toHaveLength(2)
+    })
   })
 
   it('rejects create-time diagnostics even with an explicit filePath', async () => {
@@ -3274,12 +3495,12 @@ describe('runAlint', () => {
     expect(maximum).toBe(3)
   })
 
-  it('keeps the complete result input ordered across sequential and reverse completion', async () => {
+  it('keeps diagnostics, usage, and failures ordered with concurrency 1 and 8', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-opposite-completion-'))
     const filePath = join(root, 'demo.txt')
     await writeFile(filePath, 'hello\n')
 
-    const runWithConcurrency = async (ruleConcurrency: 1 | 2, completionOrder?: number[]) => {
+    const runWithConcurrency = async (ruleConcurrency: 1 | 8, completionOrder?: number[]) => {
       const releases = Array.from({ length: 2 }, () => {
         let release!: () => void
         const promise = new Promise<void>((resolve) => {
@@ -3307,6 +3528,8 @@ describe('runAlint', () => {
             ctx.report({ message: `${name}:diagnostic:2` })
             ctx.metering.recordUsage({ inputTokens: index + 1, modelId: `${name}:model:1`, providerId: 'test' })
             ctx.metering.recordUsage({ modelId: `${name}:model:2`, outputTokens: index + 1, providerId: 'test' })
+            if (name === 'second')
+              throw new Error('second:failure')
           },
         }),
       })]))
@@ -3327,19 +3550,30 @@ describe('runAlint', () => {
           await Promise.resolve()
         }
       }
-      const result = await run
+      let runError: unknown
+      try {
+        await run
+      }
+      catch (error) {
+        runError = error
+      }
+      expect(runError).toBeInstanceOf(AlintRunError)
+      const error = runError as AlintRunError
       return {
+        failures: error.failures,
         observationOrder,
-        projected: result,
+        projected: error.result,
       }
     }
 
     const sequential = await runWithConcurrency(1)
-    const reverse = await runWithConcurrency(2, [1, 0])
+    const reverse = await runWithConcurrency(8, [1, 0])
 
     expect(sequential.observationOrder).toEqual(['first', 'second'])
     expect(reverse.observationOrder).toEqual(['second', 'first'])
     expect(reverse.projected).toEqual(sequential.projected)
+    expect(reverse.failures).toEqual(sequential.failures)
+    expect(sequential.failures).toMatchObject([{ kind: 'handler', message: 'second:failure' }])
     expect(sequential.projected.diagnostics.map(diagnostic => diagnostic.message)).toEqual([
       'first:diagnostic:1',
       'first:diagnostic:2',
@@ -3462,6 +3696,9 @@ describe('runAlint', () => {
     expect(runError).toBeInstanceOf(AlintRunError)
     const failure = (runError as AlintRunError).failures[0]!
     expect(failure.message).toBe('original rule failure')
+    expect('job' in failure).toBe(true)
+    if (!('job' in failure))
+      throw new Error('Expected a rule failure.')
     expect(failure.job.id).not.toContain('mutated')
     expect(failure.job.inputPath).toBe(filePath)
     expect(failure.job.target).toEqual({ identity: originalTargetIdentity, kind: 'file', name: undefined })
@@ -3506,9 +3743,9 @@ describe('runAlint', () => {
 
     expect(runError).toBeInstanceOf(AlintRunCancelledError)
     expect((runError as AlintRunCancelledError).cause).toBe('stop')
-    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 4, queued: 0, running: 0 })
+    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 3, queued: 0, running: 0 })
     expect(starts).toEqual([1])
-    expect(ends).toEqual([2, 3, 4, 1])
+    expect(ends).toEqual([2, 3, 1])
   })
 
   it('aborts the running handler signal and never starts queued jobs after run cancellation', async () => {
@@ -3551,7 +3788,7 @@ describe('runAlint', () => {
     }
 
     expect(runError).toBeInstanceOf(AlintRunCancelledError)
-    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 4, queued: 0, running: 0 })
+    expect((runError as AlintRunCancelledError).result.execution).toMatchObject({ cancelled: 3, queued: 0, running: 0 })
     expect(started).toBe(1)
     expect(observedSignals).toHaveLength(1)
     expect(observedSignals[0]?.aborted).toBe(true)
@@ -4342,6 +4579,84 @@ describe('runAlint', () => {
       expect(calls).toEqual({ first: 1, second: 1 })
       expect(replayed.execution.cached).toBe(1)
       expect(replayed.execution.completed).toBe(1)
+    })
+
+    it('preserves a completed repeated-input owner when a later overlapping session aborts', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-abort-repeated-input-owner-'))
+      const filePath = join(root, 'demo.custom')
+      const cachePath = join(root, '.alintcache')
+      const controller = new AbortController()
+      let handlerCalls = 0
+      let extractionCalls = 0
+      let releaseExtractions!: () => void
+      const extractionsReady = new Promise<void>((resolve) => {
+        releaseExtractions = resolve
+      })
+      await writeFile(filePath, 'hello')
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFile: async () => {
+            handlerCalls += 1
+            if (handlerCalls === 2) {
+              await new Promise<void>((resolve) => {
+                ctx.signal?.addEventListener('abort', () => resolve(), { once: true })
+              })
+              return
+            }
+            ctx.report({ message: 'completed' })
+          },
+        }),
+      })
+      const plugin = definePlugin({
+        languages: {
+          custom: {
+            extensions: ['.custom'],
+            extract: async (file) => {
+              extractionCalls += 1
+              if (extractionCalls === 2)
+                releaseExtractions()
+              await extractionsReady
+              return [{ file, identity: 'file', kind: 'file', language: 'custom', text: file.text }]
+            },
+            name: 'custom',
+          },
+        },
+        rules: { repeated: rule },
+      })
+      const config = defineConfig([
+        { plugins: { company: plugin }, rules: { 'company/repeated': 'warn' } },
+        { files: ['**/*.custom'], language: 'custom' },
+      ])
+
+      await expect(runAlint({
+        config,
+        cwd: root,
+        files: [filePath, filePath],
+        progress: {
+          onJobEnd: ({ job }) => {
+            if (job.index === 1)
+              setTimeout(() => controller.abort('stop repeated input'), 0)
+          },
+        },
+        projectTargets: false,
+        runner: { cache: { location: cachePath }, ruleConcurrency: 2 },
+        setupConfig: createSetupConfig(),
+        signal: controller.signal,
+      })).rejects.toBeInstanceOf(AlintAbortError)
+
+      const replayed = await runAlint({
+        config,
+        cwd: root,
+        files: [filePath],
+        projectTargets: false,
+        runner: { cache: { location: cachePath }, ruleConcurrency: 1 },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(2)
+      expect(replayed.execution.cached).toBe(1)
+      expect(replayed.execution.completed).toBe(0)
+      expect(replayed.diagnostics[0]?.message).toBe('completed')
     })
 
     it('reports an abort as cancellation rather than a rule failure', async () => {

@@ -1,5 +1,4 @@
-import type { RuleRuntime, RuleRuntimeState } from '../targets/types'
-import type { RuleJob, RuleJobOutcome } from './types'
+import type { RuleJob, RuleJobOutcome, RuleRuntime, RuleRuntimeState } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -327,7 +326,6 @@ function createJob(id: string, index: number): RuleJob {
     orderKey: { inputIndex: index, ruleIndex: 0, scope: 'source', targetIndex: 0 },
     target: {
       configHash: 'config-hash',
-      executions: [],
       identity: id,
       kind: 'file',
       language: 'typescript',

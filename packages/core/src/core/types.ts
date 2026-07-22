@@ -2,11 +2,22 @@ import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
 import type { SourceTargetKind } from './source/types'
 
-export interface AlintRunFailure {
+export interface AlintFileFailure {
+  file: {
+    index: number
+    path: string
+  }
+  kind: 'extract' | 'read'
+  message: string
+}
+
+export interface AlintRuleFailure {
   job: ProgressJobRef
   kind: 'cache-replay' | 'handler' | 'timeout'
   message: string
 }
+
+export type AlintRunFailure = AlintFileFailure | AlintRuleFailure
 
 export interface Diagnostic {
   cached?: boolean
@@ -58,7 +69,7 @@ export type InferenceUsageRecord = Omit<RuleInferenceUsageRecord, 'ruleId'> & {
 export interface JobEndPayload extends JobStartPayload {
   cache: 'hit' | 'miss'
   endedAt?: number
-  failure?: AlintRunFailure
+  failure?: AlintRuleFailure
   state: 'cached' | 'cancelled' | 'completed' | 'failed' | 'skipped'
 }
 

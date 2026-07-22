@@ -1,4 +1,4 @@
-import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressJobRef } from '../types'
+import type { AlintRuleFailure, Diagnostic, InferenceUsageRecord, ProgressJobRef } from '../types'
 
 export function snapshotDiagnostic(diagnostic: Diagnostic): Diagnostic {
   const snapshot = { ...diagnostic }
@@ -19,7 +19,7 @@ export function snapshotDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
   return diagnostics.map(snapshotDiagnostic)
 }
 
-export function snapshotFailure(failure: AlintRunFailure): AlintRunFailure {
+export function snapshotFailure(failure: AlintRuleFailure): AlintRuleFailure {
   return {
     job: snapshotProgressJobRef(failure.job),
     kind: failure.kind,

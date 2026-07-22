@@ -4,9 +4,9 @@ import type { RuleContext } from '../../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../../models/types'
 import type { PreparedRule } from '../preparation'
 import type { SourceRuntime } from '../source/types'
-import type { RuleRuntime, RuleRuntimeState } from '../targets/types'
 import type { Diagnostic, ProgressReporter, RunOptions } from '../types'
 import type { RunProgress } from './progress'
+import type { RuleRuntime, RuleRuntimeState } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 

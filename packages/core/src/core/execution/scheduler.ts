@@ -44,6 +44,7 @@ export class RuleScheduler {
   private infrastructureError: unknown
   private infrastructureFailed = false
   private lanes: Lane[] = []
+  private nextAdmissionIndex = 1
   private pumpQueued = false
   private readyLanes: Lane[] = []
   constructor(private readonly options: RuleSchedulerOptions) {
@@ -84,6 +85,8 @@ export class RuleScheduler {
         break
       const index = jobsAdded
       try {
+        job.jobRef.index = this.nextAdmissionIndex
+        this.nextAdmissionIndex += 1
         const progress = this.options.progress.queue()
         jobsAdded += 1
         lane.remaining += 1
@@ -109,6 +112,10 @@ export class RuleScheduler {
     }
 
     return { jobsAdded, outcomes: lane.promise }
+  }
+
+  snapshot() {
+    return this.options.progress.snapshot()
   }
 
   private readonly abort = (): void => {

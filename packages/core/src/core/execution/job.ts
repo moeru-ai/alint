@@ -1,8 +1,7 @@
 import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
-import type { CacheRunContext, RuleExecutionBucket, RuleRuntimeState, TargetExecutionPlan } from '../targets/types'
-import type { AlintRunFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
+import type { AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
 import type { RunProgress } from './progress'
-import type { JobOrderKey, JobScope, RuleJob, RuleJobOutcome, TerminalOutcome } from './types'
+import type { CacheRunContext, JobOrderKey, JobScope, RuleExecutionBucket, RuleJob, RuleJobOutcome, RuleRuntimeState, TerminalOutcome } from './types'
 
 import { errorMessageFrom } from '@moeru/std/error'
 
@@ -20,10 +19,6 @@ export interface ExecuteRuleJobOptions {
 
 export type { RuleJob, RuleJobOutcome } from './types'
 
-export interface RuleJobFactory {
-  create: (plans: readonly TargetExecutionPlan[]) => RuleJob[]
-}
-
 class CacheReplayProcessingError {
   constructor(readonly cause: unknown) {}
 }
@@ -33,23 +28,6 @@ export function compareJobOrder(left: JobOrderKey, right: JobOrderKey): number {
     || left.inputIndex - right.inputIndex
     || left.targetIndex - right.targetIndex
     || left.ruleIndex - right.ruleIndex
-}
-
-export function createRuleJobFactory(): RuleJobFactory {
-  let nextIndex = 1
-  const inputIndexes: Record<JobScope, number> = { directory: 0, project: 0, source: 0 }
-
-  return {
-    create: plans => createRuleJobBatch(plans, inputIndexes, () => {
-      const index = nextIndex
-      nextIndex += 1
-      return index
-    }),
-  }
-}
-
-export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
-  return createRuleJobFactory().create(plans)
 }
 
 export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOptions): Promise<RuleJobOutcome> {
@@ -208,49 +186,6 @@ function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
   }
 }
 
-function createRuleJobBatch(
-  plans: readonly TargetExecutionPlan[],
-  inputIndexes: Record<JobScope, number>,
-  nextIndex: () => number,
-): RuleJob[] {
-  const jobs: RuleJob[] = []
-
-  for (const plan of plans) {
-    const scope = jobScope(plan.kind)
-    const inputIndex = inputIndexes[scope]
-    inputIndexes[scope] += 1
-    for (const [targetIndex, target] of plan.targets.entries()) {
-      for (const execution of target.executions) {
-        const ruleId = execution.runtime.enabledRule.id
-        const index = nextIndex()
-        jobs.push({
-          execution,
-          jobRef: {
-            id: stableHash({ index, planId: plan.id, ruleId, targetIdentity: target.identity }),
-            index,
-            inputPath: plan.path,
-            ruleId,
-            target: {
-              identity: target.identity,
-              kind: target.kind,
-              name: target.name,
-            },
-          },
-          orderKey: {
-            inputIndex,
-            ruleIndex: execution.runtime.ruleIndex,
-            scope,
-            targetIndex,
-          },
-          target,
-        })
-      }
-    }
-  }
-
-  return jobs
-}
-
 function createTargetHash(job: RuleJob): string {
   const target = job.target
   return target.cacheTargetHash ?? stableHash({
@@ -264,7 +199,7 @@ function createTargetHash(job: RuleJob): string {
   })
 }
 
-function failure(cause: unknown, job: RuleJob, kind: AlintRunFailure['kind']): AlintRunFailure {
+function failure(cause: unknown, job: RuleJob, kind: AlintRuleFailure['kind']): AlintRuleFailure {
   return {
     job: snapshotProgressJobRef(job.jobRef),
     kind,
@@ -297,10 +232,6 @@ function finish(
     ...detachedTerminal,
   }
   return outcome
-}
-
-function jobScope(kind: TargetExecutionPlan['kind']): JobScope {
-  return kind
 }
 
 function replayCachedEntry(

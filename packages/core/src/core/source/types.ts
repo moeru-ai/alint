@@ -67,6 +67,14 @@ export interface SourceRuntime {
   sliceLines: (file: SourceFile, range: LineRange) => SourceText
   sliceRange: (file: SourceFile, range: SourceRange) => SourceText
 }
+
+/** Diagnostic counters for asserting the bounded lifetime of live source text. */
+export interface SourceSessionMetrics {
+  active: number
+  closed: number
+  maximumActive: number
+  opened: number
+}
 export interface SourceTarget {
   file: SourceFile
   identity: string

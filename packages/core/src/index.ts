@@ -46,6 +46,8 @@ export type {
   SourceText,
 } from './core/source/types'
 export type {
+  AlintFileFailure,
+  AlintRuleFailure,
   AlintRunFailure,
   Diagnostic,
   DiagnosticProgressPayload,

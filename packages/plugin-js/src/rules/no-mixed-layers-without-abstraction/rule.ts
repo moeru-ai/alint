@@ -139,17 +139,19 @@ export function createMixedLayersWithoutAbstractionRule(
        *
        * Triggering workflow:
        *
-       * `createSourceTargetExecution`
-       *   -> `RuleHandlers.onTargetFile`
-       *     -> {@link onTargetFile}
-       *       -> `mixed-layers-without-abstraction-draft-1`
-       *         -> `mixed-layers-without-abstraction-draft-2`
-       *           -> `mixed-layers-without-abstraction-review`
-       *             -> {@link selectReportedMixedLayerFindings}
-       *               -> {@link reportMixedLayerFindings}
+       * `executeSourceSession`
+       *   -> `sourceExecution`
+       *     -> `RuleHandlers.onTargetFile`
+       *       -> {@link onTargetFile}
+       *         -> `mixed-layers-without-abstraction-draft-1`
+       *           -> `mixed-layers-without-abstraction-draft-2`
+       *             -> `mixed-layers-without-abstraction-review`
+       *               -> {@link selectReportedMixedLayerFindings}
+       *                 -> {@link reportMixedLayerFindings}
        *
        * Upstream:
-       * - `createSourceTargetExecution` in `packages/core/src/core/targets/source.ts`
+       * - `executeSourceSession` owns source extraction, source-backed job lifetime, and
+       *   handler selection through `sourceExecution` in `packages/core/src/core/source/session.ts`
        *
        * Downstream:
        * - {@link generateStructured} -> coverage and data-flow draft
