@@ -1953,14 +1953,24 @@ local = "./plugins/local-plugin"
 
   it.each([
     {
-      error: 'Invalid provider header "invalid". Expected Key=Value.\n',
+      error: 'Invalid provider header. Expected Key=Value.\n',
       header: 'invalid',
+      label: 'missing separator',
+      secret: 'invalid',
+    },
+    {
+      error: 'Invalid provider header. Expected Key=Value.\n',
+      header: 'Authorization Bearer malformed secret\nInjected',
+      label: 'secret and newline without separator',
+      secret: 'malformed secret',
     },
     {
       error: 'Invalid provider header name. Expected an HTTP field-name token.\n',
       header: 'Bad Header=Bearer replacement secret',
+      label: 'invalid field name',
+      secret: 'Bearer replacement secret',
     },
-  ])('rejects invalid update header $header before probing or writing', async ({ error, header }) => {
+  ])('rejects invalid update header: $label', async ({ error, header, secret }) => {
     const io = await createTestIo()
     const configPath = getGlobalSetupConfigPath(io.env)
     await writeSetupConfig(configPath, {
@@ -1997,7 +2007,8 @@ local = "./plugins/local-plugin"
 
       expect(exitCode).toBe(2)
       expect(io.stderrText).toBe(error)
-      expect(io.stderrText).not.toContain('Bearer replacement secret')
+      expect(io.stderrText.split('\n')).toHaveLength(2)
+      expect(io.stderrText).not.toContain(secret)
       expect(probeCount).toBe(0)
       expect(await readFile(configPath, 'utf8')).toBe(before)
     }

@@ -232,7 +232,7 @@ export function parseHeaderList(headers: string[]): Record<string, string> | und
     const separatorIndex = header.indexOf('=')
 
     if (separatorIndex <= 0) {
-      throw new Error(`Invalid provider header "${header}". Expected Key=Value.`)
+      throw new Error('Invalid provider header. Expected Key=Value.')
     }
 
     const name = header.slice(0, separatorIndex)
