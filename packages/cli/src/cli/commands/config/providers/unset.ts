@@ -70,7 +70,7 @@ async function runUnsetProviderCommand(
   }
 
   if (!key.startsWith('headers.') || key.length === 'headers.'.length) {
-    context.io.stderr.write(`unsupported provider key ${JSON.stringify(key)}. expected headers.<name>.\n`)
+    context.io.stderr.write(`unsupported provider key "${escapeLineValue(key)}". expected headers.<name>.\n`)
     return 2
   }
 

@@ -3181,9 +3181,13 @@ local = "./plugins/local-plugin"
     { command: 'set', error: 'unsupported provider key "type". expected endpoint or headers.<name>.\n', tail: ['type', 'openai-compatible'] },
     { command: 'set', error: 'unsupported provider key "headers.". expected endpoint or headers.<name>.\n', tail: ['headers.', 'secret'] },
     { command: 'set', error: 'unsupported provider key "type\\nInjected". expected endpoint or headers.<name>.\n', tail: ['type\nInjected', 'secret'] },
+    { command: 'set', error: 'unsupported provider key "type\\u0085Injected". expected endpoint or headers.<name>.\n', tail: ['type\u0085Injected', 'secret'] },
+    { command: 'set', error: 'unsupported provider key "type\\u001bInjected". expected endpoint or headers.<name>.\n', tail: ['type\u001BInjected', 'secret'] },
     { command: 'unset', error: 'unsupported provider key "type". expected headers.<name>.\n', tail: ['type'] },
     { command: 'unset', error: 'unsupported provider key "headers.". expected headers.<name>.\n', tail: ['headers.'] },
     { command: 'unset', error: 'unsupported provider key "type\\nInjected". expected headers.<name>.\n', tail: ['type\nInjected'] },
+    { command: 'unset', error: 'unsupported provider key "type\\u2028Injected". expected headers.<name>.\n', tail: ['type\u2028Injected'] },
+    { command: 'unset', error: 'unsupported provider key "type\\u2029Injected". expected headers.<name>.\n', tail: ['type\u2029Injected'] },
     { command: 'unset', error: 'provider endpoint cannot be unset.\n', tail: ['endpoint'] },
   ])('rejects invalid provider field mutation: $command $tail', async ({ command, error, tail }) => {
     const io = await createTestIo()
@@ -3213,6 +3217,7 @@ local = "./plugins/local-plugin"
 
     expect(exitCode).toBe(2)
     expect(io.stderrText).toBe(error)
+    expect(io.stderrText.split('\n')).toHaveLength(2)
     expect(io.stdoutText).toBe('')
     expect(await readFile(configPath, 'utf8')).toBe(before)
   })
