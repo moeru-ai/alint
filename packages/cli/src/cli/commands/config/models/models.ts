@@ -1,6 +1,7 @@
 import { defineCommand } from '../../command'
 import { ls } from './ls'
 import { probe } from './probe'
+import { rm } from './rm'
 import { show } from './show'
 
 export const models = defineCommand({
@@ -8,6 +9,7 @@ export const models = defineCommand({
     probe,
     ls,
     show,
+    rm,
   ],
   description: 'Manage configured models',
   help: [

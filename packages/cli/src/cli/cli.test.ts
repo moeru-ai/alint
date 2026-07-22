@@ -1208,6 +1208,365 @@ local = "./plugins/local-plugin"
     expect(io.stderrText).toBe('unknown model "missing".\n')
   })
 
+  it('removes an exact configured model from global setup config without exposing secrets', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        headers: { Authorization: 'Bearer secret' },
+        id: 'example',
+        models: [{ id: 'keep' }, { id: 'remove' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'remove',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(configPath)).providers[0]?.models.map(model => model.id)).toEqual(['keep'])
+    expect(io.stdoutText).toBe('removed model: example/remove\nscope: global\n')
+    expect(io.stdoutText).not.toContain('Bearer secret')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('does not write when an exact model is already absent', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [{ id: 'keep' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'missing',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+    expect(io.stdoutText).toBe('')
+    expect(io.stderrText).toBe('')
+  })
+
+  it.each([
+    { arguments: ['example/remove'], label: 'qualified model id' },
+    { arguments: ['remove', '--provider', 'example'], label: '--provider' },
+  ])('removes a model selected by $label', async ({ arguments: commandArguments }) => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [{ id: 'remove' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      ...commandArguments,
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(configPath)).providers[0]?.models).toEqual([])
+  })
+
+  it('preserves the complete slash-containing model id with --provider', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://openrouter.test/v1',
+        id: 'openrouter',
+        models: [{ id: 'z-ai/glm-5.2' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'z-ai/glm-5.2',
+      '--provider',
+      'openrouter',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(configPath)).providers[0]?.models).toEqual([])
+  })
+
+  it('removes every duplicate exact id within the selected provider', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [{ id: 'qwen', name: 'One' }, { id: 'qwen', name: 'Two' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(configPath)).providers[0]?.models).toEqual([])
+  })
+
+  it('protects a default-aliased duplicate exact id even when it is not first', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [
+          { id: 'qwen', name: 'First' },
+          { aliases: ['default'], id: 'qwen', name: 'Protected' },
+        ],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'cannot remove default model "example/qwen". select another default first.\n',
+    )
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('reports exact model ambiguity in stable provider order without writing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [
+        {
+          endpoint: 'https://first.test/v1',
+          id: 'first',
+          models: [{ id: 'qwen' }],
+          type: 'openai-compatible',
+        },
+        {
+          endpoint: 'https://second.test/v1',
+          id: 'second',
+          models: [{ id: 'qwen' }],
+          type: 'openai-compatible',
+        },
+      ],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe([
+      'ambiguous model id "qwen".',
+      'specify <provider>/<model-id> or pass --provider <provider-id>:',
+      '  first/qwen',
+      '  second/qwen',
+      '',
+    ].join('\n'))
+    expect(io.stdoutText).toBe('')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('reports a qualified-provider conflict before an unknown explicit provider', async () => {
+    const io = await createTestIo()
+    await writeSetupConfig(getGlobalSetupConfigPath(io.env), {
+      providers: [{
+        endpoint: 'https://first.test/v1',
+        id: 'first',
+        models: [{ id: 'qwen' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'first/qwen',
+      '--provider',
+      'missing',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'model provider "first" conflicts with --provider "missing".\n',
+    )
+  })
+
+  it('reports the selected scope for an unknown explicit model provider', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+      '--provider',
+      'missing',
+      '--local',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'unknown provider "missing" in local setup config. Remove --local to inspect global configuration.\n',
+    )
+  })
+
+  it('protects the default model without writing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [{ aliases: ['default'], id: 'qwen' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe(
+      'cannot remove default model "example/qwen". select another default first.\n',
+    )
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
+  it('removes only the project-local model when --local is set', async () => {
+    const io = await createTestIo()
+    const globalPath = getGlobalSetupConfigPath(io.env)
+    const localPath = getProjectSetupConfigPath(io.cwd)
+    const provider = (endpoint: string): SetupConfig['providers'][number] => ({
+      endpoint,
+      id: 'example',
+      models: [{ id: 'qwen' }],
+      type: 'openai-compatible',
+    })
+    await writeSetupConfig(globalPath, { providers: [provider('https://global.test/v1')], version: 1 })
+    await writeSetupConfig(localPath, { providers: [provider('https://local.test/v1')], version: 1 })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+      '--local',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect((await loadSetupConfig(globalPath)).providers[0]?.models.map(model => model.id)).toEqual(['qwen'])
+    expect((await loadSetupConfig(localPath)).providers[0]?.models).toEqual([])
+    expect(io.stdoutText).toBe('removed model: example/qwen\nscope: local\n')
+  })
+
+  it('rejects repeated --provider for model removal without writing', async () => {
+    const io = await createTestIo()
+    const configPath = getGlobalSetupConfigPath(io.env)
+    await writeSetupConfig(configPath, {
+      providers: [{
+        endpoint: 'https://example.test/v1',
+        id: 'example',
+        models: [{ id: 'qwen' }],
+        type: 'openai-compatible',
+      }],
+      version: 1,
+    })
+    const before = await readFile(configPath, 'utf8')
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'models',
+      'rm',
+      'qwen',
+      '--provider',
+      'example',
+      '--provider',
+      'other',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toBe('config models rm accepts --provider only once.\n')
+    expect(await readFile(configPath, 'utf8')).toBe(before)
+  })
+
   it('lists merged config providers without printing header values', async () => {
     const io = await createTestIo()
 
