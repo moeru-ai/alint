@@ -2625,7 +2625,8 @@ export default [
     ], io)
 
     expect(exitCode).toBe(0)
-    expect(io.stderrText).toContain('alint started')
+    expect(io.stderrText).toContain('alint preparing')
+    expect(io.stderrText).toContain('alint prepared: 1 files')
     expect(io.stderrText).toContain('scan ')
     expect(io.stderrText).toContain('alint finished')
     expect(io.stdoutText).toContain('Problem found')
@@ -2895,7 +2896,9 @@ export default [
 
     expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
-    await expect(readFile(cachePath, 'utf8')).resolves.toContain('"entries"')
+    const cacheText = await readFile(cachePath, 'utf8')
+    expect(cacheText.startsWith('ALINT_CACHE 2 ')).toBe(true)
+    expect(cacheText).toContain('"entries"')
 
     io.stdoutText = ''
     io.stderrText = ''

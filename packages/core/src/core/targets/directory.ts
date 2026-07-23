@@ -1,57 +1,41 @@
-import type { DirectoryTarget } from '../../dsl/types'
-import type { ExecutionTarget, RuleRuntime, RuleTargetExecution, TargetExecutionPlan } from './types'
+import type { RuleJob, RuleRuntime, RuleTargetExecution } from '../execution/types'
+import type { PreparedDirectoryInput } from '../preparation'
 
-export interface PreparedDirectory {
-  configHash: string
-  ruleRuntimes: RuleRuntime[]
-  target: DirectoryTarget
+import { stableHash } from '../hash'
+
+export function createDirectoryJobs(input: PreparedDirectoryInput, runtimes: RuleRuntime[]): RuleJob[] {
+  const target = input.target
+  return runtimes.flatMap((runtime): RuleJob[] => {
+    const execution = directoryExecution(runtime, target)
+    if (!execution)
+      return []
+    const ruleId = runtime.enabledRule.id
+    return [{
+      execution,
+      jobRef: {
+        id: stableHash({ directoryIndex: input.directoryIndex, input: target.path, ruleId, targetIdentity: target.path }),
+        index: 0,
+        inputPath: target.path,
+        ruleId,
+        target: { identity: target.path, kind: 'directory' },
+      },
+      orderKey: { inputIndex: input.directoryIndex, ruleIndex: runtime.ruleIndex, scope: 'directory', targetIndex: 0 },
+      target: {
+        activeFilePath: target.path,
+        configHash: input.configHash,
+        identity: target.path,
+        kind: 'directory',
+        language: 'directory',
+        text: target.path,
+      },
+    }]
+  })
 }
 
-export function createDirectoryExecutionPlans(
-  directories: PreparedDirectory[],
-  sourcePlanCount: number,
-): TargetExecutionPlan[] {
-  return directories.map((directory, directoryOffset) => {
-    const executions = directory.ruleRuntimes
-      .map((runtime): RuleTargetExecution | undefined => {
-        if (runtime.handlers.onTargetWith) {
-          return {
-            run: () => runtime.handlers.onTargetWith?.(directory.target),
-            runtime,
-          }
-        }
-
-        if (runtime.handlers.onTargetDirectory) {
-          return {
-            run: () => runtime.handlers.onTargetDirectory?.(directory.target),
-            runtime,
-          }
-        }
-
-        return undefined
-      })
-      .filter((execution): execution is RuleTargetExecution => execution !== undefined)
-    const targets: ExecutionTarget[] = executions.length === 0
-      ? []
-      : [{
-          activeFilePath: directory.target.path,
-          // TODO: (directory-cache-snapshot) Directory caching stays disabled because rule read scope has no stable snapshot contract; revisit only with an owner-approved target-cache design.
-          cacheFilePaths: [],
-          configHash: directory.configHash,
-          executions,
-          identity: directory.target.path,
-          kind: 'directory',
-          language: 'directory',
-          text: directory.target.path,
-        }]
-
-    return {
-      id: `directory:${directory.target.path}`,
-      index: sourcePlanCount + directoryOffset + 1,
-      kind: 'directory',
-      path: directory.target.path,
-      planned: executions.length,
-      targets,
-    }
-  })
+function directoryExecution(runtime: RuleRuntime, target: PreparedDirectoryInput['target']): RuleTargetExecution | undefined {
+  if (runtime.handlers.onTargetWith)
+    return { run: () => runtime.handlers.onTargetWith?.(target), runtime }
+  if (runtime.handlers.onTargetDirectory)
+    return { run: () => runtime.handlers.onTargetDirectory?.(target), runtime }
+  return undefined
 }

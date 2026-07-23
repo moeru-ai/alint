@@ -29,6 +29,7 @@
     "dist"
   ],
   "scripts": {
+    "bench": "vitest bench --config vitest.config.ts",
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run --config vitest.config.ts"

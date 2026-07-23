@@ -31,8 +31,7 @@ describe('resolveStatsWrite', () => {
 describe('createStatsCollector', () => {
   it('captures final counts and duration', () => {
     const collector = createStatsCollector()
-    collector.reporter.onRunStart?.({
-      jobsTotal: 5,
+    collector.reporter.onPrepareStart?.({
       startedAt: 1000,
     })
     collector.reporter.onRunEnd?.(runEnd({
@@ -51,7 +50,7 @@ describe('createStatsCollector', () => {
 
 describe('mergeProgressReporters', () => {
   it('returns the sole reporter or undefined', () => {
-    const reporter = { onRunStart: () => {} }
+    const reporter = { onPrepareStart: () => {} }
     expect(mergeProgressReporters(undefined, reporter)).toBe(reporter)
     expect(mergeProgressReporters()).toBeUndefined()
   })
@@ -68,9 +67,41 @@ describe('mergeProgressReporters', () => {
     expect(events).toEqual(['base', 'extra'])
   })
 
+  it('forwards all preparation and execution stage events to both reporters', () => {
+    const events: string[] = []
+    const stageReporter = (name: string) => ({
+      onExecuteEnd: () => events.push(`${name}:execute:end`),
+      onExecuteStart: () => events.push(`${name}:execute:start`),
+      onFileReady: () => events.push(`${name}:file`),
+      onPrepareEnd: () => events.push(`${name}:prepare:end`),
+      onPrepareStart: () => events.push(`${name}:prepare:start`),
+    })
+    const merged = mergeProgressReporters(stageReporter('base'), stageReporter('extra'))
+    const initial = progress(counts({}))
+
+    merged?.onPrepareStart?.({})
+    merged?.onPrepareEnd?.({ filesTotal: 1 })
+    merged?.onExecuteStart?.({ progress: initial })
+    merged?.onFileReady?.({ fileIndex: 0, inputPath: '/repo/a.ts', jobsAdded: 0, progress: initial })
+    merged?.onExecuteEnd?.({ progress: { ...initial, final: true } })
+
+    expect(events).toEqual([
+      'base:prepare:start',
+      'extra:prepare:start',
+      'base:prepare:end',
+      'extra:prepare:end',
+      'base:execute:start',
+      'extra:execute:start',
+      'base:file',
+      'extra:file',
+      'base:execute:end',
+      'extra:execute:end',
+    ])
+  })
+
   it('forwards retry progress to both reporters', () => {
     const events: string[] = []
-    const payload = { attempt: 1, job: jobStart().job, maxAttempts: 3 }
+    const payload = { attempt: 1, job: jobStart().job, maxAttempts: 3, progress: progress(counts({ planned: 1, running: 1 })) }
     const merged = mergeProgressReporters(
       { onJobRetry: retry => events.push(`base:${retry.attempt}/${retry.maxAttempts}`) },
       { onJobRetry: retry => events.push(`extra:${retry.job.ruleId}`) },
@@ -134,18 +165,22 @@ function jobStart(): JobStartPayload {
       index: 0,
       inputPath: '/repo/a.ts',
       ruleId: 'rule/a',
-      ruleIndex: 1,
-      ruleTotal: 1,
       target: { identity: 'file:0', kind: 'file' },
-      total: 1,
     },
+    progress: progress(counts({ planned: 1, running: 1 })),
   }
+}
+
+function progress(execution: RunEndPayload['execution'], final = false): RunEndPayload['progress'] {
+  const jobsCompleted = execution.cached + execution.cancelled + execution.completed + execution.failed + execution.skipped
+  return { execution, filesTotal: 0, final, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned }
 }
 
 function runEnd(overrides: Partial<RunEndPayload> = {}): RunEndPayload {
   return {
     diagnostics: [],
     execution: counts({}),
+    progress: progress(counts({}), true),
     usage: EMPTY_USAGE,
     ...overrides,
   }

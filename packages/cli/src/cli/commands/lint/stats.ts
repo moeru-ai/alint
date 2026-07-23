@@ -1,5 +1,5 @@
 import type { RunnerConfig } from '@alint-js/config'
-import type { ProgressReporter, RunEndPayload, RunResult, RunStartPayload } from '@alint-js/core'
+import type { PrepareStartPayload, ProgressReporter, RunEndPayload, RunResult } from '@alint-js/core'
 
 import type { RunRuleCounts } from '../../stats'
 
@@ -27,6 +27,9 @@ export function createStatsCollector(): StatsCollector {
     counts,
     durationMs: () => (startedAt !== undefined && endedAt !== undefined ? endedAt - startedAt : undefined),
     reporter: {
+      onPrepareStart: (payload: PrepareStartPayload) => {
+        startedAt = payload.startedAt
+      },
       onRunEnd: (payload: RunEndPayload) => {
         counts.cached = payload.execution.cached
         counts.cancelled = payload.execution.cancelled
@@ -34,9 +37,6 @@ export function createStatsCollector(): StatsCollector {
         counts.failed = payload.execution.failed
         counts.planned = payload.execution.planned
         endedAt = payload.endedAt
-      },
-      onRunStart: (payload: RunStartPayload) => {
-        startedAt = payload.startedAt
       },
     },
   }
@@ -81,6 +81,15 @@ export function mergeProgressReporters(
     onDiagnostic: (payload) => {
       deliverBoth(reporter => reporter.onDiagnostic?.(payload))
     },
+    onExecuteEnd: (payload) => {
+      deliverBoth(reporter => reporter.onExecuteEnd?.(payload))
+    },
+    onExecuteStart: (payload) => {
+      deliverBoth(reporter => reporter.onExecuteStart?.(payload))
+    },
+    onFileReady: (payload) => {
+      deliverBoth(reporter => reporter.onFileReady?.(payload))
+    },
     onJobEnd: (payload) => {
       deliverBoth(reporter => reporter.onJobEnd?.(payload))
     },
@@ -93,13 +102,16 @@ export function mergeProgressReporters(
     onJobStart: (payload) => {
       deliverBoth(reporter => reporter.onJobStart?.(payload))
     },
+    onPrepareEnd: (payload) => {
+      deliverBoth(reporter => reporter.onPrepareEnd?.(payload))
+    },
+    onPrepareStart: (payload) => {
+      deliverBoth(reporter => reporter.onPrepareStart?.(payload))
+    },
     onRunEnd: (payload) => {
       deliverBoth(reporter => reporter.onRunEnd?.(payload))
       if (firstFailure)
         throw firstFailure
-    },
-    onRunStart: (payload) => {
-      deliverBoth(reporter => reporter.onRunStart?.(payload))
     },
     onUsage: (payload) => {
       deliverBoth(reporter => reporter.onUsage?.(payload))

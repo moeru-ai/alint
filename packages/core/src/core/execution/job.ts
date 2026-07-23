@@ -1,119 +1,69 @@
-import type { CacheEntry } from '../cache'
-import type { CacheRunContext, ExecutionTarget, RuleExecutionBucket, RuleRuntimeState, RuleTargetExecution, TargetExecutionPlan } from '../targets/types'
-import type { AlintRunFailure, Diagnostic, ProgressJob, ProgressReporter } from '../types'
+import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
+import type { AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
+import type { RunProgress } from './progress'
+import type { CacheRunContext, JobOrderKey, JobScope, RuleExecutionBucket, RuleJob, RuleJobOutcome, RuleRuntimeState, TerminalOutcome } from './types'
 
 import { errorMessageFrom } from '@moeru/std/error'
 
-import packageJson from '../../../package.json'
-
-import { createCacheKey, normalizeCachePath, stableHash } from '../cache'
+import { stableHash } from '../hash'
+import { snapshotDiagnostic, snapshotDiagnostics, snapshotFailure, snapshotProgressJobRef, snapshotUsage, snapshotUsageRecords } from './records'
 
 export interface ExecuteRuleJobOptions {
   cache: CacheRunContext
   cacheOnly?: boolean
-  clock: () => number
   progress?: ProgressReporter
+  runProgress: RunProgress
   runSignal?: AbortSignal
-  startedAt: number
   timeoutMs?: number
 }
 
-export interface RuleJob {
-  execution: RuleTargetExecution
-  job: ProgressJob
-  target: ExecutionTarget
-}
-
-export type RuleJobOutcome = RuleJobOutcomeBase & (
-  | { cache: 'hit', cause?: never, failure?: never, state: 'cached' }
-  | { cache: 'hit' | 'miss', cause: unknown, failure: AlintRunFailure, state: 'failed' }
-  | { cache: 'miss', cause?: never, failure?: never, state: 'cancelled' | 'completed' | 'skipped' }
-)
-
-interface RuleJobOutcomeBase {
-  bucket: RuleExecutionBucket
-  job: RuleJob
-}
+export type { RuleJob, RuleJobOutcome } from './types'
 
 class CacheReplayProcessingError {
   constructor(readonly cause: unknown) {}
 }
 
-export function createRuleJobs(plans: TargetExecutionPlan[]): RuleJob[] {
-  const jobs: RuleJob[] = []
-  const total = plans.reduce((sum, plan) => sum + plan.planned, 0)
-  const ruleTotals = new Map<string, number>()
-  const ruleIndexes = new Map<string, number>()
-
-  for (const plan of plans) {
-    for (const target of plan.targets) {
-      for (const execution of target.executions) {
-        const ruleId = execution.runtime.enabledRule.id
-        ruleTotals.set(ruleId, (ruleTotals.get(ruleId) ?? 0) + 1)
-      }
-    }
-  }
-
-  for (const plan of plans) {
-    for (const target of plan.targets) {
-      for (const execution of target.executions) {
-        const ruleId = execution.runtime.enabledRule.id
-        const index = jobs.length + 1
-        const ruleIndex = (ruleIndexes.get(ruleId) ?? 0) + 1
-        ruleIndexes.set(ruleId, ruleIndex)
-        jobs.push({
-          execution,
-          job: {
-            id: stableHash({ index, planId: plan.id, ruleId, targetIdentity: target.identity }),
-            index,
-            inputPath: plan.path,
-            ruleId,
-            ruleIndex,
-            ruleTotal: ruleTotals.get(ruleId) ?? 0,
-            target: {
-              identity: target.identity,
-              kind: target.kind,
-              name: target.name,
-            },
-            total,
-          },
-          target,
-        })
-      }
-    }
-  }
-
-  return jobs
+export function compareJobOrder(left: JobOrderKey, right: JobOrderKey): number {
+  return scopeRank(left.scope) - scopeRank(right.scope)
+    || left.inputIndex - right.inputIndex
+    || left.targetIndex - right.targetIndex
+    || left.ruleIndex - right.ruleIndex
 }
 
 export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOptions): Promise<RuleJobOutcome> {
   const bucket: RuleExecutionBucket = { diagnostics: [], usage: [] }
   if (options.runSignal?.aborted)
-    return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
+    return finish(job, bucket, { cache: 'miss', state: 'cancelled' })
 
-  const cacheKey = createExecutionCacheKey(job, options.cache)
-  const cachedEntry = cacheKey ? options.cache.store.get(cacheKey) : undefined
-  if (cacheKey && cachedEntry) {
-    rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
+  const slot: CacheSlotIdentity | undefined = job.target.cacheOwner && job.execution.runtime.cacheable
+    ? {
+        ruleId: job.execution.runtime.enabledRule.id,
+        scope: job.target.kind,
+        targetIdentity: job.target.identity,
+      }
+    : undefined
+  const fingerprint = slot ? createFingerprint(job, options.cache.modelHash) : undefined
+  const cachedEntry = slot && fingerprint ? job.target.cacheOwner?.lookup(slot, fingerprint) : undefined
+  if (slot && cachedEntry) {
     try {
-      replayCachedEntry(cachedEntry, bucket, job.job, options.progress)
+      replayCachedEntry(cachedEntry, bucket, job.jobRef, options.progress, options.runProgress)
     }
     catch (error) {
       if (!(error instanceof CacheReplayProcessingError))
         throw error
-      return finish(job, options, bucket, {
+      job.target.cacheOwner?.discard(slot)
+      return finish(job, bucket, {
         cache: 'hit',
-        cause: error.cause,
         failure: failure(error.cause, job, 'cache-replay'),
         state: 'failed',
       })
     }
 
-    return finish(job, options, bucket, { cache: 'hit', state: 'cached' })
+    return finish(job, bucket, { cache: 'hit', state: 'cached' })
   }
 
   if (options.cacheOnly)
-    return finish(job, options, bucket, { cache: 'miss', state: 'skipped' })
+    return finish(job, bucket, { cache: 'miss', state: 'skipped' })
 
   const controller = new AbortController()
   let timedOut = false
@@ -135,8 +85,10 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   const state: RuleRuntimeState = {
     activeFilePath: job.target.activeFilePath,
     bucket,
-    job: job.job,
+    jobRef: job.jobRef,
     reporterFailed: false,
+    runProgress: options.runProgress,
+    sealed: false,
     signal: controller.signal,
   }
   let handlerCause: unknown
@@ -153,6 +105,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     handlerFailed = true
   }
   finally {
+    state.sealed = true
     if (timer != null)
       clearTimeout(timer)
     options.runSignal?.removeEventListener('abort', forwardRunAbort)
@@ -161,10 +114,28 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   if (state.reporterFailed)
     throw state.reporterCause
 
-  if (!timedOut && !handlerFailed && cacheKey) {
+  if (options.runSignal?.aborted)
+    return finish(job, bucket, { cache: 'miss', state: 'cancelled' })
+
+  if (timedOut) {
+    return finish(job, bucket, {
+      cache: 'miss',
+      failure: failure(deadlineError, job, 'timeout'),
+      state: 'failed',
+    })
+  }
+
+  if (handlerFailed) {
+    return finish(job, bucket, {
+      cache: 'miss',
+      failure: failure(handlerCause, job, 'handler'),
+      state: 'failed',
+    })
+  }
+
+  if (slot && fingerprint) {
     try {
-      options.cache.store.set(cacheKey, createCacheEntry(job, options.cache, bucket))
-      rememberCacheEntry(options.cache, job.target.cacheFilePaths, cacheKey)
+      job.target.cacheOwner?.put(slot, createCacheEntry(job, fingerprint, bucket))
     }
     catch {
       // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
@@ -172,28 +143,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
     }
   }
 
-  if (options.runSignal?.aborted)
-    return finish(job, options, bucket, { cache: 'miss', state: 'cancelled' })
-
-  if (timedOut) {
-    return finish(job, options, bucket, {
-      cache: 'miss',
-      cause: deadlineError,
-      failure: failure(deadlineError, job, 'timeout'),
-      state: 'failed',
-    })
-  }
-
-  if (handlerFailed) {
-    return finish(job, options, bucket, {
-      cache: 'miss',
-      cause: handlerCause,
-      failure: failure(handlerCause, job, 'handler'),
-      state: 'failed',
-    })
-  }
-
-  return finish(job, options, bucket, { cache: 'miss', state: 'completed' })
+  return finish(job, bucket, { cache: 'miss', state: 'completed' })
 }
 
 export function resolveRuleExecutionTimeout(timeoutMs: number | undefined): number | undefined {
@@ -204,48 +154,41 @@ export function resolveRuleExecutionTimeout(timeoutMs: number | undefined): numb
   return timeoutMs
 }
 
-function createCacheEntry(job: RuleJob, cache: CacheRunContext, bucket: RuleExecutionBucket): CacheEntry {
+function createCacheEntry(job: RuleJob, fingerprint: CacheFingerprint, bucket: RuleExecutionBucket): CacheEntry {
   return {
-    diagnostics: bucket.diagnostics,
-    filePath: normalizeCachePath(cache.cwd, job.job.inputPath),
-    fingerprint: {
-      alintVersion: packageJson.version,
-      configHash: job.target.configHash,
-      modelHash: cache.modelHash,
-      ruleHash: job.execution.runtime.ruleHash,
-    },
+    diagnostics: snapshotDiagnostics(bucket.diagnostics),
+    fingerprint,
     target: {
-      hash: createTargetHash(job),
+      hash: fingerprint.targetHash,
       identity: job.target.identity,
       kind: job.target.kind,
-      loc: job.target.loc,
+      loc: job.target.loc
+        ? {
+            end: { column: job.target.loc.end.column, line: job.target.loc.end.line },
+            start: { column: job.target.loc.start.column, line: job.target.loc.start.line },
+          }
+        : undefined,
       name: job.target.name,
-      range: job.target.range,
+      range: job.target.range
+        ? { end: job.target.range.end, start: job.target.range.start }
+        : undefined,
     },
-    usage: bucket.usage,
+    usage: snapshotUsageRecords(bucket.usage),
   }
 }
 
-function createExecutionCacheKey(job: RuleJob, cache: CacheRunContext): string | undefined {
-  if (!cache.enabled || !job.execution.runtime.cacheable || job.target.cacheFilePaths.length === 0)
-    return undefined
-
-  return createCacheKey({
-    alintVersion: packageJson.version,
+function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
+  return {
     configHash: job.target.configHash,
-    filePath: normalizeCachePath(cache.cwd, job.job.inputPath),
-    modelHash: cache.modelHash,
+    modelHash,
     ruleHash: job.execution.runtime.ruleHash,
-    schemaVersion: 1,
     targetHash: createTargetHash(job),
-    targetIdentity: job.target.identity,
-    targetKind: job.target.kind,
-  })
+  }
 }
 
 function createTargetHash(job: RuleJob): string {
   const target = job.target
-  return stableHash({
+  return target.cacheTargetHash ?? stableHash({
     language: target.language,
     loc: target.loc,
     metadata: target.metadata,
@@ -256,50 +199,47 @@ function createTargetHash(job: RuleJob): string {
   })
 }
 
-function failure(cause: unknown, job: RuleJob, kind: AlintRunFailure['kind']): AlintRunFailure {
+function failure(cause: unknown, job: RuleJob, kind: AlintRuleFailure['kind']): AlintRuleFailure {
   return {
-    job: job.job,
+    job: snapshotProgressJobRef(job.jobRef),
     kind,
-    message: errorMessageFrom(cause) ?? String(cause),
+    message: failureMessage(cause),
+  }
+}
+
+function failureMessage(cause: unknown): string {
+  try {
+    return errorMessageFrom(cause) ?? 'Unknown rule failure.'
+  }
+  catch {
+    return 'Unknown rule failure.'
   }
 }
 
 function finish(
   job: RuleJob,
-  options: ExecuteRuleJobOptions,
   bucket: RuleExecutionBucket,
-  terminal: RuleJobOutcome extends infer Outcome
-    ? Outcome extends RuleJobOutcome
-      ? Omit<Outcome, 'bucket' | 'job'>
-      : never
-    : never,
+  terminal: TerminalOutcome,
 ): RuleJobOutcome {
-  const outcome = { bucket, job, ...terminal } as RuleJobOutcome
-  options.progress?.onJobEnd?.({
-    cache: outcome.cache,
-    endedAt: options.clock(),
-    failure: outcome.failure,
-    job: job.job,
-    startedAt: options.startedAt,
-    state: outcome.state,
-  })
-  return outcome
-}
-
-function rememberCacheEntry(cache: CacheRunContext, filePaths: string[], cacheKey: string): void {
-  for (const filePath of filePaths) {
-    const normalizedPath = normalizeCachePath(cache.cwd, filePath)
-    const entries = cache.fileEntryKeys.get(normalizedPath) ?? new Set<string>()
-    entries.add(cacheKey)
-    cache.fileEntryKeys.set(normalizedPath, entries)
+  const detachedTerminal: TerminalOutcome = terminal.state === 'failed'
+    ? { ...terminal, failure: snapshotFailure(terminal.failure) }
+    : terminal
+  const outcome: RuleJobOutcome = {
+    diagnostics: snapshotDiagnostics(bucket.diagnostics),
+    jobRef: snapshotProgressJobRef(job.jobRef),
+    orderKey: { ...job.orderKey },
+    usage: snapshotUsageRecords(bucket.usage),
+    ...detachedTerminal,
   }
+  return outcome
 }
 
 function replayCachedEntry(
   entry: CacheEntry,
   bucket: RuleExecutionBucket,
-  job: ProgressJob,
+  job: ProgressJobRef,
   progress: ProgressReporter | undefined,
+  runProgress: RunProgress,
 ): void {
   let diagnostics: CacheEntry['diagnostics']
   let usage: CacheEntry['usage']
@@ -312,13 +252,22 @@ function replayCachedEntry(
   }
 
   for (const cachedDiagnostic of diagnostics) {
-    const diagnostic: Diagnostic = { ...cachedDiagnostic, cached: true }
+    const diagnostic: Diagnostic = snapshotDiagnostic({ ...cachedDiagnostic, cached: true })
     bucket.diagnostics.push(diagnostic)
-    progress?.onDiagnostic?.({ diagnostic, job })
+    progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJobRef(job), progress: runProgress.snapshot() })
   }
 
   for (const record of usage) {
-    bucket.usage.push(record)
-    progress?.onUsage?.({ job, record })
+    const usageRecord = snapshotUsage(record)
+    bucket.usage.push(usageRecord)
+    progress?.onUsage?.({ job: snapshotProgressJobRef(job), progress: runProgress.snapshot(), record: snapshotUsage(usageRecord) })
   }
+}
+
+function scopeRank(scope: JobScope): number {
+  if (scope === 'source')
+    return 0
+  if (scope === 'directory')
+    return 1
+  return 2
 }

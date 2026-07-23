@@ -1,9 +1,32 @@
+import type { ProjectFileEntry, ProjectTargetEntry } from './index'
+
 import { number, object, optional } from 'valibot'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import { defineConfig, definePlugin, defineRule } from './define'
 
 describe('define helpers', () => {
+  it('exports compact project descriptors from the DSL entrypoint', () => {
+    expectTypeOf<keyof ProjectFileEntry>().toEqualTypeOf<'contentHash' | 'language' | 'path' | 'targetCount'>()
+    expectTypeOf<keyof ProjectTargetEntry>().toEqualTypeOf<'filePath' | 'identity' | 'kind' | 'name' | 'range'>()
+  })
+
+  it('defines compact project handlers that read source lazily', () => {
+    const projectRule = defineRule({
+      create: ctx => ({
+        async onTargetProject(project) {
+          for (const entry of project.files) {
+            const file = await ctx.src.readFile(entry.path)
+            if (file.text.includes('deprecated-api'))
+              ctx.report({ filePath: entry.path, message: 'deprecated API used' })
+          }
+        },
+      }),
+    })
+
+    expect(projectRule.create).toBeTypeOf('function')
+  })
+
   it('exposes all target lifecycle handlers from a rule', () => {
     const onTargetClass = () => {}
     const onTargetDirectory = () => {}

@@ -11,6 +11,7 @@ import type {
   ProcessorContext,
   ProcessorPostprocessContext,
   SourceFile,
+  SourceRange,
   SourceRuntime,
   SourceTarget,
 } from '../core/source/types'
@@ -103,11 +104,26 @@ export interface ProcessorDefinition {
   ) => Awaitable<ProcessedSource[]>
 }
 
+export interface ProjectFileEntry {
+  contentHash: string
+  language: string
+  path: string
+  targetCount: number
+}
+
 export interface ProjectTarget {
-  files: SourceFile[]
+  files: readonly ProjectFileEntry[]
   kind: 'project'
   root: string
-  targets: SourceTarget[]
+  targets: readonly ProjectTargetEntry[]
+}
+
+export interface ProjectTargetEntry {
+  filePath: string
+  identity: string
+  kind: string
+  name?: string
+  range?: SourceRange
 }
 
 export type RuleCacheConfig = boolean | { level?: 'target' }

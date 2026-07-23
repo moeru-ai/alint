@@ -2,11 +2,22 @@ import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
 import type { SourceTargetKind } from './source/types'
 
-export interface AlintRunFailure {
-  job: ProgressJob
+export interface AlintFileFailure {
+  file: {
+    index: number
+    path: string
+  }
+  kind: 'extract' | 'read'
+  message: string
+}
+
+export interface AlintRuleFailure {
+  job: ProgressJobRef
   kind: 'cache-replay' | 'handler' | 'timeout'
   message: string
 }
+
+export type AlintRunFailure = AlintFileFailure | AlintRuleFailure
 
 export interface Diagnostic {
   cached?: boolean
@@ -25,7 +36,8 @@ export interface Diagnostic {
 
 export interface DiagnosticProgressPayload {
   diagnostic: Diagnostic
-  job: ProgressJob
+  job: ProgressJobRef
+  progress: ProgressSnapshot
 }
 
 export interface ExecutionCounts {
@@ -40,6 +52,16 @@ export interface ExecutionCounts {
   skipped: number
 }
 
+export interface ExecutionProgressPayload {
+  progress: ProgressSnapshot
+}
+
+export interface FileReadyPayload extends ExecutionProgressPayload {
+  fileIndex: number
+  inputPath: string
+  jobsAdded: number
+}
+
 export type InferenceUsageRecord = Omit<RuleInferenceUsageRecord, 'ruleId'> & {
   ruleId: string
 }
@@ -47,50 +69,72 @@ export type InferenceUsageRecord = Omit<RuleInferenceUsageRecord, 'ruleId'> & {
 export interface JobEndPayload extends JobStartPayload {
   cache: 'hit' | 'miss'
   endedAt?: number
-  failure?: AlintRunFailure
+  failure?: AlintRuleFailure
   state: 'cached' | 'cancelled' | 'completed' | 'failed' | 'skipped'
 }
 
 export interface JobQueuedPayload {
-  job: ProgressJob
+  job: ProgressJobRef
+  progress: ProgressSnapshot
 }
 
 export interface JobRetryPayload {
   attempt: number
-  job: ProgressJob
+  job: ProgressJobRef
   maxAttempts: number
+  progress: ProgressSnapshot
   startedAt?: number
 }
 
 export interface JobStartPayload {
-  job: ProgressJob
+  job: ProgressJobRef
+  progress: ProgressSnapshot
   startedAt?: number
 }
 
-export interface ProgressJob {
+export interface PrepareEndPayload extends PrepareStartPayload {
+  endedAt?: number
+  filesTotal: number
+}
+
+export interface PrepareStartPayload {
+  startedAt?: number
+}
+
+export interface ProgressJobRef {
   id: string
   index: number
   inputPath: string
   ruleId: string
-  ruleIndex: number
-  ruleTotal: number
   target: {
     identity: string
     kind: ProgressTargetKind
     name?: string
   }
-  total: number
 }
 
 export interface ProgressReporter {
   onDiagnostic?: (payload: DiagnosticProgressPayload) => void
+  onExecuteEnd?: (payload: ExecutionProgressPayload & { endedAt?: number }) => void
+  onExecuteStart?: (payload: ExecutionProgressPayload & { startedAt?: number }) => void
+  onFileReady?: (payload: FileReadyPayload) => void
   onJobEnd?: (payload: JobEndPayload) => void
   onJobQueued?: (payload: JobQueuedPayload) => void
   onJobRetry?: (payload: JobRetryPayload) => void
   onJobStart?: (payload: JobStartPayload) => void
+  onPrepareEnd?: (payload: PrepareEndPayload) => void
+  onPrepareStart?: (payload: PrepareStartPayload) => void
   onRunEnd?: (payload: RunEndPayload) => void
-  onRunStart?: (payload: RunStartPayload) => void
   onUsage?: (payload: UsageProgressPayload) => void
+}
+
+export interface ProgressSnapshot {
+  execution: ExecutionCounts
+  filesTotal: number
+  final: boolean
+  jobsCompleted: number
+  jobsStarted: number
+  jobsTotal: number
 }
 
 export type ProgressTargetKind = SourceTargetKind
@@ -99,6 +143,7 @@ export interface RunEndPayload {
   diagnostics: Diagnostic[]
   endedAt?: number
   execution: ExecutionCounts
+  progress: ProgressSnapshot
   startedAt?: number
   usage: RunUsage
 }
@@ -144,11 +189,6 @@ export interface RunResult {
   usage: RunUsage
 }
 
-export interface RunStartPayload {
-  jobsTotal: number
-  startedAt?: number
-}
-
 export interface RunUsage {
   cached?: RunUsageTotals
   inputTokens: number
@@ -165,6 +205,7 @@ export interface RunUsageTotals {
 }
 
 export interface UsageProgressPayload {
-  job: ProgressJob
+  job: ProgressJobRef
+  progress: ProgressSnapshot
   record: InferenceUsageRecord
 }

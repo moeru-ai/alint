@@ -1,4 +1,4 @@
-import type { ExecutionCounts, ProgressJob } from '@alint-js/core'
+import type { ExecutionCounts, ProgressJobRef, ProgressSnapshot } from '@alint-js/core'
 
 import { describe, expect, it, vi } from 'vitest'
 
@@ -19,15 +19,17 @@ function counts(overrides: Partial<ExecutionCounts> = {}): ExecutionCounts {
   }
 }
 
-const JOB: ProgressJob = {
+const JOB: ProgressJobRef = {
   id: 'job:1',
   index: 1,
   inputPath: 'src/input.ts',
   ruleId: 'company/require-title',
-  ruleIndex: 1,
-  ruleTotal: 1,
   target: { identity: 'function:loadConfig', kind: 'function', name: 'loadConfig' },
-  total: 2,
+}
+
+function progressSnapshot(execution = counts(), final = false): ProgressSnapshot {
+  const jobsCompleted = execution.cached + execution.cancelled + execution.completed + execution.failed + execution.skipped
+  return { execution, filesTotal: 1, final, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned }
 }
 
 describe('createPlainProgressReporter', () => {
@@ -35,19 +37,22 @@ describe('createPlainProgressReporter', () => {
     const chunks: string[] = []
     const reporter = createPlainProgressReporter({ write: chunk => chunks.push(chunk) })
 
-    reporter.onRunStart?.({ jobsTotal: 2 })
-    reporter.onJobStart?.({ job: JOB })
+    reporter.onPrepareStart?.({})
+    reporter.onPrepareEnd?.({ filesTotal: 1 })
+    reporter.onJobStart?.({ job: JOB, progress: progressSnapshot(counts({ planned: 2, queued: 1, running: 1 })) })
     reporter.onRunEnd?.({
       diagnostics: [
         { filePath: JOB.inputPath, message: 'warned', ruleId: JOB.ruleId, severity: 'warn' },
         { filePath: JOB.inputPath, message: 'errored', ruleId: JOB.ruleId, severity: 'error' },
       ],
       execution: counts({ cached: 1, completed: 1, planned: 2 }),
+      progress: progressSnapshot(counts({ cached: 1, completed: 1, planned: 2 }), true),
       usage: { inputTokens: 10, outputTokens: 14, records: [], totalTokens: 24 },
     })
 
     expect(chunks.join('')).toBe([
-      'alint started: 2 queued jobs',
+      'alint preparing',
+      'alint prepared: 1 files',
       'scan src/input.ts > function loadConfig > company/require-title',
       'alint finished: 1 warn, 1 error, 24 tokens, 1 completed, 1 cached, 0 failed, 0 cancelled, 0 skipped',
       '',
@@ -62,6 +67,7 @@ describe('createPlainProgressReporter', () => {
     reporter.onRunEnd?.({
       diagnostics: [],
       execution: counts({ cancelled: 1, failed: 1, planned: 2 }),
+      progress: progressSnapshot(counts({ cancelled: 1, failed: 1, planned: 2 }), true),
       usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
     })
 
@@ -81,10 +87,10 @@ describe('createCliProgressReporter', () => {
       write: chunk => chunks.push(chunk),
     })
 
-    progress.reporter.onRunStart?.({ jobsTotal: 1 })
+    progress.reporter.onPrepareStart?.({})
     progress.dispose()
 
-    expect(chunks).toEqual(['alint started: 1 queued jobs\n'])
+    expect(chunks).toEqual(['alint preparing\n'])
   })
 
   it('renders queued and started jobs through the TTY summary', () => {
@@ -100,11 +106,12 @@ describe('createCliProgressReporter', () => {
     })
     const current = { ...JOB, inputPath: '/repo/src/input.ts', ruleId: 'rule/current' }
 
-    progress.reporter.onRunStart?.({ jobsTotal: 1 })
-    progress.reporter.onJobQueued?.({ job: current })
-    progress.reporter.onJobStart?.({ job: current })
+    progress.reporter.onPrepareStart?.({})
+    progress.reporter.onExecuteStart?.({ progress: progressSnapshot(counts()) })
+    progress.reporter.onJobQueued?.({ job: current, progress: progressSnapshot(counts({ planned: 1, queued: 1 })) })
+    progress.reporter.onJobStart?.({ job: current, progress: progressSnapshot(counts({ planned: 1, running: 1 })) })
     expect(progress.reporter.onJobRetry).toBeTypeOf('function')
-    expect(() => progress.reporter.onJobRetry?.({ attempt: 1, job: current, maxAttempts: 3 })).not.toThrow()
+    expect(() => progress.reporter.onJobRetry?.({ attempt: 1, job: current, maxAttempts: 3, progress: progressSnapshot(counts({ planned: 1, running: 1 })) })).not.toThrow()
 
     expect(chunks.join('\n')).toContain('⠋ rule/current 0/1 0% [░░░░░░░░░░] eta ? 1 running')
     expect(chunks.join('\n')).toContain('   └─ src/input.ts > function loadConfig 1/3 retrying elapsed 0.0s')

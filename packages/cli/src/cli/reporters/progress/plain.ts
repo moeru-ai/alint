@@ -3,7 +3,6 @@ import type {
   JobStartPayload,
   ProgressReporter,
   RunEndPayload,
-  RunStartPayload,
 } from '@alint-js/core'
 
 export interface PlainProgressReporterOptions {
@@ -22,6 +21,8 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
 
       writeLine(`scan ${payload.job.inputPath} > ${target} > ${payload.job.ruleId}`)
     },
+    onPrepareEnd: ({ filesTotal }) => writeLine(`alint prepared: ${filesTotal} files`),
+    onPrepareStart: () => writeLine('alint preparing'),
     onRunEnd: (payload: RunEndPayload) => {
       const warnCount = countDiagnostics(payload.diagnostics, 'warn')
       const errorCount = countDiagnostics(payload.diagnostics, 'error')
@@ -29,9 +30,6 @@ export function createPlainProgressReporter(options: PlainProgressReporterOption
       const { cached, cancelled, completed, failed, skipped } = payload.execution
 
       writeLine(`alint ${state}: ${warnCount} warn, ${errorCount} error, ${payload.usage.totalTokens} tokens, ${completed} completed, ${cached} cached, ${failed} failed, ${cancelled} cancelled, ${skipped} skipped`)
-    },
-    onRunStart: (payload: RunStartPayload) => {
-      writeLine(`alint started: ${payload.jobsTotal} queued jobs`)
     },
   }
 }
