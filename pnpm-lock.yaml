@@ -72,6 +72,9 @@ catalogs:
     cac:
       specifier: ^7.0.0
       version: 7.0.0
+    chokidar:
+      specifier: ^5.0.0
+      version: 5.0.0
     cli-spinners:
       specifier: ^3.4.0
       version: 3.4.0
@@ -444,7 +447,10 @@ importers:
         version: 0.0.7(@valibot/to-json-schema@1.7.1(valibot@1.4.2(typescript@6.0.3)))
       c12:
         specifier: 'catalog:'
-        version: 4.0.0-beta.5(jiti@2.7.0)(magicast@0.5.3)
+        version: 4.0.0-beta.5(chokidar@5.0.0)(jiti@2.7.0)(magicast@0.5.3)
+      chokidar:
+        specifier: 'catalog:'
+        version: 5.0.0
       es-toolkit:
         specifier: 'catalog:'
         version: 1.49.0
@@ -3147,6 +3153,10 @@ packages:
   character-reference-invalid@1.1.4:
     resolution: {integrity: sha512-mKKUkUbhPpQlCOfIuZkvSEgktjPFIsZKRRbC6KWVEMvlzblj3i3asQv5ODsrwt0N3pHAEvjP8KTQPHkp0+6jOg==}
 
+  chokidar@5.0.0:
+    resolution: {integrity: sha512-TQMmc3w+5AxjpL8iIiwebF73dRDF4fBIieAqGn9RGCWaEVwQ6Fb2cGe31Yns0RRIzii5goJ1Y7xbMwo1TxMplw==}
+    engines: {node: '>= 20.19.0'}
+
   ci-info@4.4.0:
     resolution: {integrity: sha512-77PSwercCZU2Fc4sX94eF8k8Pxte6JAwL4/ICZLFjJLqegs7kCuAsqqj/70NQF6TvDpgFjkubQB2FW2ZZddvQg==}
     engines: {node: '>=8'}
@@ -4672,6 +4682,10 @@ packages:
 
   rc9@3.0.1:
     resolution: {integrity: sha512-gMDyleLWVE+i6Sgtc0QbbY6pEKqYs97NGi6isHQPqYlLemPoO8dxQ3uGi0f4NiP98c+jMW6cG1Kx9dDwfvqARQ==}
+
+  readdirp@5.0.0:
+    resolution: {integrity: sha512-9u/XQ1pvrQtYyMpZe7DXKv2p5CNvyVwzUB6uhLAnQwHMSgKMBR62lc7AHljaeteeHXn11XTAaLLUVZYVZyuRBQ==}
+    engines: {node: '>= 20.19.0'}
 
   refa@0.12.1:
     resolution: {integrity: sha512-J8rn6v4DBb2nnFqkqwy6/NnTYMcgLA+sLr0iIO41qpv0n+ngb7ksag2tMRl0inb1bbO/esUwzW1vbJi7K0sI0g==}
@@ -7473,7 +7487,7 @@ snapshots:
 
   bytes@3.1.2: {}
 
-  c12@4.0.0-beta.5(jiti@2.7.0)(magicast@0.5.3):
+  c12@4.0.0-beta.5(chokidar@5.0.0)(jiti@2.7.0)(magicast@0.5.3):
     dependencies:
       confbox: 0.2.4
       defu: 6.1.7
@@ -7482,6 +7496,7 @@ snapshots:
       pkg-types: 2.3.1
       rc9: 3.0.1
     optionalDependencies:
+      chokidar: 5.0.0
       jiti: 2.7.0
       magicast: 0.5.3
 
@@ -7510,6 +7525,10 @@ snapshots:
   character-entities@2.0.2: {}
 
   character-reference-invalid@1.1.4: {}
+
+  chokidar@5.0.0:
+    dependencies:
+      readdirp: 5.0.0
 
   ci-info@4.4.0: {}
 
@@ -9431,6 +9450,8 @@ snapshots:
     dependencies:
       defu: 6.1.7
       destr: 2.0.5
+
+  readdirp@5.0.0: {}
 
   refa@0.12.1:
     dependencies:

@@ -24,6 +24,7 @@
     "@package-json/types": "catalog:",
     "apeira": "catalog:",
     "c12": "catalog:",
+    "chokidar": "catalog:",
     "es-toolkit": "catalog:",
     "jiti": "catalog:",
     "minimatch": "catalog:",

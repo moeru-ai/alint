@@ -56,6 +56,7 @@ catalog:
   bumpp: ^11.1.0
   c12: ^4.0.0-beta.5
   cac: ^7.0.0
+  chokidar: ^5.0.0
   cli-spinners: ^3.4.0
   cspell: ^10.0.1
   doctoc: ^2.5.0
