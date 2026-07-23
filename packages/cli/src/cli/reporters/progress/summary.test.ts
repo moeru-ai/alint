@@ -572,17 +572,21 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋', '⠙'],
     })
 
-    reporter.onRunStart?.({ jobsTotal: 10, startedAt: 0 })
-    for (let index = 1; index <= 5; index++) {
-      const current = { ...job(index), ruleId: 'rule/progress', ruleIndex: index, ruleTotal: 10 }
-      reporter.onJobQueued?.({ job: current })
+    reporter.beginFixedRun({ jobsTotal: 10, startedAt: 0 })
+    const jobs = Array.from({ length: 10 }, (_, offset) => ({
+      ...job(offset + 1),
+      ruleId: 'rule/progress',
+      ruleIndex: offset + 1,
+    }))
+    for (const current of jobs)
+      reporter.onJobQueued({ job: current })
+    for (const current of jobs.slice(0, 5)) {
       reporter.onJobStart?.({ job: current, startedAt: 0 })
       reporter.onJobEnd?.({ cache: 'miss', job: current, startedAt: 0, state: 'completed' })
     }
 
-    const running = { ...job(6), ruleId: 'rule/progress', ruleIndex: 6, ruleTotal: 10 }
-    reporter.onJobQueued?.({ job: running })
-    reporter.onJobStart?.({ job: running, startedAt: 0 })
+    for (const running of jobs.slice(5, 6))
+      reporter.onJobStart?.({ job: running, startedAt: 0 })
     reporter.tick()
     reporter.tick()
 

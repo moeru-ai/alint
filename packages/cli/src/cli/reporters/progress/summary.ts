@@ -50,8 +50,8 @@ interface RuleGroup {
 type StoredRuleGroup = Omit<RuleGroup, 'jobs'>
 
 interface SummaryState {
-  animationTick: number
   activeJobs: Map<string, JobState>
+  animationTick: number
   cachedTokens: number
   errorCount: number
   execution: ExecutionCounts
@@ -222,8 +222,8 @@ function createCounts(planned = 0): ExecutionCounts {
 
 function createInitialState(): SummaryState {
   return {
-    animationTick: 0,
     activeJobs: new Map(),
+    animationTick: 0,
     cachedTokens: 0,
     errorCount: 0,
     execution: createCounts(),
