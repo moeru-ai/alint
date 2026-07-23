@@ -5,6 +5,15 @@ import { extname } from 'node:path'
 
 import { clamp } from 'es-toolkit'
 
+export interface SourceRuntimeOptions {
+  /**
+   * Replaces the disk read, so a test can hand a rule synthetic file content. The other members
+   * need no override: `getText` and the slicers are pure functions over whatever `readFile`
+   * returned.
+   */
+  readFile?: SourceRuntime['readFile']
+}
+
 export function createSourceFile(path: string, text: string): SourceFile {
   return {
     language: inferLanguage(path),
@@ -14,10 +23,10 @@ export function createSourceFile(path: string, text: string): SourceFile {
   }
 }
 
-export function createSourceRuntime(): SourceRuntime {
+export function createSourceRuntime(options: SourceRuntimeOptions = {}): SourceRuntime {
   return {
     getText,
-    readFile: async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8')),
+    readFile: options.readFile ?? (async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8'))),
     sliceLines,
     sliceRange,
   }

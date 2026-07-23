@@ -3,6 +3,7 @@ import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
 
 import type { ReinventedHelperFinding } from './index'
 
+import { createSourceRuntime } from '@alint-js/core'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -46,31 +47,14 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
     options: [],
     report: () => {},
     settings: {},
-    src: {
-      getText: target => target.text,
+    src: createSourceRuntime({
       readFile: async filePath => ({
         language: 'text/plain',
         lines: [''],
         path: filePath,
         text: '',
       }),
-      sliceLines: (file, range) => ({
-        filePath: file.path,
-        loc: {
-          end: { column: 0, line: range.endLine },
-          start: { column: 0, line: range.startLine },
-        },
-        text: file.lines.slice(range.startLine - 1, range.endLine).join('\n'),
-      }),
-      sliceRange: (file, range) => ({
-        filePath: file.path,
-        loc: {
-          end: { column: range.end, line: 1 },
-          start: { column: range.start, line: 1 },
-        },
-        text: file.text.slice(range.start, range.end),
-      }),
-    },
+    }),
   }
 }
 
