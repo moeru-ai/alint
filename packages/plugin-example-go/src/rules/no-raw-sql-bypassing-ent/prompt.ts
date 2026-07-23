@@ -5,7 +5,7 @@ Use repository search tools and read relevant definitions before reporting. This
 
 Evidence ladder:
 1. Establish that the repository has generated Ent schema/query ownership for the storage area under review. Read the relevant generated package, schema package, model package, or Ent client wrapper far enough to identify the typed owner.
-2. Inspect the target for raw SQL capability exposure or use: returning the underlying database handle, returning the configured SQL dialect for caller branching, calling raw query/exec APIs, embedding SQL statements, or importing low-level SQL builders outside a focused datastore primitive.
+2. Inspect the target for raw SQL capability exposure or use: returning the underlying database handle, returning the configured SQL dialect for caller branching, calling raw query/exec APIs, embedding SQL statements, or constructing table/field SQL fragments that run outside Ent's generated query/mutation pipeline.
 3. Compare the raw SQL path with the typed Ent path. Report only when the raw SQL path re-encodes table names, field names, predicates, joins, ordering, updates, locking, pagination, or status transitions that should be expressed through the generated schema owner or fixed by improving that schema/model layer.
 4. For CTEs, subqueries, dialect branches, or lock-specific SQL, do not assume raw SQL is acceptable. Ask whether the schema/model layer should expose a deeper operation, predicate, edge, index, hook, mutation helper, transaction primitive, or repository method instead.
 
@@ -17,6 +17,8 @@ Every finding must:
 - provide concrete remediation direction, usually to remove the escape hatch or move the operation behind a schema/model/storage owner
 
 Submit an empty review when Ent ownership is not established, the code is generated/test/fixture/migration-only, or the raw SQL is already contained inside a focused datastore primitive whose callers do not see SQL handles, dialect decisions, or table/field knowledge.
+
+Ent custom predicates are not raw SQL bypasses by themselves. Do not report code that uses Ent's generated predicate hook, such as predicate.<Entity>(func(selector *sql.Selector) { ... }), when the selector only feeds a generated Query().Where(...), Mutation.Where(...), or generated order option and execution still goes through Ent. Report it only if the code also exposes SQL handles/fragments to callers or executes raw SQL outside Ent.
 `.trim()
 
 export const noRawSqlBypassingEntPrompt = `
@@ -34,6 +36,7 @@ Do not report:
 - tests, fixtures, or one-off migration scripts
 - storage procedures that are deliberately database-owned APIs and are called through a narrow repository method
 - raw SQL fully hidden behind a focused datastore primitive whose public interface does not expose SQL handles, dialect branching, table names, field names, or query fragments
+- Ent custom predicate hooks such as predicate.<Entity>(func(selector *sql.Selector) { ... }) when they remain inside generated Ent Query().Where(...), Mutation.Where(...), or order options
 - generic transaction helpers that keep callers on Ent transactions or typed repository operations
 
 Return warnings only. If the proof is incomplete, submit an empty review.
