@@ -192,6 +192,9 @@ catalogs:
     unplugin-unused:
       specifier: ^0.5.7
       version: 0.5.7
+    unrun:
+      specifier: ^0.3.1
+      version: 0.3.1
     valibot:
       specifier: ^1.4.2
       version: 1.4.2
@@ -302,7 +305,7 @@ importers:
         version: 19.14.1
       tsdown:
         specifier: 'catalog:'
-        version: 0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))
+        version: 0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(unrun@0.3.1(synckit@0.11.13))
       tsx:
         specifier: 'catalog:'
         version: 4.23.1
@@ -318,6 +321,9 @@ importers:
       unplugin-unused:
         specifier: 'catalog:'
         version: 0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+      unrun:
+        specifier: 'catalog:'
+        version: 0.3.1(synckit@0.11.13)
       vite:
         specifier: 'catalog:'
         version: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
@@ -659,7 +665,7 @@ importers:
         version: 0.1.13
       tsdown:
         specifier: 'catalog:'
-        version: 0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))
+        version: 0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(unrun@0.3.1(synckit@0.11.13))
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -5105,6 +5111,16 @@ packages:
       vite:
         optional: true
       webpack:
+        optional: true
+
+  unrun@0.3.1:
+    resolution: {integrity: sha512-onIck/oNnCaytwths1ZVp1LK2Gq2hPoyFhiHebObuUXqR3S0uHuLLaBK8K6mRRgV7Ptip8AnNvaUsgzwWwBZuA==}
+    engines: {node: ^22.13.0 || >=24.0.0}
+    hasBin: true
+    peerDependencies:
+      synckit: ^0.11.11
+    peerDependenciesMeta:
+      synckit:
         optional: true
 
   update-browserslist-db@1.2.3:
@@ -9753,7 +9769,7 @@ snapshots:
     dependencies:
       typescript: 6.0.3
 
-  tsdown@0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))):
+  tsdown@0.22.8(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.21.3)(publint@0.3.21)(tsx@4.23.1)(typescript@6.0.3)(unplugin-unused@0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(unrun@0.3.1(synckit@0.11.13)):
     dependencies:
       ansis: 4.3.1
       cac: 7.0.0
@@ -9776,6 +9792,7 @@ snapshots:
       tsx: 4.23.1
       typescript: 6.0.3
       unplugin-unused: 0.5.7(esbuild@0.28.1)(rolldown@1.1.5)(rollup@4.62.2)(vite@8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+      unrun: 0.3.1(synckit@0.11.13)
     transitivePeerDependencies:
       - '@ts-macro/tsc'
       - '@typescript/native-preview'
@@ -9927,6 +9944,12 @@ snapshots:
       rolldown: 1.1.5
       rollup: 4.62.2
       vite: 8.1.4(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
+
+  unrun@0.3.1(synckit@0.11.13):
+    dependencies:
+      rolldown: 1.1.5
+    optionalDependencies:
+      synckit: 0.11.13
 
   update-browserslist-db@1.2.3(browserslist@4.28.6):
     dependencies:

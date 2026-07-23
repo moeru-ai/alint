@@ -53,6 +53,7 @@
     "typescript": "catalog:",
     "unplugin-raw": "catalog:",
     "unplugin-unused": "catalog:",
+    "unrun": "catalog:",
     "vite": "catalog:",
     "vitest": "catalog:vitest"
   }
