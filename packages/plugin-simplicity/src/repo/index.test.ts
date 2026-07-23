@@ -23,6 +23,9 @@ function createContext(): RuleContext {
     report: () => {},
     settings: {},
     src: {
+      extract: () => {
+        throw new Error('unused')
+      },
       getText: target => target.text,
       readFile: () => {
         throw new Error('unused')

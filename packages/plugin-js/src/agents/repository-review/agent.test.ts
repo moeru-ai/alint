@@ -44,6 +44,7 @@ function createContext(agent: AgentAdapter, recordUsage = vi.fn()): RuleContext 
     report: () => {},
     settings: {},
     src: {
+      extract: () => Promise.reject(new Error('not used by this test')), // stub
       getText: nextTarget => nextTarget.text,
       readFile: async filePath => ({ language: 'typescript', lines: [], path: filePath, text: '' }),
       sliceLines: (file, range) => ({

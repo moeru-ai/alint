@@ -189,6 +189,7 @@ function createRuleContext(): RuleContext {
     report: vi.fn(),
     settings: {},
     src: {
+      extract: () => Promise.reject(new Error('not used by this preset')), // stub
       getText: source => source.text,
       readFile: async filePath => ({
         language: 'python',

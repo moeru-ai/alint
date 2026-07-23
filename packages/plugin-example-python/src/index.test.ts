@@ -62,6 +62,7 @@ function createRuleContext(): RuleContext {
     report: () => {},
     settings: {},
     src: {
+      extract: () => Promise.reject(new Error('not used by this rule')), // stub
       getText: target => target.text,
       readFile: async filePath => ({
         language: 'text/plain',

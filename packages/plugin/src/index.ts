@@ -5,12 +5,14 @@ export type {
   AlintConfigItem,
   AlintLinterOptions,
   Awaitable,
+  CallSite,
   ClassTarget,
   DiagnosticDescriptor,
   DiagnosticLocation,
   DirectoryTarget,
   EnabledRule,
   FileTarget,
+  FunctionInfo,
   FunctionTarget,
   IgnoreConfig,
   LanguageContext,
@@ -64,3 +66,6 @@ export {
   RetryableAgentError,
 } from '@alint-js/core/agent'
 export { defineConfig, definePlugin, defineRule } from '@alint-js/core/dsl'
+// Via the subpath, never the root: the root would pull core's whole runtime into this dist. See the
+// note on `@alint-js/core/languages`.
+export { requireLanguage } from '@alint-js/core/languages'

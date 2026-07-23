@@ -5,6 +5,17 @@ import { extname } from 'node:path'
 
 import { clamp } from 'es-toolkit'
 
+export interface SourceRuntimeOptions {
+  /**
+   * Extraction for arbitrary files, injected by the run.
+   *
+   * The runtime cannot do this itself: extraction resolves the file's own config, and importing
+   * config resolution here would point the source module back at the layers built on top of it.
+   * `runAlint` has the config in scope before it builds the runtime, so it passes the closure down.
+   */
+  extract?: SourceRuntime['extract']
+}
+
 export function createSourceFile(path: string, text: string): SourceFile {
   return {
     language: inferLanguage(path),
@@ -14,8 +25,9 @@ export function createSourceFile(path: string, text: string): SourceFile {
   }
 }
 
-export function createSourceRuntime(): SourceRuntime {
+export function createSourceRuntime(options: SourceRuntimeOptions = {}): SourceRuntime {
   return {
+    extract: options.extract ?? extractUnwired,
     getText,
     readFile: async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8')),
     sliceLines,
@@ -76,6 +88,16 @@ function clampLine(line: number, lineCount: number): number {
 
 function clampOffset(offset: number, textLength: number): number {
   return clamp(Math.trunc(offset), 0, textLength)
+}
+
+/**
+ * A runtime built outside a run has no config to resolve a file against, and guessing one would be
+ * worse than saying so: the language a file resolves to is a config decision.
+ */
+function extractUnwired(filePath: string): Promise<SourceTarget[]> {
+  return Promise.reject(new TypeError(
+    `Cannot extract "${filePath}": this source runtime was created without an extractor, so there is no config to resolve the file's language against. Only the runtime a run hands to rules (ctx.src) can extract.`,
+  ))
 }
 
 function getPosition(text: string, offset: number): SourcePosition {

@@ -32,6 +32,9 @@ export function createFixtureContext(overrides: Partial<RuleContext> = {}): Rule
     settings: {},
     // A fresh object per context: the index is memoized on `src`, and one context is one run.
     src: {
+      extract: () => {
+        throw new Error('unused')
+      },
       getText: target => target.text,
       readFile: () => {
         throw new Error('unused')

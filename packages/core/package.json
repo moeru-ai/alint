@@ -19,6 +19,10 @@
       "types": "./dist/structured-output.d.mts",
       "default": "./dist/structured-output.mjs"
     },
+    "./languages": {
+      "types": "./dist/languages.d.mts",
+      "default": "./dist/languages.mjs"
+    },
     "./languages/js": {
       "types": "./dist/languages-js.d.mts",
       "default": "./dist/languages-js.mjs"

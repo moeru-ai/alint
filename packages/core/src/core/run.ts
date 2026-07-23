@@ -1,8 +1,11 @@
 import type { AgentAdapter } from '../agent/types'
+import type { EffectiveAlintConfig } from '../config/config-array'
 import type { SetupConfig } from '../config/types'
-import type { DirectoryTarget, RuleContext } from '../dsl/types'
+import type { DirectoryTarget, LanguageDefinition, RuleContext } from '../dsl/types'
 import type { ModelRequirement, ResolvedModel } from '../models/types'
 import type { RuleJobOutcome } from './execution/job'
+import type { LanguageRegistry } from './languages'
+import type { SourceExtractOptions, SourceFile, SourceRuntime, SourceTarget } from './source/types'
 import type { PreparedDirectory } from './targets/directory'
 import type { CacheRunContext, PreparedFile, PreparedFileExecutionPlan, RuleRuntime, RuleRuntimeState } from './targets/types'
 import type { AlintRunFailure, Diagnostic, InferenceUsageRecord, ProgressReporter, RunOptions, RunResult, RunUsage, RunUsageTotals } from './types'
@@ -62,7 +65,10 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
   const clock = Date.now
-  const src = createSourceRuntime()
+  // Keyed on what can change the answer, so a rule and an index builder asking for the same file
+  // parse it once. The run is the lifetime: the config is fixed for its duration.
+  const extractions = new Map<string, Promise<SourceTarget[]>>()
+  const src: SourceRuntime = createSourceRuntime({ extract: extractFile })
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
     cwd,
@@ -82,6 +88,72 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     store: cacheStore,
   }
 
+  /*
+   * `src.extract`, for files the run was never asked to lint.
+   *
+   * It resolves the target file's own config rather than reusing the caller's, because the language
+   * registry is per resolved config: two config groups may register different plugins, and the
+   * group the file falls in is the one that gets to say what it is. Hoisting a run-wide registry
+   * here would change that.
+   */
+  async function extractFile(filePath: string, extractOptions: SourceExtractOptions = {}): Promise<SourceTarget[]> {
+    const file = await src.readFile(resolve(cwd, filePath))
+    const resolvedConfig = resolveConfigForFile(file.path, config, { cwd })
+
+    // Index builders sweep whole trees, so hitting an ignored file is routine. Nothing extracted is
+    // the honest answer; throwing here would make every caller guard.
+    if (resolvedConfig.ignored) {
+      return []
+    }
+
+    const effectiveConfig = resolvedConfig.config
+    const languagePin = extractOptions.language ?? effectiveConfig.language
+
+    // The registry is resolved lazily: it allocates and re-registers every language, and an index
+    // builder asking about a file the run already linted must not pay for that.
+    return extractOnce(
+      file,
+      effectiveConfig,
+      languagePin,
+      () => resolveLanguage(file, languageRegistryFor(effectiveConfig), { language: languagePin }),
+    )
+  }
+
+  /**
+   * The run's one extraction of one file, shared by the lint path and by `src.extract`.
+   *
+   * Both reach the same file for different reasons — the run lints it, an index builder sweeps it —
+   * and without a shared memo a plugin that does both parses every linted file twice.
+   *
+   * The path stands in for the config: within a run `resolveConfigForFile` is deterministic, so the
+   * same path always resolves the same way. The text is hashed because a file can be rewritten
+   * mid-run, and the pin is in the key because one caller may ask twice under different pins.
+   */
+  function extractOnce(
+    file: SourceFile,
+    effectiveConfig: EffectiveAlintConfig,
+    languagePin: string | undefined,
+    resolveLanguageFor: () => LanguageDefinition,
+  ): Promise<SourceTarget[]> {
+    const key = stableHash({
+      language: languagePin ?? null,
+      languageOptions: effectiveConfig.languageOptions,
+      path: file.path,
+      text: hashText(file.text),
+    })
+
+    let extraction = extractions.get(key)
+
+    if (extraction === undefined) {
+      extraction = Promise.resolve(
+        resolveLanguageFor().extract(file, { cwd, languageOptions: effectiveConfig.languageOptions, src }),
+      )
+      extractions.set(key, extraction)
+    }
+
+    return extraction
+  }
+
   const pendingFiles = [...(options.files ?? [])]
   const pendingDirectories = [...(options.directories ?? [])]
 
@@ -94,16 +166,9 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     }
 
     const effectiveConfig = resolvedConfig.config
-    const languageRegistry = createBuiltInLanguageRegistry()
-
-    for (const plugin of Object.values(effectiveConfig.plugins)) {
-      for (const language of Object.values(plugin.languages ?? {})) {
-        registerLanguage(languageRegistry, language)
-      }
-    }
-
-    const language = resolveLanguage(file, languageRegistry, { language: effectiveConfig.language })
-    const targets = await language.extract(file, { cwd, languageOptions: effectiveConfig.languageOptions, src })
+    // Resolved here rather than inside `extractOnce` because the cache key below needs its name.
+    const language = resolveLanguage(file, languageRegistryFor(effectiveConfig), { language: effectiveConfig.language })
+    const targets = await extractOnce(file, effectiveConfig, effectiveConfig.language, () => language)
     const registry = buildRuleRegistry(effectiveConfig)
 
     const ruleRuntimes = createRuleRuntimes({
@@ -454,6 +519,27 @@ function executionCounts(outcomes: RuleJobOutcome[]): RunResult['execution'] {
   for (const outcome of outcomes)
     counts[outcome.state] += 1
   return counts
+}
+
+/**
+ * One registry per resolved config, rather than one shared by the whole run.
+ *
+ * A config is a list of items, and a file's effective config is the merge of every item whose
+ * patterns match it, so two files can end up with different plugins. Since `registerLanguage`
+ * rejects a duplicate language name or extension, a single registry built from every item's plugins
+ * would throw as soon as two items registered a language claiming the same extension — even though
+ * no single file ever resolves to both of them.
+ */
+function languageRegistryFor(effectiveConfig: EffectiveAlintConfig): LanguageRegistry {
+  const registry = createBuiltInLanguageRegistry()
+
+  for (const plugin of Object.values(effectiveConfig.plugins)) {
+    for (const language of Object.values(plugin.languages ?? {})) {
+      registerLanguage(registry, language)
+    }
+  }
+
+  return registry
 }
 
 function mergeCapabilities(
