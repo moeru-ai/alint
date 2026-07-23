@@ -97,12 +97,12 @@ catalog:
   typescript: ^6.0.3
   unplugin-raw: ^0.7.0
   unplugin-unused: ^0.5.7
+  unrun: ^0.3.1
+
   valibot: ^1.4.2
   vite: ^8.1.0
   web-tree-sitter: ^0.24.7
   xdg-basedir: ^5.1.0
-  unrun: ^0.3.1
-
 catalogs:
   vitest:
     '@vitest/coverage-v8': ^4.1.10
