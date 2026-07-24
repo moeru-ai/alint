@@ -7,9 +7,17 @@ import { clamp } from 'es-toolkit'
 
 export interface SourceRuntimeOptions {
   /**
+   * Extraction for arbitrary files, injected by the run.
+   *
+   * The runtime cannot do this itself: extraction resolves the file's own config, and importing
+   * config resolution here would point the source module back at the layers built on top of it.
+   * `runAlint` has the config in scope before it builds the runtime, so it passes the closure down.
+   */
+  extract?: SourceRuntime['extract']
+  /**
    * Replaces the disk read, so a test can hand a rule synthetic file content. The other members
    * need no override: `getText` and the slicers are pure functions over whatever `readFile`
-   * returned.
+   * returned, and `extract` already defaults to a throwing stub outside a run.
    */
   readFile?: SourceRuntime['readFile']
 }
@@ -25,6 +33,7 @@ export function createSourceFile(path: string, text: string): SourceFile {
 
 export function createSourceRuntime(options: SourceRuntimeOptions = {}): SourceRuntime {
   return {
+    extract: options.extract ?? extractThrowUndefined,
     getText,
     readFile: options.readFile ?? (async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8'))),
     sliceLines,
@@ -85,6 +94,13 @@ function clampLine(line: number, lineCount: number): number {
 
 function clampOffset(offset: number, textLength: number): number {
   return clamp(Math.trunc(offset), 0, textLength)
+}
+
+/** Throws a TypeError indicating that the extractor is not defined. */
+function extractThrowUndefined(filePath: string): Promise<SourceTarget[]> {
+  return Promise.reject(new TypeError(
+    `Cannot extract "${filePath}": this source runtime was created without an extractor, so there is no config to resolve the file's language against. Only the runtime a run hands to rules (ctx.src) can extract.`,
+  ))
 }
 
 function getPosition(text: string, offset: number): SourcePosition {

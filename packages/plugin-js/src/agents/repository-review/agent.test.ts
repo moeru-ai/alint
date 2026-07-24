@@ -1,6 +1,7 @@
 import type { AgentAdapter, AgentRequest, AgentTool } from '@alint-js/core/agent'
 import type { FileTarget, RuleContext } from '@alint-js/plugin'
 
+import { createSourceRuntime } from '@alint-js/core'
 import { createTools } from '@alint-js/tools-fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -43,26 +44,9 @@ function createContext(agent: AgentAdapter, recordUsage = vi.fn()): RuleContext 
     options: [],
     report: () => {},
     settings: {},
-    src: {
-      getText: nextTarget => nextTarget.text,
+    src: createSourceRuntime({
       readFile: async filePath => ({ language: 'typescript', lines: [], path: filePath, text: '' }),
-      sliceLines: (file, range) => ({
-        filePath: file.path,
-        loc: {
-          end: { column: 0, line: range.endLine },
-          start: { column: 0, line: range.startLine },
-        },
-        text: '',
-      }),
-      sliceRange: (file, range) => ({
-        filePath: file.path,
-        loc: {
-          end: { column: range.end, line: 1 },
-          start: { column: range.start, line: 1 },
-        },
-        text: '',
-      }),
-    },
+    }),
   }
 }
 

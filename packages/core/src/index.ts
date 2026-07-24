@@ -24,9 +24,12 @@ export {
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
 export { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
+export type { SourceRuntimeOptions } from './core/source/runtime'
 export type {
+  CallSite,
   ClassTarget,
   FileTarget,
+  FunctionInfo,
   FunctionTarget,
   LanguageContext,
   LineRange,
@@ -34,6 +37,7 @@ export type {
   ProcessedSourceOrigin,
   ProcessorContext,
   ProcessorPostprocessContext,
+  SourceExtractOptions,
   SourceFile,
   SourceLocation,
   SourcePosition,

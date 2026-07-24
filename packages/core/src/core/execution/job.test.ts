@@ -9,6 +9,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 import { expect, it } from 'vitest'
 
 import { defineRule } from '../../dsl/define'
+import { createSourceRuntime } from '../source/runtime'
 import { compareJobOrder, executeRuleJob } from './job'
 import { createRunProgress } from './progress'
 import { createRuleRuntimes } from './runtime'
@@ -244,12 +245,11 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
     runOptions: {},
     runProgress,
     setupConfig: { providers: [], version: 1 },
-    src: {
-      getText: target => target.text,
-      readFile: () => { throw new Error('unused') },
-      sliceLines: () => { throw new Error('unused') },
-      sliceRange: () => { throw new Error('unused') },
-    },
+    src: createSourceRuntime({
+      readFile: () => {
+        throw new Error('unused')
+      },
+    }),
   })
   if (!runtime)
     throw new Error('Expected a rule runtime.')

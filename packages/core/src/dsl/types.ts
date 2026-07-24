@@ -44,6 +44,12 @@ export interface AlintConfigItem {
 
 export interface AlintLinterOptions {
   noInlineConfig?: boolean
+  /**
+   * How the run reports files it lints that no language claimed, so they were handled as plain
+   * text. Defaults to `'warn'`. An explicit `language: 'text/plain'` pin means plain text was the
+   * intent, so pinned files are never reported.
+   */
+  reportUnregisteredLanguages?: RuleSeverity
   reportUnusedDisableDirectives?: RuleSeverity
 }
 
@@ -171,6 +177,19 @@ export interface RuleDefinition<
   create: (context: RuleContext<RuleOptionsOutput<OptionsSchema>>) => RuleHandlers
   model?: ModelRequirement
   options?: OptionsSchema
+  /**
+   * The rule reads what a language extracts: function targets, calls, `FunctionInfo`.
+   * A file handled as plain text cannot satisfy it, and silence would read as a clean file.
+   * When such a file reaches this rule, the run fails the rule for that file instead of reporting
+   * nothing.
+   *
+   * This never chooses how a file is parsed: the file's extension picks its language from the
+   * registry before rules are consulted. It only decides what happens when no language claimed the
+   * file. `true` means "parsed by something, whichever language that was"; a list of language ids
+   * additionally scopes the rule — files of other registered languages are skipped rather than
+   * failed, so one plugin can carry rules for several languages behind one `files:` glob.
+   */
+  requiresLanguage?: boolean | readonly string[]
 }
 
 export type RuleHandlers = RuleSpecializedHandlers | RuleWithHandler

@@ -74,6 +74,7 @@ const staticConfigItemSchema = looseObject({
   languageOptions: optional(record(string(), unknown())),
   linterOptions: optional(looseObject({
     noInlineConfig: optional(boolean()),
+    reportUnregisteredLanguages: optional(ruleSeveritySchema),
     reportUnusedDisableDirectives: optional(ruleSeveritySchema),
   })),
   name: optional(string()),

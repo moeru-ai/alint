@@ -1,26 +1,18 @@
 import type { SourceFile, SourceRange, SourceTarget } from '../../source/types'
+import type { AstNode } from './ast'
+import type { SourceInfo } from './info'
 
 import { sliceRange } from '../../source/runtime'
+import { asAstNode, getRange, isAstNode } from './ast'
+import { collectSourceInfo, functionInfo } from './info'
 import { parseSync } from './parser'
-
-interface AstNode {
-  [key: string]: unknown
-  async?: boolean
-  declaration?: AstNode | null
-  end?: number
-  id?: AstNode | null
-  key?: AstNode | null
-  name?: string
-  range?: [number, number]
-  start?: number
-  type?: string
-}
 
 interface VisitState {
   bindingNodes: Map<string, AstNode>
   exportedNodes: Set<AstNode>
   file: SourceFile
   inferredNames: Map<AstNode, string>
+  info: SourceInfo
   seenClasses: Set<AstNode>
   seenFunctions: Set<AstNode>
   targets: SourceTarget[]
@@ -31,25 +23,27 @@ export function extractJsSourceTargets(file: SourceFile): SourceTarget[] {
   const result = parseSync(file.path, file.text, {
     sourceType: 'module',
   })
+  const program = result.program as unknown as AstNode
   const state: VisitState = {
     bindingNodes: new Map(),
     exportedNodes: new Set(),
     file,
     inferredNames: new Map(),
+    info: collectSourceInfo(program, result.comments),
     seenClasses: new Set(),
     seenFunctions: new Set(),
     targets: [],
     visited: new Set(),
   }
 
-  collectModuleBindings(result.program as unknown as AstNode, state)
-  collectExportedBindings(result.program as unknown as AstNode, state)
-  visit(result.program as unknown as AstNode, state)
+  collectModuleBindings(program, state)
+  collectExportedBindings(program, state)
+  visit(program, state)
 
   const sortedTargets = [...state.targets].sort((left, right) => (left.range?.start ?? 0) - (right.range?.start ?? 0))
 
   return [
-    createFileTarget(file),
+    createFileTarget(file, state.info),
     ...withStableIdentities(sortedTargets),
   ]
 }
@@ -82,10 +76,6 @@ function addFunctionTarget(node: AstNode, state: VisitState): void {
 
   state.seenFunctions.add(node)
   state.targets.push(target)
-}
-
-function asAstNode(value: unknown): AstNode | undefined {
-  return isAstNode(value) ? value : undefined
 }
 
 function collectDeclarationBindings(node: AstNode, state: VisitState): void {
@@ -207,12 +197,15 @@ function createClassTarget(node: AstNode, state: VisitState): SourceTarget | und
   }
 }
 
-function createFileTarget(file: SourceFile): SourceTarget {
+function createFileTarget(file: SourceFile, info: SourceInfo): SourceTarget {
   return {
     file,
     identity: 'file',
     kind: 'file',
     language: file.language,
+    metadata: {
+      calls: info.calls,
+    },
     origin: {
       physicalPath: file.path,
     },
@@ -230,6 +223,7 @@ function createFunctionTarget(node: AstNode, state: VisitState): SourceTarget | 
   const source = sliceRange(state.file, range)
   const functionNode = node.type === 'MethodDefinition' ? asAstNode(node.value) : node
   const name = getNodeName(node) ?? getNodeName(functionNode) ?? state.inferredNames.get(node)
+  const exported = isExportedTarget(node, state)
 
   return {
     file: state.file,
@@ -239,7 +233,8 @@ function createFunctionTarget(node: AstNode, state: VisitState): SourceTarget | 
     loc: source.loc,
     metadata: {
       async: functionNode?.async === true,
-      exported: isExportedTarget(node, state),
+      exported,
+      function: functionInfo(node, range, name, exported, state.info),
     },
     name,
     origin: {
@@ -291,24 +286,6 @@ function getNodeName(node: AstNode | null | undefined): string | undefined {
   return undefined
 }
 
-function getRange(node: AstNode): SourceRange | undefined {
-  if (typeof node.start === 'number' && typeof node.end === 'number') {
-    return {
-      end: node.end,
-      start: node.start,
-    }
-  }
-
-  if (Array.isArray(node.range) && node.range.length === 2) {
-    return {
-      end: node.range[1],
-      start: node.range[0],
-    }
-  }
-
-  return undefined
-}
-
 function inferChildName(parent: AstNode, key: string, child: AstNode, state: VisitState): void {
   if (state.inferredNames.has(child)) {
     return
@@ -329,10 +306,6 @@ function inferChildName(parent: AstNode, key: string, child: AstNode, state: Vis
       state.inferredNames.set(child, name)
     }
   }
-}
-
-function isAstNode(value: unknown): value is AstNode {
-  return typeof value === 'object' && value !== null && typeof (value as AstNode).type === 'string'
 }
 
 function isClassNode(node: AstNode): boolean {
