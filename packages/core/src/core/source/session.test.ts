@@ -1,7 +1,6 @@
 import type { CacheOwnerTransaction, CacheStore } from '../cache'
 import type { RuleRuntime } from '../execution/types'
 import type { PreparedInput } from '../preparation'
-import type { SourceFile, SourceRuntime } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
@@ -12,6 +11,7 @@ import { compareJobOrder } from '../execution/job'
 import { createRunProgress } from '../execution/progress'
 import { RuleScheduler } from '../execution/scheduler'
 import { hashText } from '../hash'
+import { createSourceRuntime } from './runtime'
 import { executeSourceSession, executeSourceSessions, resolveSourceWindow } from './session'
 
 describe('source sessions', () => {
@@ -24,7 +24,7 @@ describe('source sessions', () => {
       { file, identity: 'same', kind: 'symbol', language: 'custom', text: `${file.text}:first` },
       { file, identity: 'same', kind: 'symbol', language: 'custom', text: `${file.text}:second` },
     ])
-    const src = createSourceRuntime(async path => ({ language: 'custom', lines: [sentinel], path, text: sentinel }))
+    const src = createSourceRuntime({ readFile: async path => ({ language: 'custom', lines: [sentinel], path, text: sentinel }) })
     const scheduler = createScheduler(2)
 
     const result = await executeSourceSession(input, {
@@ -57,7 +57,7 @@ describe('source sessions', () => {
       cwd: '/repo',
       ruleRuntimes: [createRuntime()],
       scheduler,
-      src: createSourceRuntime(async path => ({ language: 'custom', lines: ['text'], path, text: 'text' })),
+      src: createSourceRuntime({ readFile: async path => ({ language: 'custom', lines: ['text'], path, text: 'text' }) }),
     })
     await scheduler.close()
 
@@ -86,7 +86,7 @@ describe('source sessions', () => {
       metrics,
       scheduler,
       sourceWindow: resolveSourceWindow(8),
-      src: createSourceRuntime(async path => ({ language: 'custom', lines: [path], path, text: path })),
+      src: createSourceRuntime({ readFile: async path => ({ language: 'custom', lines: [path], path, text: path }) }),
     })
 
     await until(() => releases.length === 4)
@@ -128,9 +128,11 @@ describe('source sessions', () => {
       scheduler,
       signal: controller.signal,
       sourceWindow: 1,
-      src: createSourceRuntime(async (path) => {
-        reads.push(path)
-        return { language: 'custom', lines: [path], path, text: path }
+      src: createSourceRuntime({
+        readFile: async (path) => {
+          reads.push(path)
+          return { language: 'custom', lines: [path], path, text: path }
+        },
       }),
     })
 
@@ -182,19 +184,6 @@ function createRuntime(): RuleRuntime {
 
 function createScheduler(concurrency: number, execute = async (job: Parameters<ConstructorParameters<typeof RuleScheduler>[0]['execute']>[0]) => completed(job)) {
   return new RuleScheduler({ clock: () => 1, concurrency, execute, progress: createRunProgress(8) })
-}
-
-function createSourceRuntime(readFile: (path: string) => Promise<SourceFile>): SourceRuntime {
-  return {
-    getText: target => target.text,
-    readFile,
-    sliceLines: () => {
-      throw new Error('unused')
-    },
-    sliceRange: () => {
-      throw new Error('unused')
-    },
-  }
 }
 
 async function until(predicate: () => boolean): Promise<void> {

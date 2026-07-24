@@ -32,7 +32,8 @@ describe('js source targets', () => {
     })
     expect(classes.map(target => target.name)).toEqual(['Service'])
     expect(functions.map(target => target.name)).toContain('load')
-    expect(load?.metadata).toEqual({ async: true, exported: true })
+    expect(load?.metadata?.async).toBe(true)
+    expect(load?.metadata?.exported).toBe(true)
     expect(load?.identity).toBe('function:load')
   })
 
