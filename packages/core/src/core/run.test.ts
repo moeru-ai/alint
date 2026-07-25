@@ -407,7 +407,10 @@ describe('runAlint', () => {
     await writeFile(secondPath, 'one,two\n')
     const fileReady: Array<{ inputPath: string, jobsAdded: number, jobsTotal: number, queuedForFile: number }> = []
     const queuedByPath = new Map<string, number>()
-    const rule = defineRule({ create: () => ({ onTargetFunction: () => {} }) })
+    const rule = defineRule({
+      create: () => ({ onTargetFunction: () => {} }),
+      languages: 'any',
+    })
 
     await runAlint({
       config: createConfig(
@@ -474,6 +477,7 @@ describe('runAlint', () => {
         onTargetFunction: () => {},
         onTargetProject: () => { projectCalls += 1 },
       }),
+      languages: 'any',
     })
     const plugin = definePlugin({
       languages: {
@@ -911,6 +915,7 @@ describe('runAlint', () => {
           visited.push(`function:${target.name}`)
         },
       }),
+      languages: 'any',
     })
 
     const result = await runAlint({
@@ -975,6 +980,7 @@ describe('runAlint', () => {
           identities.push(target.identity)
         },
       }),
+      languages: 'any',
     })
 
     await runAlint({
@@ -2430,6 +2436,7 @@ describe('runAlint', () => {
           })
         },
       }),
+      languages: 'any',
       model: {
         capabilities: ['structured-output'],
       },
@@ -2475,6 +2482,7 @@ describe('runAlint', () => {
           })
         },
       }),
+      languages: 'any',
       model: {
         capabilities: ['structured-output'],
       },
@@ -2740,6 +2748,7 @@ describe('runAlint', () => {
             })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ cached: rule }, { 'company/cached': 'warn' })
 
@@ -2934,6 +2943,7 @@ describe('runAlint', () => {
             })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ siblings: rule }, { 'company/siblings': 'warn' })
 
@@ -3003,6 +3013,7 @@ describe('runAlint', () => {
             })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ uncached: rule }, { 'company/uncached': 'warn' })
 
@@ -3112,6 +3123,7 @@ describe('runAlint', () => {
             })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ language: rule }, { 'company/language': 'warn' })
 
@@ -3373,6 +3385,7 @@ describe('runAlint', () => {
             ctx.report({ message: target.text })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig(
         { duplicate: rule },
@@ -3530,10 +3543,16 @@ describe('runAlint', () => {
       active -= 1
     }
     const rules = {
-      class: defineRule({ create: () => ({ onTargetClass: () => hold('class') }) }),
+      class: defineRule({
+        create: () => ({ onTargetClass: () => hold('class') }),
+        languages: 'any',
+      }),
       directory: defineRule({ create: () => ({ onTargetDirectory: () => hold('directory') }) }),
       file: defineRule({ create: () => ({ onTargetFile: () => hold('file') }) }),
-      function: defineRule({ create: () => ({ onTargetFunction: () => hold('function') }) }),
+      function: defineRule({
+        create: () => ({ onTargetFunction: () => hold('function') }),
+        languages: 'any',
+      }),
       project: defineRule({ create: () => ({ onTargetProject: () => hold('project') }) }),
     }
 
@@ -3582,6 +3601,7 @@ describe('runAlint', () => {
           active -= 1
         },
       }),
+      languages: 'any',
     })
 
     await runAlint({
@@ -3819,6 +3839,7 @@ describe('runAlint', () => {
     await writeFile(filePath, 'export class Demo {}\nexport function demo() {}\n')
     const rule = defineRule({
       create: () => ({ onTargetWith: () => {} }),
+      languages: 'any',
     })
 
     let runError: unknown
@@ -3872,6 +3893,7 @@ describe('runAlint', () => {
           await Promise.resolve()
         },
       }),
+      languages: 'any',
     })
 
     let runError: unknown
@@ -4063,6 +4085,7 @@ describe('runAlint', () => {
           })
         },
       }),
+      languages: 'any',
     })
 
     await runAlint({
@@ -4300,6 +4323,7 @@ describe('runAlint', () => {
           })
         },
       }),
+      languages: 'any',
     })
 
     it('leaves legacy cache bytes unchanged even without input files', async () => {
@@ -4333,6 +4357,7 @@ describe('runAlint', () => {
             ctx.report({ message: `checked ${target.name}` })
           },
         }),
+        languages: 'any',
       })
 
       const result = await runAlint({
@@ -4385,6 +4410,7 @@ describe('runAlint', () => {
             })
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ review: rule }, { 'company/review': 'warn' })
 
@@ -4448,6 +4474,7 @@ describe('runAlint', () => {
             ctx.report({ message: `first checked ${target.name}` })
           },
         }),
+        languages: 'any',
       })
       const secondRule = defineRule({
         create: ctx => ({
@@ -4456,6 +4483,7 @@ describe('runAlint', () => {
             ctx.report({ message: `second checked ${target.name}` })
           },
         }),
+        languages: 'any',
       })
       const rules = { first: firstRule, second: secondRule }
 
@@ -4514,6 +4542,7 @@ describe('runAlint', () => {
             handlerCalls += 1
           },
         }),
+        languages: 'any',
       })
 
       const result = await runAlint({
@@ -4605,6 +4634,7 @@ describe('runAlint', () => {
             controller.abort()
           },
         }),
+        languages: 'any',
       })
 
       let runError: unknown
@@ -4645,6 +4675,7 @@ describe('runAlint', () => {
               calls.second += 1
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ review: rule }, { 'company/review': 'warn' })
 
@@ -4776,6 +4807,7 @@ describe('runAlint', () => {
             ctx.signal?.throwIfAborted()
           },
         }),
+        languages: 'any',
       })
 
       let runError: unknown
@@ -4824,6 +4856,7 @@ describe('runAlint', () => {
             }
           },
         }),
+        languages: 'any',
       })
       const config = createConfig({ review: rule }, { 'company/review': 'warn' })
 
@@ -4878,6 +4911,7 @@ describe('runAlint', () => {
             handlerCalls += 1
           },
         }),
+        languages: 'any',
       })
 
       await expect(runAlint({
@@ -4905,6 +4939,7 @@ describe('runAlint', () => {
             seen.push(ctx.signal)
           },
         }),
+        languages: 'any',
       })
 
       await runAlint({

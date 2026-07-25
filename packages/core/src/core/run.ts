@@ -11,7 +11,8 @@ import { snapshotDiagnostics, snapshotUsageRecords } from './execution/records'
 import { createRuleRuntimes } from './execution/runtime'
 import { resolveRuleConcurrency, RuleScheduler } from './execution/scheduler'
 import { stableHash } from './hash'
-import { prepareRun } from './preparation'
+import { missingLanguageDiagnostics, unregisteredLanguageDiagnostics } from './languages/diagnostics'
+import { createSourceExtractor, prepareRun } from './preparation'
 import { createProjectJobs, ProjectIndexBuilder } from './project'
 import { createSourceRuntime } from './source/runtime'
 import { executeSourceSessions, resolveSourceWindow } from './source/session'
@@ -60,8 +61,9 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const runStartedAt = clock()
   options.progress?.onExecuteStart?.({ progress: runProgress.snapshot(), startedAt: runStartedAt })
   const cwd = options.cwd ?? processCwd()
+  const config = options.config ?? []
   const setupConfig: SetupConfig = options.setupConfig ?? { providers: [], version: 1 }
-  const src = createSourceRuntime()
+  const src = createSourceRuntime({ extract: createSourceExtractor(cwd, config, () => src) })
   const normalizedCacheConfig = normalizeRunnerCacheConfig(options.runner?.cache, cwd)
   const cacheStore = await createCacheStore({
     cwd,
@@ -192,7 +194,13 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     ...ruleFailures,
   ]
   const result: RunResult = {
-    diagnostics: outcomes.flatMap(outcome => outcome.diagnostics),
+    diagnostics: [
+      // Language builtins
+      ...missingLanguageDiagnostics(preparation.missingLanguages),
+      ...unregisteredLanguageDiagnostics(preparation.unregisteredLanguages),
+      // Other diagnostics
+      ...outcomes.flatMap(outcome => outcome.diagnostics),
+    ],
     execution: executionCounts(outcomes),
     usage: runUsage(outcomes),
   }

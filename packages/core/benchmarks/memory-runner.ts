@@ -20,6 +20,7 @@ async function main(): Promise<void> {
       .map(path => join(root, path))
     const functionRule = defineRule({
       create: () => ({ onTargetFunction: () => {} }),
+      languages: 'any',
     })
     const projectRule = defineRule({
       create: () => ({

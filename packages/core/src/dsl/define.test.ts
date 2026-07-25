@@ -41,6 +41,7 @@ describe('define helpers', () => {
         onTargetFunction,
         onTargetProject,
       }),
+      languages: 'any',
     })
 
     expect(rule.create({} as never)).toEqual({

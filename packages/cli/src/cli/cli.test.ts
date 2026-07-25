@@ -129,6 +129,7 @@ export default [
       company: {
         rules: {
           cached: {
+            languages: 'any',
             create: (ctx) => ({
               onTargetFunction: async (target) => {
                 globalThis[callKey] += 1
@@ -233,6 +234,7 @@ export default [
       company: {
         rules: {
           'prefer-load': {
+            languages: 'any',
             create: (ctx) => ({
               onTargetFunction: async (target) => {
                 ctx.report({
@@ -301,6 +303,7 @@ export default [
       company: {
         rules: {
           judge: {
+            languages: 'any',
             create: ctx => ({
               onTargetFunction: (target) => {
                 ctx.metering.recordUsage({
@@ -1483,6 +1486,7 @@ export default [
       company: {
         rules: {
         'prefer-load': {
+          languages: 'any',
           create: (ctx) => ({
             onTargetFunction: async (target) => {
               ctx.report({
@@ -1532,6 +1536,7 @@ export default [
       company: {
         rules: {
           'prefer-load': {
+            languages: 'any',
             create: (ctx) => ({
               onTargetFunction: async (target) => {
                 ctx.report({
@@ -2551,6 +2556,7 @@ export default [
       company: {
         rules: {
         'noisy': {
+          languages: 'any',
           create: (ctx) => ({
             onTargetFunction: async (target) => {
               console.debug('debug noise')
@@ -3236,6 +3242,7 @@ export default [
         rules: {
         'prefer-local': {
           model: { capabilities: ['code-review'] },
+          languages: 'any',
           create: (ctx) => ({
             onTargetFunction: async (target) => {
               const model = await ctx.model()
@@ -3312,6 +3319,7 @@ export default [
       company: {
         rules: {
         'prefer-load': {
+          languages: 'any',
           create: (ctx) => ({
             onTargetFunction: async (target) => {
               const model = await ctx.model('global-model')
