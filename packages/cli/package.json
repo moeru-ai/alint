@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "alint": "node ./dist/bin/index.mjs",
+    "bench": "vitest bench --config vitest.config.ts",
     "build": "tsdown",
     "build:binary": "tsdown --config tsdown.binary.config.ts --config-loader unrun",
     "typecheck": "tsc -p tsconfig.json --noEmit",

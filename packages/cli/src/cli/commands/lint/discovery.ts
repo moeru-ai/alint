@@ -2,7 +2,7 @@ import type { Stats } from 'node:fs'
 
 import type { AlintConfig, AlintConfigItem } from '@alint-js/core'
 
-import { readdir, stat } from 'node:fs/promises'
+import { opendir, stat } from 'node:fs/promises'
 
 import Gitignore from 'gitignore-fs'
 
@@ -48,6 +48,8 @@ interface WalkFilesOptions {
 }
 
 const minimatchOptions = { dot: true }
+// NOTICE: A larger directory buffer amortizes filesystem reads while keeping memory bounded per open directory.
+const directoryBufferSize = 256
 
 export class NoFilesFoundError extends Error {
   readonly globInputPaths: boolean
@@ -192,18 +194,22 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<Lin
         continue
       }
 
-      const directoryFiles = (await walkFiles(path, {
+      const directoryFiles: string[] = []
+
+      for await (const file of walkFiles(path, {
         cwd: options.cwd,
         gitignore: options.gitignore,
         ignoredPatterns,
-      })).sort()
-
-      for (const directoryFile of directoryFiles) {
-        const relativePath = normalizeRelativePath(options.cwd, directoryFile)
+      })) {
+        const relativePath = normalizeRelativePath(options.cwd, file)
 
         if (hasFilePatterns && matchesDiscoveryFile(relativePath, options.config, { cwd: options.cwd })) {
-          candidates.push(relativePath)
+          directoryFiles.push(relativePath)
         }
+      }
+
+      for (const file of directoryFiles.sort()) {
+        candidates.push(file)
       }
 
       continue
@@ -223,7 +229,9 @@ async function resolveInputFiles(options: ResolveInputFilesOptions): Promise<Lin
         throw new NoFilesFoundError(input, { globInputPaths: options.globInputPaths })
       }
 
-      candidates.push(...matches)
+      for (const match of matches) {
+        candidates.push(match)
+      }
       continue
     }
 
@@ -247,14 +255,13 @@ async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
     return []
   }
 
-  const files = (await walkFiles(root, {
+  const candidates: string[] = []
+
+  for await (const file of walkFiles(root, {
     cwd: options.cwd,
     gitignore: options.gitignore,
     ignoredPatterns: options.ignoredPatterns,
-  })).sort()
-  const candidates: string[] = []
-
-  for (const file of files) {
+  })) {
     const relativePath = normalizeRelativePath(options.cwd, file)
 
     if (matchesGlob(relativePath, pattern) && shouldIncludeGlobCandidate(relativePath, options.config, {
@@ -265,7 +272,7 @@ async function searchGlob(options: SearchGlobOptions): Promise<string[]> {
     }
   }
 
-  return candidates
+  return candidates.sort()
 }
 
 function shouldFilterGitignoredFiles(config: AlintConfig): boolean {
@@ -307,23 +314,39 @@ async function statPath(path: string): Promise<Stats | undefined> {
   }
 }
 
-async function walkFiles(root: string, options: WalkFilesOptions): Promise<string[]> {
-  const entries = await readdir(root, { withFileTypes: true })
-  const files: string[] = []
+/**
+ * Streams directory entries so unmatched trees never accumulate into recursive child arrays.
+ * The consumer owns result ordering because filesystem iteration order is not stable.
+ */
+async function* walkFiles(root: string, options: WalkFilesOptions): AsyncGenerator<string> {
+  const pendingDirectories = [root]
 
-  for (const entry of entries) {
-    const path = resolve(root, entry.name)
-    if (entry.isDirectory()) {
-      if (!await shouldPruneDirectory(path, options)) {
-        files.push(...await walkFiles(path, options))
-      }
+  while (pendingDirectories.length > 0) {
+    const currentDirectory = pendingDirectories.pop()
+
+    if (currentDirectory === undefined) {
       continue
     }
 
-    if (entry.isFile()) {
-      files.push(path)
+    const childDirectories: string[] = []
+    const directory = await opendir(currentDirectory, { bufferSize: directoryBufferSize })
+
+    for await (const entry of directory) {
+      const path = resolve(currentDirectory, entry.name)
+      if (entry.isDirectory()) {
+        if (!await shouldPruneDirectory(path, options)) {
+          childDirectories.push(path)
+        }
+        continue
+      }
+
+      if (entry.isFile()) {
+        yield path
+      }
+    }
+
+    for (const path of childDirectories.reverse()) {
+      pendingDirectories.push(path)
     }
   }
-
-  return files
 }
