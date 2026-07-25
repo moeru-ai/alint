@@ -171,7 +171,7 @@ function createOwner(commits: Array<undefined | { contentHash?: string, mode?: '
 }
 
 function createRuntime(): RuleRuntime {
-  const rule = defineRule({ create: () => ({ onTargetWith: () => {} }) })
+  const rule = defineRule({ create: () => ({ onTargetWith: () => {} }), languages: 'any' })
   return {
     cacheable: true,
     enabledRule: { id: 'plugin/rule', localId: 'rule', options: [], rule, severity: 'warn' },

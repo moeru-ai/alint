@@ -10,6 +10,7 @@ import { errorMessageFrom } from '@moeru/std/error'
 
 import { createTargetIdentityResolver, normalizeCachePath } from '../cache'
 import { hashText, stableHash } from '../hash'
+import { isTargetLanguageAccepted, resolveRuleLanguages } from '../languages/rule-languages'
 
 export const MAX_ACTIVE_SOURCE_SESSIONS = 4
 
@@ -281,6 +282,21 @@ function openSession(metrics: SourceSessionMetrics | undefined): void {
 }
 
 function sourceExecution(runtime: RuleRuntime, target: SourceTarget): RuleTargetExecution | undefined {
+  // Check the rule's languages against the target's kind and language.
+  const languages = resolveRuleLanguages(runtime.enabledRule.rule.languages)
+  if (languages.kind === 'off' && target.kind === 'file' && (runtime.handlers.onTargetClass ?? runtime.handlers.onTargetFunction)) {
+    return {
+      run: () => {
+        throw new Error(
+          `Rule "${runtime.enabledRule.id}" handles function or class targets but declares no "languages", so it receives none. Declare \`languages: 'any'\`, or list the language ids it handles.`,
+        )
+      },
+      runtime,
+    }
+  }
+  if (!isTargetLanguageAccepted(languages, target.kind, target.language))
+    return undefined
+
   if (runtime.handlers.onTargetWith)
     return { run: () => runtime.handlers.onTargetWith?.(target), runtime }
   if (target.kind === 'class' && runtime.handlers.onTargetClass)

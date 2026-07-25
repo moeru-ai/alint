@@ -88,8 +88,9 @@ export interface LanguageDefinition {
   extensions?: readonly string[]
   extract: (file: SourceFile, context: LanguageContext) => Awaitable<SourceTarget[]>
   /**
-   * The language's id: what a config pins through `language:`, and what every target it extracts
-   * reports. The registry is keyed by it, so two packs cannot claim the same one.
+   * The language's id: what a config pins through `language:`, what a rule's `languages` lists, and
+   * what every target it extracts reports. The registry is keyed by it, so two packs cannot claim
+   * the same one.
    *
    * Use the identifier editors already use — `go`, `python`, `rust`, `typescript`, `plaintext` —
    * rather than inventing a spelling. Anyone can register a language, so the set is open by
@@ -188,21 +189,17 @@ export interface RuleDefinition<
   /** Additional stable rule inputs, such as imported prompts, that invalidate cached results when changed. */
   cacheKey?: unknown
   create: (context: RuleContext<RuleOptionsOutput<OptionsSchema>>) => RuleHandlers
+  /**
+   * Which languages this rule reads. Omitting it opts out of extraction: the rule still receives
+   * file targets, but never the function and class targets a language produces.
+   *
+   * It does not choose how a file is parsed. A config's `language:` pin, or the extension, settles
+   * that before any rule is consulted. Directory and project targets ignore it too: they index a
+   * tree rather than come from a language.
+   */
+  languages?: RuleLanguages
   model?: ModelRequirement
   options?: OptionsSchema
-  /**
-   * The rule reads what a language extracts: function targets, calls, `FunctionInfo`.
-   * A file handled as plain text cannot satisfy it, and silence would read as a clean file.
-   * When such a file reaches this rule, the run fails the rule for that file instead of reporting
-   * nothing.
-   *
-   * This never chooses how a file is parsed: the file's extension picks its language from the
-   * registry before rules are consulted. It only decides what happens when no language claimed the
-   * file. `true` means "parsed by something, whichever language that was"; a list of language ids
-   * additionally scopes the rule — files of other registered languages are skipped rather than
-   * failed, so one plugin can carry rules for several languages behind one `files:` glob.
-   */
-  requiresLanguage?: boolean | readonly string[]
 }
 
 export type RuleHandlers = RuleSpecializedHandlers | RuleWithHandler
@@ -217,6 +214,27 @@ export interface RuleInferenceUsageRecord {
   ruleId?: string
   totalTokens?: number
 }
+
+/**
+ * - `'any'` — every registered language, and never a failure. A rule that works from `FunctionInfo`
+ *   alone wants this: a language pack the user installs later is covered without a new release.
+ * - A list of language ids — `LanguageDefinition.name` values such as `go` or `typescript`, never
+ *   file extensions. The rule handles exactly these. Files of other languages are skipped
+ *   rather than failed, so one plugin can carry rules for several languages behind one `files:`
+ *   glob. If a listed language is not registered at all the run fails, because a rule scoped to a
+ *   language nothing provides would otherwise skip every file in silence.
+ * - `{ ids: string[], skipMissing?: boolean }` — the same scoping, but an unregistered id can be
+ *   skipped instead of failing. For a plugin whose rules span languages a given user may not have installed.
+ */
+export type RuleLanguages
+  = | 'any'
+    | readonly string[]
+    | {
+      /** Language ids this rule applies to. */
+      ids: readonly string[]
+      /** Whether to skip unregistered languages instead of failing. */
+      skipMissing?: boolean
+    }
 
 export type RuleOptionsInput<OptionsSchema extends RuleOptionsSchema>
   = { readonly [Index in keyof OptionsSchema]: InferInput<OptionsSchema[Index]> }
