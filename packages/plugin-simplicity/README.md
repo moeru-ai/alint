@@ -202,7 +202,7 @@ export default defineConfig([
     // still runs.
     agent: createApeiraAdapter(),
     files: ['**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,rs,go,py}'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       simplicity: simplicityPlugin,
     },

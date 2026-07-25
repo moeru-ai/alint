@@ -49,7 +49,7 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
     settings: {},
     src: createSourceRuntime({
       readFile: async filePath => ({
-        language: 'text/plain',
+        language: 'plaintext',
         lines: [''],
         path: filePath,
         text: '',
@@ -60,7 +60,7 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
 
 function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/src/math.ts'): SourceTarget & { kind: Kind } {
   const file = {
-    language: 'text/plain',
+    language: 'plaintext',
     lines: [
       'import { clamp } from \'./utils\'',
       '',
@@ -97,7 +97,7 @@ describe('agentExamplePlugin', () => {
     expect(agentExamplePlugin.configs?.recommended).toEqual([
       {
         files: ['**/*.ts'],
-        language: 'text/plain',
+        language: 'plaintext',
         rules: {
           'agent-example/reinvented-helper': 'warn',
         },
@@ -195,7 +195,7 @@ describe('reinvented-helper tools', () => {
       readFile: async (filePath) => {
         requestedPath = filePath
         return {
-          language: 'text/plain',
+          language: 'plaintext',
           lines: ['export const clamp = 1'],
           path: filePath,
           text: 'export const clamp = 1',

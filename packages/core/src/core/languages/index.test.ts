@@ -10,7 +10,7 @@ describe('language registry', () => {
     const registry = createBuiltInLanguageRegistry()
     const file = createSourceFile('/repo/main.ts', 'export const value = 1\n')
 
-    expect(resolveLanguage(file, registry, { language: 'text/plain' }).name).toBe('text/plain')
+    expect(resolveLanguage(file, registry, { language: 'plaintext' }).name).toBe('plaintext')
   })
 
   it('prefers explicit language over processed source language', () => {
@@ -18,9 +18,9 @@ describe('language registry', () => {
     const file = createSourceFile('/repo/main.js', 'export const value: number = 1\n')
 
     expect(resolveLanguage(file, registry, {
-      language: 'text/plain',
+      language: 'plaintext',
       processedLanguage: 'typescript',
-    }).name).toBe('text/plain')
+    }).name).toBe('plaintext')
   })
 
   it('prefers processed source language over extension inference', () => {
@@ -46,11 +46,11 @@ describe('language registry', () => {
     expect(targets[1]?.language).toBe('typescript')
   })
 
-  it('falls back to text/plain for unknown extensions', () => {
+  it('falls back to plaintext for unknown extensions', () => {
     const registry = createBuiltInLanguageRegistry()
     const file = createSourceFile('/repo/main.go', 'package main\n')
 
-    expect(resolveLanguage(file, registry, {}).name).toBe('text/plain')
+    expect(resolveLanguage(file, registry, {}).name).toBe('plaintext')
   })
 
   it('uses built-in typescript for ts files', () => {
@@ -121,7 +121,7 @@ describe('language registry', () => {
     expect(registry.byExtension.has('.free')).toBe(false)
   })
 
-  it('text/plain extractor returns a whole-file target', async () => {
+  it('plaintext extractor returns a whole-file target', async () => {
     const registry = createBuiltInLanguageRegistry()
     const file = createSourceFile('/repo/README', 'hello\nworld\n')
     const language = resolveLanguage(file, registry, {})
@@ -136,7 +136,7 @@ describe('language registry', () => {
         file,
         identity: 'file',
         kind: 'file',
-        language: 'text/plain',
+        language: 'plaintext',
         origin: { physicalPath: '/repo/README' },
         text: 'hello\nworld\n',
       },

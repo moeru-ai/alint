@@ -198,10 +198,10 @@ describe('resolveLanguageForPath', () => {
   it('uses override, processed language, extension, then text fallback', () => {
     const registry = createBuiltInLanguageRegistry()
 
-    expect(resolveLanguageForPath('/repo/file.ts', registry, { language: 'text/plain', processedLanguage: 'javascript' }).name).toBe('text/plain')
+    expect(resolveLanguageForPath('/repo/file.ts', registry, { language: 'plaintext', processedLanguage: 'javascript' }).name).toBe('plaintext')
     expect(resolveLanguageForPath('/repo/file.unknown', registry, { processedLanguage: 'typescript' }).name).toBe('typescript')
     expect(resolveLanguageForPath('/repo/file.ts', registry, {}).name).toBe('typescript')
-    expect(resolveLanguageForPath('/repo/file.unknown', registry, {}).name).toBe('text/plain')
+    expect(resolveLanguageForPath('/repo/file.unknown', registry, {}).name).toBe('plaintext')
   })
 
   it('resolves registered languages and rejects unknown overrides', () => {

@@ -69,10 +69,10 @@ async function lint(run: Run, relativePath: string, settings?: Record<string, un
   const path = resolve(run.cwd, relativePath)
   const text = await readFile(path, 'utf8')
   const target: FileTarget = {
-    file: { language: 'text/plain', lines: text.split('\n'), path, text },
+    file: { language: 'plaintext', lines: text.split('\n'), path, text },
     identity: 'file',
     kind: 'file',
-    language: 'text/plain',
+    language: 'plaintext',
     text,
   }
 
@@ -296,10 +296,10 @@ describe('no-duplicated-helper, files it will not touch', () => {
     const run = createRun()
 
     await duplicatedHelperRule.create(run.contextFor(AST_ONLY)).onTargetFile?.({
-      file: { language: 'text/plain', lines: ['# hi'], path: resolve(FIXTURES_DIR, 'README.md'), text: '# hi' },
+      file: { language: 'plaintext', lines: ['# hi'], path: resolve(FIXTURES_DIR, 'README.md'), text: '# hi' },
       identity: 'file',
       kind: 'file',
-      language: 'text/plain',
+      language: 'plaintext',
       text: '# hi',
     })
 

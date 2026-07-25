@@ -4,7 +4,7 @@ Example `alint` plugin for semantic Go responsibility-boundary review.
 
 ## What It Does
 
-This package demonstrates how to review Go files before `alint` has a Go AST extractor. The example config targets `**/*.go` as `text/plain`, sends the whole file to a model-backed rule, and asks the model to report responsibility-boundary smells that are hard to express with syntax-only checks.
+This package demonstrates how to review Go files before `alint` has a Go AST extractor. The example config targets `**/*.go` as `plaintext`, sends the whole file to a model-backed rule, and asks the model to report responsibility-boundary smells that are hard to express with syntax-only checks.
 
 The example rule focuses on semantic Go design issues: files with too many unrelated reasons to change, constructors that are split away from the lifecycle work that makes their values safe, generic wiring files that absorb domain policy, and small helper chains that obscure a missing cohesive owner.
 

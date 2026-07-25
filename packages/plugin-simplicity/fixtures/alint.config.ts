@@ -26,7 +26,7 @@ export default defineConfig([
     agent: createApeiraAdapter(),
     files: ['**/*.{ts,rs,go,py}'],
     ignores: ['alint.config.ts'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       simplicity: simplicityPlugin,
     },

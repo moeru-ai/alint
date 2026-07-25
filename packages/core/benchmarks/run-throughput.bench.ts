@@ -63,7 +63,7 @@ const baseConfig = {
 }
 const fileConfig = defineConfig([
   { ...baseConfig, rules: { 'benchmark/file': 'warn' } },
-  { files: ['**/*.ts'], language: 'text/plain' },
+  { files: ['**/*.ts'], language: 'plaintext' },
 ])
 const oneFunctionConfig = defineConfig([
   { ...baseConfig, rules: { 'benchmark/first': 'warn' } },
