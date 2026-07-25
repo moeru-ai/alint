@@ -1210,7 +1210,7 @@ export default [
   {
     name: 'go files',
     files: ['**/*.go'],
-    language: 'text/plain',
+    language: 'plaintext',
     rules: {
       'review/file': 'warn',
       'review/disabled': 'off',
@@ -1231,7 +1231,7 @@ export default [
     expect(io.stdoutText).toContain('file: main.go')
     expect(io.stdoutText).toContain('ignored: no')
     expect(io.stdoutText).toContain('  - go files')
-    expect(io.stdoutText).toContain('language: text/plain')
+    expect(io.stdoutText).toContain('language: plaintext')
     expect(io.stdoutText).toContain('  review/file: warn')
     expect(io.stdoutText).toContain('  review/disabled: off')
     expect(io.stderrText).toBe('')
@@ -1311,7 +1311,7 @@ export default [
   {
     name: 'default config',
     files: ['**/*.go'],
-    language: 'text/plain',
+    language: 'plaintext',
     rules: {
       'default/file': 'warn',
     },
@@ -1615,7 +1615,7 @@ export default [
 export default [
   {
     files: ['src/**/*.go'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -1640,7 +1640,7 @@ export default [
     const code = await executeCli(['node', 'alint'], io)
 
     expect(code).toBe(0)
-    expect(io.stdoutText).toContain('checked text/plain')
+    expect(io.stdoutText).toContain('checked plaintext')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('README.md')
   })
@@ -1701,7 +1701,7 @@ export default [
 export default [
   {
     files: ['src/**/*.go'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -1726,7 +1726,7 @@ export default [
     const code = await executeCli(['node', 'alint', 'src'], io)
 
     expect(code).toBe(0)
-    expect(io.stdoutText).toContain('checked text/plain')
+    expect(io.stdoutText).toContain('checked plaintext')
     expect(io.stdoutText).toContain('src/main.go')
     expect(io.stdoutText).not.toContain('src/README.md')
   })
@@ -1776,7 +1776,7 @@ export default [
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -1819,7 +1819,7 @@ export default [
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -1861,7 +1861,7 @@ export default [
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -1926,7 +1926,7 @@ export default [
 export default [
   {
     files: ['**/*.ts'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2008,7 +2008,7 @@ export default [
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2053,7 +2053,7 @@ export default [
   {
     basePath: 'packages/core',
     files: ['src/**/*.ts'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2097,7 +2097,7 @@ export default [
         files: ['generated/**/*.txt'],
       },
     ],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2138,7 +2138,7 @@ const review = {
   configs: {
     recommended: [
       {
-        language: 'text/plain',
+        language: 'plaintext',
         rules: {
           'review/file': 'warn',
         },
@@ -2183,7 +2183,7 @@ export default [
     await writeFile(join(io.cwd, 'alint.config.ts'), `
 export default [
   {
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2240,7 +2240,7 @@ export default [
   },
   {
     files: ['**/*.txt'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2294,7 +2294,7 @@ export default [
   },
   {
     files: ['src/**/*.txt'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {
@@ -2400,7 +2400,7 @@ export default [
 export default [
   {
     files: ['node_modules/pkg/**/*.txt'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       review: {
         rules: {

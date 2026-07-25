@@ -39,7 +39,7 @@ export function createGoPlugin() {
       example: [
         {
           files: ['**/*.go'],
-          language: 'text/plain',
+          language: 'plaintext',
           rules: {
             'go/duplicated-conversion-knowledge': 'warn',
             'go/private-protobuf-toolkit': 'warn',

@@ -18,7 +18,7 @@ export function createAgentExamplePlugin() {
       recommended: [
         {
           files: ['**/*.ts'],
-          language: 'text/plain',
+          language: 'plaintext',
           rules: {
             'agent-example/reinvented-helper': 'warn',
           },

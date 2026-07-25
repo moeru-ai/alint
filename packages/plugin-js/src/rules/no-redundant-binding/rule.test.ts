@@ -43,7 +43,7 @@ function createContext() {
     settings: {},
     src: createSourceRuntime({
       readFile: async filePath => ({
-        language: 'text/plain',
+        language: 'plaintext',
         lines: [''],
         path: filePath,
         text: '',
@@ -64,7 +64,7 @@ function createFileTarget(): FileTarget {
     '}',
   ].join('\n')
   const file = {
-    language: 'text/plain',
+    language: 'plaintext',
     lines: text.split('\n'),
     path: '/repo/source.ts',
     text,

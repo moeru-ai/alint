@@ -25,7 +25,7 @@ export function resolveLanguageForPath(
   const languageName = options.language
     ?? options.processedLanguage
     ?? registry.byExtension.get(extname(filePath))
-    ?? 'text/plain'
+    ?? 'plaintext'
   const language = registry.languages.get(languageName)
 
   if (!language) {

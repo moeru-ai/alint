@@ -4,7 +4,7 @@ Example `alint` plugin for semantic Python boundary review.
 
 ## What It Does
 
-This package demonstrates how to review Python files before `alint` has a Python AST extractor. The example config targets `**/*.py` as `text/plain`, sends the whole file to a model-backed rule, and asks the model to report semantic-boundary smells that are hard to express with syntax-only checks.
+This package demonstrates how to review Python files before `alint` has a Python AST extractor. The example config targets `**/*.py` as `plaintext`, sends the whole file to a model-backed rule, and asks the model to report semantic-boundary smells that are hard to express with syntax-only checks.
 
 The example rule focuses on Python design issues where raw external data, parsing, typed boundaries, orchestration, persistence, and format ownership are mixed in a way that makes code harder to test and evolve.
 

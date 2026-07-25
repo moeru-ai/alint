@@ -339,7 +339,7 @@ Reference the directory through the same static `plugins` table:
 ```toml
 [[config.group]]
 files = [ "src/**/*.py" ]
-language = "text/plain"
+language = "plaintext"
 
 [config.group.plugins]
 arch = "./rules/architecture"
@@ -364,7 +364,7 @@ Rule severities follow the familiar lint convention:
 - `"warn"` or `1` reports a warning.
 - `"error"` or `2` reports an error.
 
-Flat configs can analyze non-JavaScript files by selecting `text/plain`:
+Flat configs can analyze non-JavaScript files by selecting `plaintext`. Language ids follow [VS Code's language identifiers](https://code.visualstudio.com/docs/languages/identifiers), so a plugin that registers a language should use the same id:
 
 ```ts
 import docsPlugin from '@your-alint-config/docs-rules'
@@ -374,7 +374,7 @@ import { defineConfig } from '@alint-js/cli'
 export default defineConfig([
   {
     files: ['docs/**/*.md', '**/*.txt'],
-    language: 'text/plain',
+    language: 'plaintext',
     plugins: {
       docs: docsPlugin,
     },
@@ -522,7 +522,7 @@ defineRule({
 | [`@alint-js/agent-pi`](https://github.com/moeru-ai/alint/tree/main/packages/agent-pi) | Pi-backed `AgentAdapter`. |
 | [`@alint-js/plugin-example`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example) | Example TypeScript/JavaScript model-backed rules. |
 | [`@alint-js/plugin-example-agent`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example-agent) | Example plugin for framework-agnostic agentic rules. |
-| [`@alint-js/plugin-example-go`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example-go) | Example semantic Go review plugin using `text/plain`. |
+| [`@alint-js/plugin-example-go`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example-go) | Example semantic Go review plugin using `plaintext`. |
 
 ## Documentation Automation
 

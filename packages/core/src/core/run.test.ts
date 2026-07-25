@@ -241,7 +241,7 @@ describe('runAlint', () => {
         { review: rule },
         { 'company/review': 'warn' },
         {},
-        { agent: options.adapter, files: ['**/*.txt'], language: 'text/plain' },
+        { agent: options.adapter, files: ['**/*.txt'], language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -282,7 +282,7 @@ describe('runAlint', () => {
         { first: firstRule, second: secondRule },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -344,7 +344,7 @@ describe('runAlint', () => {
         { first, second },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -564,7 +564,7 @@ describe('runAlint', () => {
         { first, second },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -613,7 +613,7 @@ describe('runAlint', () => {
         { first, second },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -645,7 +645,7 @@ describe('runAlint', () => {
         { first, second },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -683,7 +683,7 @@ describe('runAlint', () => {
         { first, second },
         { 'company/first': 'warn', 'company/second': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -724,7 +724,7 @@ describe('runAlint', () => {
         { one, two },
         { 'company/one': 'warn', 'company/two': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [firstPath, secondPath],
       progress: {
@@ -752,7 +752,7 @@ describe('runAlint', () => {
     })
 
     await runAlint({
-      config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'text/plain' }),
+      config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'plaintext' }),
       cwd: root,
       files: [filePath, filePath],
       progress: { onJobQueued: ({ job }) => jobs.push(job) },
@@ -789,7 +789,7 @@ describe('runAlint', () => {
         { review: rule },
         { 'company/review': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -846,7 +846,7 @@ describe('runAlint', () => {
     expect(observedOptions).toEqual([{ maxLines: 10 }])
   })
 
-  it('runs explicit onTargetWith rules for .go through text/plain', async () => {
+  it('runs explicit onTargetWith rules for .go through plaintext', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-go-target-'))
     const filePath = join(root, 'main.go')
     const visited: string[] = []
@@ -869,7 +869,7 @@ describe('runAlint', () => {
         { review: rule },
         { 'company/review': 'warn' },
         {},
-        { files: ['**/*.go'], language: 'text/plain' },
+        { files: ['**/*.go'], language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -877,12 +877,12 @@ describe('runAlint', () => {
     })
 
     expect(visited).toEqual([
-      'file:text/plain:package main\n',
+      'file:plaintext:package main\n',
     ])
     expect(result.diagnostics).toMatchObject([
       {
         filePath,
-        message: 'checked text/plain',
+        message: 'checked plaintext',
         ruleId: 'company/review',
         severity: 'warn',
       },
@@ -950,7 +950,7 @@ describe('runAlint', () => {
         { review: rule },
         { 'company/review': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       directories: [directoryPath],
@@ -1291,7 +1291,7 @@ describe('runAlint', () => {
         { review: rule },
         { 'company/review': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -1301,7 +1301,7 @@ describe('runAlint', () => {
     const cacheFile = await readCacheBody(join(root, '.alintcache'))
     const sourceEntry = Object.values(cacheFile.entries).find(entry => entry.target.kind === 'file')
     const sourceHash = stableHash({
-      language: 'text/plain',
+      language: 'plaintext',
       origin: { physicalPath: filePath },
       text,
     })
@@ -2047,7 +2047,7 @@ describe('runAlint', () => {
         {},
         {
           files: ['**/*.txt'],
-          language: 'text/plain',
+          language: 'plaintext',
           settings: { message: 'from effective config' },
         },
       ),
@@ -2093,7 +2093,7 @@ describe('runAlint', () => {
         { boundary: rule },
         { 'company/boundary': 'warn' },
         {},
-        { agent: adapter, files: ['**/*.txt'], language: 'text/plain' },
+        { agent: adapter, files: ['**/*.txt'], language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -2165,7 +2165,7 @@ describe('runAlint', () => {
               throw new RetryableAgentError(`retry ${calls}`)
             return { answer: 'ok' }
           },
-          language: 'text/plain',
+          language: 'plaintext',
         },
       ),
       files: [filePath],
@@ -2216,7 +2216,7 @@ describe('runAlint', () => {
                 throw new RetryableAgentError('retry once')
               return { answer: 'ok' }
             },
-            language: 'text/plain',
+            language: 'plaintext',
           },
         ),
         files: [filePath],
@@ -2318,7 +2318,7 @@ describe('runAlint', () => {
           { boundary: rule },
           { 'company/boundary': 'warn' },
           {},
-          { agent: adapter, files: ['**/*.txt'], language: 'text/plain' },
+          { agent: adapter, files: ['**/*.txt'], language: 'plaintext' },
         ),
         cwd: root,
         files: [filePath],
@@ -2363,7 +2363,7 @@ describe('runAlint', () => {
         { boundary: rule },
         { 'company/boundary': 'warn' },
         {},
-        { files: ['**/*.txt'], language: 'text/plain' },
+        { files: ['**/*.txt'], language: 'plaintext' },
       ),
       cwd: root,
       files: [filePath],
@@ -2628,7 +2628,7 @@ describe('runAlint', () => {
           { first: firstRule, second: secondRule },
           { 'company/first': 'warn' },
           {},
-          { language: 'text/plain' },
+          { language: 'plaintext' },
         ),
         files: [filePath],
         runner: { cache: { location: cachePath } },
@@ -2640,7 +2640,7 @@ describe('runAlint', () => {
           { first: firstRule, second: secondRule },
           { 'company/first': 'warn', 'company/second': 'warn' },
           {},
-          { language: 'text/plain' },
+          { language: 'plaintext' },
         ),
         files: [filePath],
         progress: {
@@ -2685,7 +2685,7 @@ describe('runAlint', () => {
         { review: defineRule({ cacheKey, create }) },
         { 'company/review': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       )
 
       await runAlint({
@@ -2841,7 +2841,7 @@ describe('runAlint', () => {
         { cancel: rule },
         { 'company/cancel': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       )
 
       await runAlint({
@@ -3059,7 +3059,7 @@ describe('runAlint', () => {
         { 'company/settings': 'warn' },
         {},
         {
-          language: 'text/plain',
+          language: 'plaintext',
           settings: { message },
         },
       )
@@ -3445,7 +3445,7 @@ describe('runAlint', () => {
         { create: rule },
         { 'company/create': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [filePath],
       setupConfig: createSetupConfig(),
@@ -3468,7 +3468,7 @@ describe('runAlint', () => {
         { create: rule },
         { 'company/create': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [filePath],
       setupConfig: createSetupConfig(),
@@ -3499,7 +3499,7 @@ describe('runAlint', () => {
     })
 
     await runAlint({
-      config: createConfig({ concurrency: rule }, { 'company/concurrency': 'warn' }, {}, { language: 'text/plain' }),
+      config: createConfig({ concurrency: rule }, { 'company/concurrency': 'warn' }, {}, { language: 'plaintext' }),
       cwd: root,
       files,
       setupConfig: createSetupConfig(),
@@ -3638,7 +3638,7 @@ describe('runAlint', () => {
         config: createConfig(rules, {
           'company/first': 'warn',
           'company/second': 'warn',
-        }, {}, { language: 'text/plain' }),
+        }, {}, { language: 'plaintext' }),
         files: [filePath],
         runner: { cache: false, ruleConcurrency },
         setupConfig: createSetupConfig(),
@@ -3717,7 +3717,7 @@ describe('runAlint', () => {
           rules,
           enabledRules,
           {},
-          { language: 'text/plain' },
+          { language: 'plaintext' },
         ),
         files: [filePath],
         runner: { ruleConcurrency: 3 },
@@ -3761,7 +3761,7 @@ describe('runAlint', () => {
     let runError: unknown
     try {
       await runAlint({
-        config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'text/plain' }),
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'plaintext' }),
         files: [filePath],
         progress: {
           onJobEnd: ({ failure, job }) => {
@@ -3914,7 +3914,7 @@ describe('runAlint', () => {
     let runError: unknown
     try {
       await runAlint({
-        config: createConfig({ cancel: rule }, { 'company/cancel': 'warn' }, {}, { language: 'text/plain' }),
+        config: createConfig({ cancel: rule }, { 'company/cancel': 'warn' }, {}, { language: 'plaintext' }),
         files: [filePath],
         setupConfig: createSetupConfig(),
         signal: controller.signal,
@@ -3979,7 +3979,7 @@ describe('runAlint', () => {
         { isolated: rule },
         { 'company/isolated': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [firstFilePath, secondFilePath],
       runner: {
@@ -4029,7 +4029,7 @@ describe('runAlint', () => {
         { diagnostic: rule },
         { 'company/diagnostic': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [filePath],
       progress: {
@@ -4105,7 +4105,7 @@ describe('runAlint', () => {
         { explode: rule },
         { 'company/explode': 'warn' },
         {},
-        { language: 'text/plain' },
+        { language: 'plaintext' },
       ),
       files: [filePath],
       progress: {
@@ -4141,7 +4141,7 @@ describe('runAlint', () => {
       }),
     })
     const options = {
-      config: createConfig({ review: rule }, { 'company/review': 'warn' as const }, {}, { language: 'text/plain' }),
+      config: createConfig({ review: rule }, { 'company/review': 'warn' as const }, {}, { language: 'plaintext' }),
       cwd: root,
       files: [filePath],
       setupConfig: createSetupConfig(),
@@ -4191,7 +4191,7 @@ describe('runAlint', () => {
     let runError: unknown
     try {
       await runAlint({
-        config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'text/plain' }),
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }, {}, { language: 'plaintext' }),
         cwd: root,
         files: [filePath],
         progress: {
@@ -4230,7 +4230,7 @@ describe('runAlint', () => {
     let runError: unknown
     try {
       await runAlint({
-        config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'text/plain' }),
+        config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'plaintext' }),
         files: [filePath],
         progress: {
           onDiagnostic: kind === 'diagnostic' ? () => { throw sentinel } : undefined,
@@ -4272,7 +4272,7 @@ describe('runAlint', () => {
     let runError: unknown
     try {
       await runAlint({
-        config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'text/plain' }),
+        config: createConfig({ live: rule }, { 'company/live': 'warn' }, {}, { language: 'plaintext' }),
         files: [filePath],
         progress: { onDiagnostic: () => { throw sentinels[callbackIndex++] } },
         setupConfig: createSetupConfig(),
@@ -5015,7 +5015,7 @@ describe('runAlint', () => {
           { review: rule },
           { 'company/review': 'warn' },
           {},
-          { language: 'text/plain' },
+          { language: 'plaintext' },
         ),
         cwd: root,
         directories: [directoryPath],

@@ -300,7 +300,7 @@ describe('config array resolution', () => {
     const secondProcessor = { preprocess: () => [] }
     const result = resolveConfigForFile('/repo/main.go', [
       {
-        language: 'text/plain',
+        language: 'plaintext',
         languageOptions: { parser: 'a', sourceType: 'module' },
         linterOptions: { noInlineConfig: true },
         processor: firstProcessor,

@@ -46,7 +46,7 @@ export interface AlintLinterOptions {
   noInlineConfig?: boolean
   /**
    * How the run reports files it lints that no language claimed, so they were handled as plain
-   * text. Defaults to `'warn'`. An explicit `language: 'text/plain'` pin means plain text was the
+   * text. Defaults to `'warn'`. An explicit `language: 'plaintext'` pin means plain text was the
    * intent, so pinned files are never reported.
    */
   reportUnregisteredLanguages?: RuleSeverity
@@ -87,6 +87,19 @@ export interface IgnoreConfig {
 export interface LanguageDefinition {
   extensions?: readonly string[]
   extract: (file: SourceFile, context: LanguageContext) => Awaitable<SourceTarget[]>
+  /**
+   * The language's id: what a config pins through `language:`, and what every target it extracts
+   * reports. The registry is keyed by it, so two packs cannot claim the same one.
+   *
+   * Use the identifier editors already use — `go`, `python`, `rust`, `typescript`, `plaintext` —
+   * rather than inventing a spelling. Anyone can register a language, so the set is open by
+   * definition and only a shared convention keeps one language from arriving under three names.
+   *
+   * NOTICE: the list is VS Code's. The Language Server Protocol shares it for the languages it
+   * covers, but its table has no entry for plain text, so `plaintext` comes from VS Code alone.
+   * https://code.visualstudio.com/docs/languages/identifiers
+   * https://microsoft.github.io/language-server-protocol/specifications/lsp/3.17/specification/#textDocumentItem
+   */
   name: string
 }
 

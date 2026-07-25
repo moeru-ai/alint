@@ -6,9 +6,9 @@ export const textLanguage: LanguageDefinition = {
     file,
     identity: 'file',
     kind: 'file',
-    language: 'text/plain',
+    language: 'plaintext',
     origin: { physicalPath: file.path },
     text: file.text,
   }],
-  name: 'text/plain',
+  name: 'plaintext',
 }

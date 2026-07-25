@@ -277,7 +277,7 @@ python = "@alint-js/plugin-python@0.3.1"
     await writeFile(join(cwd, 'alint.config.toml'), `
 [[config.group]]
 files = ["src/**/*.py"]
-language = "text/plain"
+language = "plaintext"
 
 [config.group.plugins]
 arch = "./rules/architecture"

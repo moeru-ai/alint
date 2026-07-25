@@ -9,7 +9,7 @@ export function createRustPlugin() {
       example: [
         {
           files: ['**/*.rs'],
-          language: 'text/plain',
+          language: 'plaintext',
           rules: {},
         },
       ],

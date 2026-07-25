@@ -64,7 +64,7 @@ function createRuleContext(): RuleContext {
     settings: {},
     src: createSourceRuntime({
       readFile: async filePath => ({
-        language: 'text/plain',
+        language: 'plaintext',
         lines: [''],
         path: filePath,
         text: '',
@@ -75,7 +75,7 @@ function createRuleContext(): RuleContext {
 
 function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/processing/media/downloaders/resourceItem.py'): SourceTarget & { kind: Kind } {
   const file = {
-    language: 'text/plain',
+    language: 'plaintext',
     lines: ['class Downloader:', '    async def download(self):', '        pass'],
     path,
     text: 'class Downloader:\n    async def download(self):\n        pass\n',
@@ -124,7 +124,7 @@ describe('pythonPlugin', () => {
     expect(pythonPlugin.configs?.example).toEqual([
       {
         files: ['**/*.py'],
-        language: 'text/plain',
+        language: 'plaintext',
         rules: {
           'python/semantic-boundary': 'warn',
           'python/typed-artifact-boundary': 'warn',

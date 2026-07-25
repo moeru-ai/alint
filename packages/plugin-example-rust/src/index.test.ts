@@ -11,7 +11,7 @@ describe('rustPlugin', () => {
     expect(rustPlugin.configs?.example).toEqual([
       {
         files: ['**/*.rs'],
-        language: 'text/plain',
+        language: 'plaintext',
         rules: {},
       },
     ])

@@ -28,7 +28,7 @@ export function createPythonPlugin() {
       example: [
         {
           files: ['**/*.py'],
-          language: 'text/plain',
+          language: 'plaintext',
           rules: {
             'python/semantic-boundary': 'warn',
             'python/typed-artifact-boundary': 'warn',

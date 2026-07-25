@@ -148,10 +148,10 @@ async function lint(run: Run, relativePath: string, settings: Record<string, unk
   const path = resolve(run.cwd, relativePath)
   const text = await readFile(path, 'utf8')
   const target: FileTarget = {
-    file: { language: 'text/plain', lines: text.split('\n'), path, text },
+    file: { language: 'plaintext', lines: text.split('\n'), path, text },
     identity: 'file',
     kind: 'file',
-    language: 'text/plain',
+    language: 'plaintext',
     text,
   }
 

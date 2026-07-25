@@ -4,7 +4,7 @@ Example `alint` plugin scaffold for future Rust rules.
 
 ## What It Does
 
-This package registers a Rust-focused plugin shell before `alint` has a Rust AST extractor. The example config targets `**/*.rs` as `text/plain`, but it does not enable any rules yet.
+This package registers a Rust-focused plugin shell before `alint` has a Rust AST extractor. The example config targets `**/*.rs` as `plaintext`, but it does not enable any rules yet.
 
 Concrete Rust rules should be designed separately under `src/rules/` from Rust concepts instead of copied from another language plugin.
 

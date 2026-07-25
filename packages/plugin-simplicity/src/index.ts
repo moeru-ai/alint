@@ -33,7 +33,7 @@ export const simplicityPlugin = definePlugin({
     recommended: [
       {
         files: ['**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs,rs,go,py}'],
-        language: 'text/plain',
+        language: 'plaintext',
         rules: {
           'simplicity/no-duplicated-helper': 'warn',
           'simplicity/no-needless-helper': 'warn',
