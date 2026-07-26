@@ -13,6 +13,7 @@ const io = {
 }
 
 const source = {
+  benchmarkConcurrency: 2,
   label: 'Custom OpenAI-compatible provider',
   probeModels: true,
   value: 'custom' as const,
@@ -179,7 +180,7 @@ describe('runProviderEditor', () => {
       config: { providers: [], version: 1 },
       io,
       mode: 'create',
-      source: { label: 'Manual model entry', probeModels: false, value: 'manual' },
+      source: { benchmarkConcurrency: 2, label: 'Manual model entry', probeModels: false, value: 'manual' },
     }, promptPort)
 
     expect(promptPort.probe).not.toHaveBeenCalled()
@@ -208,6 +209,7 @@ describe('runProviderEditor', () => {
       io,
       mode: 'create',
       source: {
+        benchmarkConcurrency: 2,
         defaultEndpoint: 'http://127.0.0.1:8317/v1',
         defaultProviderId: 'CLIProxyAPI',
         label: 'CLIProxyAPI',

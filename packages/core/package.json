@@ -39,6 +39,7 @@
     "@valibot/to-json-schema": "catalog:",
     "@xsai/generate-text": "catalog:",
     "@xsai/shared-chat": "catalog:",
+    "@xsai/stream-text": "catalog:",
     "@xsai/tool": "catalog:",
     "es-toolkit": "catalog:",
     "minimatch": "catalog:",

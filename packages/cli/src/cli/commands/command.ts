@@ -424,6 +424,7 @@ function shouldSkipOptionValue(arg: string): boolean {
     '--rule-concurrency',
     '--since',
     '--timeout-ms',
+    '--with-speed-concurrency',
     '-c',
     '-f',
     '-l',

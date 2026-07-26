@@ -332,8 +332,8 @@ export default [
 
 describe('createProviderId', () => {
   it('creates endpoint-based provider ids and avoids collisions', () => {
-    expect(createProviderId('https://openrouter.ai/api/v1', new Set())).toBe('openrouter-ai')
-    expect(createProviderId('https://openrouter.ai/api/v1', new Set(['openrouter-ai']))).toBe('openrouter-ai-2')
+    expect(createProviderId('https://openrouter.ai/api/v1', new Set())).toBe('openrouter')
+    expect(createProviderId('https://openrouter.ai/api/v1', new Set(['openrouter']))).toBe('openrouter-2')
     expect(createProviderId('not a url', new Set())).toBe('provider')
   })
 
@@ -350,6 +350,7 @@ describe('createProviderId', () => {
 describe('interactive setup navigation', () => {
   it('keeps built-in provider setup defaults in the provider registry', () => {
     expect(providerSetupSources).toContainEqual({
+      benchmarkConcurrency: 2,
       defaultEndpoint: 'http://127.0.0.1:8317/v1',
       defaultProviderId: 'CLIProxyAPI',
       label: 'CLIProxyAPI',
@@ -357,12 +358,14 @@ describe('interactive setup navigation', () => {
       value: 'cliProxyApi',
     })
     expect(providerSetupSources).toContainEqual({
+      benchmarkConcurrency: 2,
       defaultEndpoint: 'http://localhost:11434/v1',
       label: 'Ollama',
       probeModels: true,
       value: 'ollama',
     })
     expect(providerSetupSources).toContainEqual({
+      benchmarkConcurrency: 2,
       defaultEndpoint: 'https://api.cerebras.ai/v1',
       defaultProviderId: 'cerebras',
       label: 'Cerebras',
@@ -370,11 +373,20 @@ describe('interactive setup navigation', () => {
       value: 'cerebras',
     })
     expect(providerSetupSources).toContainEqual({
+      benchmarkConcurrency: 2,
       defaultEndpoint: 'https://api.groq.com/openai/v1',
       defaultProviderId: 'groq',
       label: 'Groq',
       probeModels: true,
       value: 'groq',
+    })
+    expect(providerSetupSources).toContainEqual({
+      benchmarkConcurrency: 20,
+      defaultEndpoint: 'https://openrouter.ai/api/v1',
+      defaultProviderId: 'openrouter',
+      label: 'OpenRouter',
+      probeModels: true,
+      value: 'openrouter',
     })
   })
 
@@ -753,6 +765,19 @@ local = "./plugins/local-plugin"
     expect(io.stdoutText).toContain('--endpoint <url>')
     expect(io.stdoutText).toContain('--provider-header <Key=Value>')
     expect(io.stdoutText).not.toContain('--cache-location')
+    expect(io.stderrText).toBe('')
+  })
+
+  it('prints the live benchmark option in config models list help', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli(['node', 'alint', 'config', 'models', 'list', '--help'], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toContain('$ alint config models list')
+    expect(io.stdoutText).toContain('--with-speed')
+    expect(io.stdoutText).toContain('--with-speed-concurrency <provider-id=limit>')
+    expect(io.stdoutText).toContain('Benchmark configured models with live requests')
     expect(io.stderrText).toBe('')
   })
 

@@ -184,6 +184,8 @@ alint config inspect src/index.ts
 alint config providers list
 alint config providers show openrouter
 alint config models list
+alint config models list --with-speed
+alint config models list --with-speed --with-speed-concurrency openrouter=10 --with-speed-concurrency ollama=1
 alint config models show ollama/qwen
 alint config models probe --endpoint http://localhost:11434/v1
 alint config models rm qwen --provider ollama
@@ -193,6 +195,8 @@ alint config models prune --provider ollama -N --yes
 When a model ID exists under multiple providers, qualify it as `<provider>/<model-id>` or pass `--provider <provider-id>`. Configuration mutations write globally unless `--local` selects the current project's setup config.
 
 `models rm` removes one exact configured model. `models prune` probes provider model endpoints and destructively removes configured IDs that are no longer reported. Interactive prune asks for confirmation; scripts must pass `-N --yes`.
+
+`models list --with-speed` sends live streamed requests to every configured model. It reports median repeat and non-repeat latency, non-repeat output throughput, and successful attempts. Each model receives one repeat warm-up, three measured repeat requests, and three non-repeat requests. Model jobs run concurrently within independent provider limits: OpenRouter defaults to 20, while CLIProxyAPI and other providers default to 2. Repeat `--with-speed-concurrency <provider-id>=<limit>` to override one or more configured providers. Requests within one model remain serial so its repeat and non-repeat cache measurements do not overlap. An unavailable model is shown as `errored` without preventing the remaining models from running. On a TTY, spinners and a refreshable table show active models, phases, and samples. Each request uses the configured runner timeout, or 60 seconds when none is configured. This command consumes provider tokens and may incur charges.
 
 Save machine-readable output and inspect it later without rerunning model calls:
 
