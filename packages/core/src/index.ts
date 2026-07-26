@@ -110,5 +110,14 @@ export type {
   RuleWithHandler,
   Target,
 } from './dsl/types'
+export { benchmarkModels } from './models/benchmark'
+export type {
+  BenchmarkModelsOptions,
+  ModelBenchmarkActive,
+  ModelBenchmarkMeasurement,
+  ModelBenchmarkProgress,
+  ModelBenchmarkRequest,
+  ModelBenchmarkResult,
+} from './models/benchmark'
 export { resolveModel } from './models/resolve'
 export type { ModelRequirement, ResolvedModel, ResolvedProvider, ResolveModelOptions } from './models/types'
