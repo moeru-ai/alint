@@ -1,7 +1,8 @@
-import type { SourceFile, SourceRange, SourceTarget } from '../../source/types'
+import type { SourceFile, SourceTarget } from '../../source/types'
 import type { AstNode } from './ast'
 import type { SourceInfo } from './info'
 
+import { targetIdentity, withStableIdentities } from '../../source/identity'
 import { sliceRange } from '../../source/runtime'
 import { asAstNode, getRange, isAstNode } from './ast'
 import { collectSourceInfo, functionInfo } from './info'
@@ -180,7 +181,7 @@ function createClassTarget(node: AstNode, state: VisitState): SourceTarget | und
 
   return {
     file: state.file,
-    identity: createRangeIdentity('class', name, range),
+    identity: targetIdentity('class', name, range),
     kind: 'class',
     language: state.file.language,
     loc: source.loc,
@@ -227,7 +228,7 @@ function createFunctionTarget(node: AstNode, state: VisitState): SourceTarget | 
 
   return {
     file: state.file,
-    identity: createRangeIdentity('function', name, range),
+    identity: targetIdentity('function', name, range),
     kind: 'function',
     language: state.file.language,
     loc: source.loc,
@@ -244,18 +245,6 @@ function createFunctionTarget(node: AstNode, state: VisitState): SourceTarget | 
     range,
     text: source.text,
   }
-}
-
-function createRangeIdentity(kind: 'class' | 'function', name: string | undefined, range: SourceRange): string {
-  return `${kind}:${name ?? 'anonymous'}:${range.start}:${range.end}`
-}
-
-function createSemanticIdentity(target: SourceTarget): string | undefined {
-  if ((target.kind !== 'class' && target.kind !== 'function') || !target.name) {
-    return undefined
-  }
-
-  return `${target.kind}:${target.name}`
 }
 
 function getNodeName(node: AstNode | null | undefined): string | undefined {
@@ -418,29 +407,4 @@ function visitChildren(node: AstNode, state: VisitState, skippedKeys = new Set<s
       visit(value, state)
     }
   }
-}
-
-function withStableIdentities(targets: SourceTarget[]): SourceTarget[] {
-  const semanticIdentityCounts = new Map<string, number>()
-
-  for (const target of targets) {
-    const semanticIdentity = createSemanticIdentity(target)
-
-    if (semanticIdentity) {
-      semanticIdentityCounts.set(semanticIdentity, (semanticIdentityCounts.get(semanticIdentity) ?? 0) + 1)
-    }
-  }
-
-  return targets.map((target) => {
-    const semanticIdentity = createSemanticIdentity(target)
-
-    if (!semanticIdentity || semanticIdentityCounts.get(semanticIdentity) !== 1) {
-      return target
-    }
-
-    return {
-      ...target,
-      identity: semanticIdentity,
-    }
-  })
 }

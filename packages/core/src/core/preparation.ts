@@ -129,7 +129,11 @@ export function prepareRun(options: RunOptions = {}): PreparationIndex {
     // The mismatch only the run can see: rules that need a real language were configured for this
     // file, yet nothing claimed its extension, so it fell back to plain text and those rules are
     // turned away. An explicit `language:` pin (including `plaintext`) is intent and stays silent.
-    if (effectiveConfig.language === undefined && language.name === 'plaintext' && languageDegradedRules(rules)) {
+    if (
+      effectiveConfig.language === undefined
+      && language.name === 'plaintext'
+      && rules.some(({ enabledRule }) => !isTargetLanguageAccepted(resolveRuleLanguages(enabledRule.rule.languages), 'file', 'plaintext'))
+    ) {
       recordUnregistered(unregisteredLanguages, path, unregisteredLanguageSeverity(effectiveConfig.linterOptions))
     }
 
@@ -186,13 +190,6 @@ function createLanguageRegistry(config: EffectiveAlintConfig) {
   }
 
   return registry
-}
-
-/**
- * Whether any enabled rule is turned off because of the file being handled as plain text (fallback).
- */
-function languageDegradedRules(rules: readonly PreparedRule[]): boolean {
-  return rules.some(({ enabledRule }) => !isTargetLanguageAccepted(resolveRuleLanguages(enabledRule.rule.languages), 'file', 'plaintext'))
 }
 
 function prepareProject(root: string, config: AlintConfig): PreparedProjectInput | undefined {

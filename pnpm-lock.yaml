@@ -529,6 +529,22 @@ importers:
         specifier: 'catalog:'
         version: 11.0.0-alpha.10
 
+  packages/languages:
+    dependencies:
+      tree-sitter-wasms:
+        specifier: 'catalog:'
+        version: 0.1.13
+      web-tree-sitter:
+        specifier: 'catalog:'
+        version: 0.24.7
+    devDependencies:
+      '@alint-js/core':
+        specifier: workspace:*
+        version: link:../core
+      '@alint-js/plugin':
+        specifier: workspace:*
+        version: link:../plugin
+
   packages/plugin:
     devDependencies:
       '@alint-js/core':

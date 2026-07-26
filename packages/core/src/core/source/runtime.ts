@@ -84,6 +84,14 @@ export function sliceRange(file: SourceFile, range: SourceRange): SourceText {
   }
 }
 
+export function withLanguage(file: SourceFile, language: string): SourceFile {
+  if (file.language === language) {
+    return file
+  }
+
+  return { ...file, language }
+}
+
 function clampLine(line: number, lineCount: number): number {
   if (lineCount === 0) {
     return 1
