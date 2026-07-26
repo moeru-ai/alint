@@ -1,44 +1,9 @@
-import type { RuleContext } from '@alint-js/plugin'
-
 import { relative, resolve } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
+import { createFixtureContext, FIXTURES_DIR as FIXTURES } from './fixtures'
 import { helpersIn, repoIndexFor, twinsOf } from './index'
-
-const FIXTURES = resolve(import.meta.dirname, '../../fixtures')
-
-/** A fresh `src` per call: the index is memoized per run, and each test is a run. */
-function createContext(): RuleContext {
-  return {
-    cwd: FIXTURES,
-    id: 'simplicity/no-duplicated-helper',
-    localId: 'no-duplicated-helper',
-    logger: { debug: () => {} },
-    metering: { recordUsage: () => {} },
-    model: () => {
-      throw new Error('unused')
-    },
-    options: [],
-    report: () => {},
-    settings: {},
-    src: {
-      extract: () => {
-        throw new Error('unused')
-      },
-      getText: target => target.text,
-      readFile: () => {
-        throw new Error('unused')
-      },
-      sliceLines: () => {
-        throw new Error('unused')
-      },
-      sliceRange: () => {
-        throw new Error('unused')
-      },
-    },
-  }
-}
 
 function helperNamed(index: Awaited<ReturnType<typeof indexFixtures>>, name: string, directory: string) {
   const helper = index.helpers.find(entry => entry.name === name && entry.id.startsWith(directory))
@@ -51,7 +16,7 @@ function helperNamed(index: Awaited<ReturnType<typeof indexFixtures>>, name: str
 }
 
 async function indexFixtures() {
-  return repoIndexFor(createContext(), {
+  return repoIndexFor(createFixtureContext(), {
     cwd: FIXTURES,
     ignores: ['alint.config.ts'],
     maxLines: 10,
@@ -71,7 +36,7 @@ describe('repoIndexFor', () => {
   })
 
   it('is built once per run, however many files ask for it', async () => {
-    const ctx = createContext()
+    const ctx = createFixtureContext()
     const options = { cwd: FIXTURES, ignores: [], maxLines: 10, minTokens: 5 }
 
     const [first, second] = await Promise.all([

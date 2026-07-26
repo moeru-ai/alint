@@ -11,7 +11,6 @@ import { errorMessageFrom } from '@moeru/std/error'
 import { minimatch } from 'minimatch'
 import { relative } from 'pathe'
 
-import { resolveExtractLanguage } from '../../extract'
 import { helpersIn, repoIndexFor, reviewCacheFor, similarTo, twinsOf } from '../../repo'
 import { readSimplicitySettings } from '../shared/settings'
 import { buildDuplicatedHelperPrompt, duplicatedHelperInstructions } from './prompt'
@@ -32,10 +31,6 @@ export const duplicatedHelperRule = defineRule({
 
     return {
       async onTargetFile(target) {
-        if (resolveExtractLanguage(target.file.path) === undefined) {
-          return
-        }
-
         if (isIgnored(ctx.cwd, target.file.path, settings.ignores)) {
           return
         }
@@ -75,6 +70,15 @@ export const duplicatedHelperRule = defineRule({
       },
     }
   },
+  /*
+   * Every language except the `plaintext` fallback, rather than a list: nothing here reads syntax,
+   * only the `FunctionInfo` a language reports, so a list would exclude any pack added later.
+   *
+   * This also replaces the extension check the rule used to run itself. A file no language claimed
+   * is withheld, and the run reports `alint/unregistered-language` rather than the rule finding
+   * nothing.
+   */
+  languages: 'any',
 })
 
 export function resolveDuplicatedHelperAgent(ctx: Pick<RuleContext, 'agent'>) {

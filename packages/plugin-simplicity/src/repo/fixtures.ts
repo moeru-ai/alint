@@ -1,8 +1,13 @@
-import type { RuleContext } from '@alint-js/plugin'
+import type { RuleContext, SourceRuntime } from '@alint-js/plugin'
 
 import type { IndexedHelper, RepoIndex } from './index'
 
 import { resolve } from 'node:path'
+
+import languagesPlugin from '@alint-js/languages'
+
+import { createSourceExtractor, createSourceRuntime } from '@alint-js/core'
+import { defineConfig } from '@alint-js/plugin'
 
 import { repoIndexFor } from './index'
 
@@ -30,22 +35,8 @@ export function createFixtureContext(overrides: Partial<RuleContext> = {}): Rule
     options: [],
     report: () => {},
     settings: {},
-    // A fresh object per context: the index is memoized on `src`, and one context is one run.
-    src: {
-      extract: () => {
-        throw new Error('unused')
-      },
-      getText: target => target.text,
-      readFile: () => {
-        throw new Error('unused')
-      },
-      sliceLines: () => {
-        throw new Error('unused')
-      },
-      sliceRange: () => {
-        throw new Error('unused')
-      },
-    },
+    // A fresh runtime per context: the index is memoized on `src`, and one context is one run.
+    src: createFixtureRuntime(),
     ...overrides,
   }
 }
@@ -57,6 +48,29 @@ export async function createFixtureIndex(): Promise<RepoIndex> {
     maxLines: 10,
     minTokens: 5,
   })
+}
+
+/**
+ * The runtime a real run hands a rule, assembled the way `runAlint` assembles it.
+ *
+ * Built rather than stubbed so the tests go through the real config resolution and language lookup.
+ * The config below says what a user's config has to say: the fixtures include Go, Python and Rust,
+ * and those only resolve once `@alint-js/languages` is registered.
+ */
+export function createFixtureRuntime(): SourceRuntime {
+  const config = defineConfig([{
+    files: ['**/*.{ts,tsx,js,jsx,mts,cts,mjs,cjs,rs,go,py}'],
+    plugins: { languages: languagesPlugin },
+  }])
+
+  // The extractor needs the runtime that is being built around it. Reading `src` through a getter
+  // defers that until a rule extracts something, long after this has returned. `runAlint` does the
+  // same.
+  const src: SourceRuntime = createSourceRuntime({
+    extract: createSourceExtractor(FIXTURES_DIR, config, () => src),
+  })
+
+  return src
 }
 
 /**

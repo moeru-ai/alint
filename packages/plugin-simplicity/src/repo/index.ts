@@ -1,16 +1,12 @@
-import type { RuleContext } from '@alint-js/plugin'
-
-import type { ExtractLanguage } from '../extract'
+import type { CallSite, FunctionInfo, RuleContext, SourceTarget } from '@alint-js/plugin'
 
 import { createHash } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import { relative } from 'node:path'
 
 import { DEFAULT_IGNORE_PATTERNS, listFiles } from '@alint-js/tools-fs'
 import { errorMessageFrom } from '@moeru/std/error'
 import { minimatch } from 'minimatch'
 
-import { extractSource, resolveExtractLanguage } from '../extract'
 import { alphaFingerprint, exactFingerprint, normalizedBody, tokenize, tokenOverlap } from '../fingerprint'
 
 export type { DecisionCache, JudgedHelper, ReviewCache } from './cache'
@@ -28,7 +24,8 @@ export interface IndexedHelper {
   filePath: string
   /** `packages/cli/src/lint.ts:57`. Unique, and a model can quote it back. */
   id: string
-  language: ExtractLanguage
+  /** The id the language registered under: `typescript` and `go`, never `ts` or `golang`. */
+  language: string
   line: number
   lines: number
   name: string
@@ -124,23 +121,11 @@ async function buildRepoIndex(ctx: RuleContext, options: RepoIndexOptions): Prom
   const calls = new Map<string, number>()
 
   for (const path of paths.sort()) {
-    const language = resolveExtractLanguage(path)
-
-    if (language === undefined || isIgnored(options.cwd, path, options.ignores)) {
+    if (isIgnored(options.cwd, path, options.ignores)) {
       continue
     }
 
-    let text: string
-
-    try {
-      text = await readFile(path, 'utf8')
-    }
-    catch (error) {
-      ctx.logger.debug(`simplicity: could not read ${path}: ${errorMessageFrom(error) ?? 'unknown error'}`)
-      continue
-    }
-
-    for (const helper of await helpersOf(ctx, path, text, language, options, calls)) {
+    for (const helper of await helpersOf(ctx, path, options, calls)) {
       index.helpers.push(helper)
       index.byId.set(helper.id, helper)
       push(index.byExact, helper.exactFingerprint, helper)
@@ -163,19 +148,49 @@ async function buildRepoIndex(ctx: RuleContext, options: RepoIndexOptions): Prom
   return index
 }
 
+/**
+ * Every call in the file, which a language reports on its file target.
+ *
+ * Checked rather than cast, because `metadata` is `Record<string, unknown>` and any language may
+ * write what it likes there. A wrong shape would skew the usage counts instead of failing, so it is
+ * better to count nothing than to trust it.
+ */
+function callsOf(target: SourceTarget): CallSite[] {
+  const calls = target.metadata?.calls
+
+  if (!Array.isArray(calls)) {
+    return []
+  }
+
+  return calls.filter((call): call is CallSite =>
+    typeof call === 'object' && call !== null && typeof (call as CallSite).name === 'string')
+}
+
+/** Undefined unless this is a function target whose language filled in the info. See `callsOf`. */
+function functionInfoOf(target: SourceTarget): FunctionInfo | undefined {
+  if (target.kind !== 'function') {
+    return undefined
+  }
+
+  const info = target.metadata?.function
+
+  if (typeof info !== 'object' || info === null || !Array.isArray((info as FunctionInfo).declaredNames)) {
+    return undefined
+  }
+
+  return info as FunctionInfo
+}
+
 async function helpersOf(
   ctx: RuleContext,
   filePath: string,
-  text: string,
-  language: ExtractLanguage,
   options: RepoIndexOptions,
   calls: Map<string, number>,
 ): Promise<IndexedHelper[]> {
-  let functions
-  let sourceCalls
+  let targets: SourceTarget[]
 
   try {
-    ({ calls: sourceCalls, functions } = await extractSource(text, language))
+    targets = await ctx.src.extract(filePath)
   }
   catch (error) {
     // A file that cannot be parsed costs its own helpers, never the run.
@@ -184,34 +199,44 @@ async function helpersOf(
     return []
   }
 
-  for (const call of sourceCalls) {
-    calls.set(call.name, (calls.get(call.name) ?? 0) + 1)
+  for (const target of targets) {
+    for (const call of callsOf(target)) {
+      calls.set(call.name, (calls.get(call.name) ?? 0) + 1)
+    }
   }
 
   const helpers: IndexedHelper[] = []
 
-  for (const fn of functions) {
-    const lines = fn.loc.end.line - fn.loc.start.line + 1
-    const tokens = tokenize(fn.text, fn.commentRanges, fn.identifierRanges, fn.binderNames)
+  for (const target of targets) {
+    const info = functionInfoOf(target)
 
-    if (fn.name === '' || lines > options.maxLines || tokens.length < options.minTokens) {
+    // Not a function, unnamed, or missing its info. A helper needs all three to be fingerprinted
+    // and reported, and the file target itself lands here too.
+    if (info === undefined || target.name === undefined || target.loc === undefined) {
+      continue
+    }
+
+    const lines = target.loc.end.line - target.loc.start.line + 1
+    const tokens = tokenize(target.text, info.commentRanges, info.identifierRanges, info.declaredNames)
+
+    if (lines > options.maxLines || tokens.length < options.minTokens) {
       continue
     }
 
     helpers.push({
-      alphaFingerprint: alphaFingerprint(fn.text, fn.commentRanges, fn.identifierRanges, fn.binderNames),
-      body: normalizedBody(fn.text, fn.commentRanges),
-      bodyIsSingleExpression: fn.bodyIsSingleExpression,
-      bodyStatements: fn.bodyStatements,
-      exactFingerprint: exactFingerprint(fn.text, fn.commentRanges),
-      exported: fn.exported,
+      alphaFingerprint: alphaFingerprint(target.text, info.commentRanges, info.identifierRanges, info.declaredNames),
+      body: normalizedBody(target.text, info.commentRanges),
+      bodyIsSingleExpression: info.bodyIsSingleExpression,
+      bodyStatements: info.bodyStatements,
+      exactFingerprint: exactFingerprint(target.text, info.commentRanges),
+      exported: info.exported,
       filePath,
-      id: `${relative(options.cwd, filePath)}:${fn.loc.start.line}`,
-      language,
-      line: fn.loc.start.line,
+      id: `${relative(options.cwd, filePath)}:${target.loc.start.line}`,
+      language: target.language,
+      line: target.loc.start.line,
       lines,
-      name: fn.name,
-      text: fn.text,
+      name: target.name,
+      text: target.text,
       tokens,
       // Filled in once every file has been counted.
       usageCount: 0,

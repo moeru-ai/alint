@@ -22,6 +22,7 @@ export {
   resolveLanguage,
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
+export { createSourceExtractor } from './core/preparation'
 export { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
 export { targetIdentity, withStableIdentities } from './core/source/identity'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange, withLanguage } from './core/source/runtime'
