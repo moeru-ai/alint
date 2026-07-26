@@ -18,14 +18,14 @@ export interface SourceInfo {
 }
 
 /*
- * The rule this whole file serves: a copy can rename what a function DECLARES, not what it REFERS
- * to. Callees, globals, types and properties are left exactly as written, because they are what
- * makes two same-shaped functions hash differently — replace them and `return this.name` and
- * `return this.size` hash alike.
+ * This file builds `FunctionInfo` for JavaScript and TypeScript. Every identifier decision in it
+ * follows one rule: a copy may rename the names a function declares, never the names it refers to.
+ * Callees, globals, types and properties stay verbatim, because they are what tells two same-shaped
+ * functions apart. `FunctionInfo.declaredNames` states it in full.
  *
- * `@alint-js/languages-treesitter` produces the same data from tree-sitter queries. Where the two
- * grammars disagree the comments below say so, since a disagreement makes one function fingerprint
- * differently depending on which parser ran.
+ * `@alint-js/languages` builds the same type for Go, Python and Rust, parsing with tree-sitter
+ * where this file uses oxc. The comments below compare the two parsers case by case, because a
+ * field they fill in differently would mean two things depending on which one ran.
  */
 
 /**

@@ -23,7 +23,8 @@ export {
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
 export { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
-export { createSourceFile, createSourceRuntime, sliceLines, sliceRange } from './core/source/runtime'
+export { targetIdentity, withStableIdentities } from './core/source/identity'
+export { createSourceFile, createSourceRuntime, sliceLines, sliceRange, withLanguage } from './core/source/runtime'
 export type { SourceRuntimeOptions } from './core/source/runtime'
 export type {
   CallSite,
