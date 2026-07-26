@@ -1,3 +1,5 @@
+import languagesPlugin from '@alint-js/languages'
+
 import { createApeiraAdapter } from '@alint-js/agent-apeira'
 import { defineConfig } from '@alint-js/plugin'
 
@@ -26,8 +28,8 @@ export default defineConfig([
     agent: createApeiraAdapter(),
     files: ['**/*.{ts,rs,go,py}'],
     ignores: ['alint.config.ts'],
-    language: 'plaintext',
     plugins: {
+      languages: languagesPlugin, // Additional language support
       simplicity: simplicityPlugin,
     },
     rules: {

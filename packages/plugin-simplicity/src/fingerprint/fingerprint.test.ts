@@ -1,20 +1,28 @@
+import type { FunctionInfo } from '@alint-js/plugin'
+
+import { createSourceFile } from '@alint-js/core'
+import { extractJsSourceTargets } from '@alint-js/core/languages/js'
 import { describe, expect, it } from 'vitest'
 
-import { extractSource } from '../extract/extract'
 import { alphaFingerprint, exactFingerprint } from './fingerprint'
 
-/** Feeds real extractor output, never hand-written offsets and binder lists. */
+/**
+ * Feeds real extractor output, never hand-written offsets and name lists through core's
+ * own extractor, because that is what reads TypeScript during a run.
+ */
 async function fingerprintsOf(source: string, name?: string) {
-  const { functions } = await extractSource(source, 'typescript')
-  const target = name === undefined ? functions.at(0) : functions.find(fn => fn.name === name)
+  const targets = extractJsSourceTargets(createSourceFile('/fixture.ts', source))
+    .filter(candidate => candidate.kind === 'function')
+  const target = name === undefined ? targets.at(0) : targets.find(candidate => candidate.name === name)
   if (target === undefined)
     throw new Error(`fixture has no function named ${name ?? '(first)'}`)
 
-  const { binderNames, commentRanges, identifierRanges, text } = target
+  const { commentRanges, declaredNames, identifierRanges } = target.metadata?.function as FunctionInfo
+  const { text } = target
 
   return {
-    alpha: alphaFingerprint(text, commentRanges, identifierRanges, binderNames),
-    binderNames,
+    alpha: alphaFingerprint(text, commentRanges, identifierRanges, declaredNames),
+    binderNames: declaredNames,
     exact: exactFingerprint(text, commentRanges),
   }
 }

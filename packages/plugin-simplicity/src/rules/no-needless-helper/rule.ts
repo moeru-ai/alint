@@ -11,7 +11,6 @@ import { minimatch } from 'minimatch'
 import { relative } from 'pathe'
 import { array, description, number, object, pipe, string } from 'valibot'
 
-import { resolveExtractLanguage } from '../../extract'
 import { decisionCacheFor, helpersIn, repoIndexFor } from '../../repo'
 import { readSimplicitySettings } from '../shared/settings'
 import { buildNeedlessHelperPrompt, needlessHelperPrompt } from './prompt'
@@ -50,10 +49,6 @@ export const needlessHelperRule = defineRule({
 
     return {
       async onTargetFile(target) {
-        if (resolveExtractLanguage(target.file.path) === undefined) {
-          return
-        }
-
         if (!settings.judge || isIgnored(ctx.cwd, target.file.path, settings.ignores)) {
           return
         }
@@ -75,6 +70,15 @@ export const needlessHelperRule = defineRule({
       },
     }
   },
+  /*
+   * Every language except the `plaintext` fallback, rather than a list: nothing here reads syntax,
+   * only the `FunctionInfo` a language reports, so a list would exclude any pack added later.
+   *
+   * This also replaces the extension check the rule used to run itself. A file no language claimed
+   * is withheld, and the run reports `alint/unregistered-language` rather than the rule finding
+   * nothing.
+   */
+  languages: 'any',
 })
 
 /**

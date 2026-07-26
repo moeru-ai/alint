@@ -19,15 +19,14 @@
   "devDependencies": {
     "@alint-js/agent-apeira": "workspace:*",
     "@alint-js/core": "workspace:*",
+    "@alint-js/languages": "workspace:*",
     "@alint-js/plugin": "workspace:*",
     "@alint-js/tools-fs": "workspace:*",
     "@moeru/std": "catalog:",
     "minimatch": "catalog:",
     "pathe": "catalog:",
-    "tree-sitter-wasms": "catalog:",
     "tsdown": "catalog:",
     "typescript": "catalog:",
-    "valibot": "catalog:",
-    "web-tree-sitter": "catalog:"
+    "valibot": "catalog:"
   }
 }
