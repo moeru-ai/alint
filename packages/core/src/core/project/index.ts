@@ -78,7 +78,7 @@ export function createProjectJobs(options: {
   runtimes: RuleRuntime[]
 }): { jobs: RuleJob[], owner?: CacheOwnerTransaction } {
   const executions = options.runtimes
-    .map(runtime => projectExecution(runtime, options.project.target))
+    .map(runtime => projectExecution(runtime))
     .filter((execution): execution is RuleTargetExecution => execution !== undefined)
   if (executions.length === 0)
     return { jobs: [] }
@@ -88,10 +88,9 @@ export function createProjectJobs(options: {
     cacheOwner: owner,
     cacheTargetHash: options.project.hash,
     configHash: options.configHash,
+    descriptor: options.project.target,
     identity: 'project',
     kind: 'project' as const,
-    language: 'project',
-    text: options.project.hash,
   }
   const jobs = executions.map((execution): RuleJob => {
     const ruleId = execution.runtime.enabledRule.id
@@ -146,11 +145,11 @@ function copyTargetSnapshot(target: ProjectTargetSnapshot): ProjectTargetSnapsho
   }
 }
 
-function projectExecution(runtime: RuleRuntime, target: ProjectIndex['target']): RuleTargetExecution | undefined {
+function projectExecution(runtime: RuleRuntime): RuleTargetExecution | undefined {
   if (runtime.handlers.onTargetWith)
-    return { run: () => runtime.handlers.onTargetWith?.(target), runtime }
+    return { handler: 'with', runtime }
   if (runtime.handlers.onTargetProject)
-    return { run: () => runtime.handlers.onTargetProject?.(target), runtime }
+    return { handler: 'project', runtime }
   return undefined
 }
 

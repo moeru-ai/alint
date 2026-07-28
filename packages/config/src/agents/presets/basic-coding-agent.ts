@@ -28,13 +28,30 @@ export function createBasicCodingAgentRule(rule: DeclarativeRuleDefinition): Rul
   return {
     cache: false,
     create: ctx => ({
+      /**
+       * Runs one tool-using declarative review for a planned file.
+       *
+       * Triggering workflow:
+       *
+       * {@link createBasicCodingAgentRule}
+       *   -> `RuleHandlers.onTargetFile`
+       *     -> {@link createCodingAgent}
+       *
+       * Upstream:
+       * - {@link createBasicCodingAgentRule}
+       *
+       * Downstream:
+       * - {@link createCodingAgent}
+       * - {@link reportDeclarativeFindings}
+       */
       async onTargetFile(target) {
         const model = await ctx.model()
+        const file = await ctx.src.readFile(target.file)
         const result = await createCodingAgent(model).run({
           cwd: ctx.cwd,
           instruction: rule.instruction,
           outputLanguage: ctx.outputLanguage,
-          sourceText: target.file.text,
+          sourceText: file.text,
           targetFilePath: target.file.path,
           tools: createTools(ctx.cwd),
         })

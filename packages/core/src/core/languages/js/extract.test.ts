@@ -65,13 +65,11 @@ describe('js source targets', () => {
     expect(sliceLines(file, { endLine: 3, startLine: 2 }).text).toBe('b\nc')
   })
 
-  it('returns source text from runtime targets without reading files', () => {
+  it('returns source text from an already-read source file', () => {
     const runtime = createSourceRuntime()
     const file = createSourceFile('/project/src/demo.ts', 'function load() {}')
-    const target = extractJsSourceTargets(file).find(item => item.kind === 'function')
 
     expect(runtime.getText(file)).toBe(file.text)
-    expect(target && runtime.getText(target)).toBe('function load() {}')
   })
 
   it('slices lines with trailing newline normalization and clamped ranges', () => {

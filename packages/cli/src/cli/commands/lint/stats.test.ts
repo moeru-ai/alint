@@ -73,6 +73,7 @@ describe('mergeProgressReporters', () => {
       onExecuteEnd: () => events.push(`${name}:execute:end`),
       onExecuteStart: () => events.push(`${name}:execute:start`),
       onFileReady: () => events.push(`${name}:file`),
+      onPlanningEnd: () => events.push(`${name}:planning:end`),
       onPrepareEnd: () => events.push(`${name}:prepare:end`),
       onPrepareStart: () => events.push(`${name}:prepare:start`),
     })
@@ -83,7 +84,8 @@ describe('mergeProgressReporters', () => {
     merged?.onPrepareEnd?.({ filesTotal: 1 })
     merged?.onExecuteStart?.({ progress: initial })
     merged?.onFileReady?.({ fileIndex: 0, inputPath: '/repo/a.ts', jobsAdded: 0, progress: initial })
-    merged?.onExecuteEnd?.({ progress: { ...initial, final: true } })
+    merged?.onPlanningEnd?.({ progress: { ...initial, planningComplete: true } })
+    merged?.onExecuteEnd?.({ progress: { ...initial, planningComplete: true } })
 
     expect(events).toEqual([
       'base:prepare:start',
@@ -94,6 +96,8 @@ describe('mergeProgressReporters', () => {
       'extra:execute:start',
       'base:file',
       'extra:file',
+      'base:planning:end',
+      'extra:planning:end',
       'base:execute:end',
       'extra:execute:end',
     ])
@@ -173,7 +177,7 @@ function jobStart(): JobStartPayload {
 
 function progress(execution: RunEndPayload['execution'], final = false): RunEndPayload['progress'] {
   const jobsCompleted = execution.cached + execution.cancelled + execution.completed + execution.failed + execution.skipped
-  return { execution, filesTotal: 0, final, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned }
+  return { execution, filesPlanned: 0, filesTotal: 0, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned, planningComplete: final }
 }
 
 function runEnd(overrides: Partial<RunEndPayload> = {}): RunEndPayload {

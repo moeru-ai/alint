@@ -1,7 +1,9 @@
 import type { AgentAdapter, AgentRequest } from '@alint-js/core/agent'
-import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
+import type { PlannedSourceTarget, ResolvedModel, RuleContext } from '@alint-js/plugin'
 
 import type { ReinventedHelperFinding } from './index'
+
+import { createHash } from 'node:crypto'
 
 import { createSourceRuntime } from '@alint-js/core'
 import { describe, expect, it } from 'vitest'
@@ -14,6 +16,8 @@ import {
   createReportFindingTool,
   reinventedHelperInstructions,
 } from './index'
+
+const sourceText = 'import { clamp } from \'./utils\'\n\nexport function clampValue(value: number) {\n  return Math.min(Math.max(value, 0), 1)\n}\n'
 
 function createResolvedModel(): ResolvedModel {
   return {
@@ -48,28 +52,22 @@ function createRuleContext(agent?: AgentAdapter): RuleContext {
     report: () => {},
     settings: {},
     src: createSourceRuntime({
-      readFile: async filePath => ({
+      readFile: async file => ({
+        contentHash: createHash('sha256').update(sourceText).digest('hex'),
         language: 'plaintext',
-        lines: [''],
-        path: filePath,
-        text: '',
+        lines: sourceText.split('\n'),
+        path: typeof file === 'string' ? file : file.path,
+        text: sourceText,
       }),
     }),
   }
 }
 
-function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/src/math.ts'): SourceTarget & { kind: Kind } {
+function createSourceTarget<Kind extends PlannedSourceTarget['kind']>(kind: Kind, path = '/repo/src/math.ts'): PlannedSourceTarget & { kind: Kind } {
   const file = {
+    contentHash: createHash('sha256').update(sourceText).digest('hex'),
     language: 'plaintext',
-    lines: [
-      'import { clamp } from \'./utils\'',
-      '',
-      'export function clampValue(value: number) {',
-      '  return Math.min(Math.max(value, 0), 1)',
-      '}',
-    ],
     path,
-    text: 'import { clamp } from \'./utils\'\n\nexport function clampValue(value: number) {\n  return Math.min(Math.max(value, 0), 1)\n}\n',
   }
 
   return {
@@ -77,7 +75,6 @@ function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path 
     identity: `${kind}:demo`,
     kind,
     language: file.language,
-    text: file.text,
   }
 }
 
@@ -193,12 +190,15 @@ describe('reinvented-helper tools', () => {
     let requestedPath: string | undefined
     const tool = createReadFileTool({
       readFile: async (filePath) => {
-        requestedPath = filePath
+        const path = typeof filePath === 'string' ? filePath : filePath.path
+        requestedPath = path
+        const text = 'export const clamp = 1'
         return {
+          contentHash: createHash('sha256').update(text).digest('hex'),
           language: 'plaintext',
-          lines: ['export const clamp = 1'],
-          path: filePath,
-          text: 'export const clamp = 1',
+          lines: [text],
+          path,
+          text,
         }
       },
     }, '/repo')

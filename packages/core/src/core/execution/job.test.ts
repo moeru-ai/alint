@@ -6,10 +6,11 @@ import type { JobOrderKey, RuleJob, RuleRuntime, RuleRuntimeState } from './type
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 import { defineRule } from '../../dsl/define'
-import { createSourceRuntime } from '../source/runtime'
+import { hashText } from '../hash'
+import { createSourceRuntime, SourceChangedError } from '../source/runtime'
 import { compareJobOrder, executeRuleJob } from './job'
 import { createRunProgress } from './progress'
 import { createRuleRuntimes } from './runtime'
@@ -38,23 +39,7 @@ it('detaches a completed outcome from the active rule job', async () => {
   }
   const job: RuleJob = {
     execution: {
-      run: () => {
-        const state = executionState.getStore()
-        if (!state)
-          throw new Error('Expected an active rule runtime state.')
-        state.bucket.diagnostics.push({
-          filePath: '/repo/source.ts',
-          message: 'diagnostic',
-          ruleId: 'company/review',
-          severity: 'warn',
-        })
-        state.bucket.usage.push({
-          inputTokens: 1,
-          modelId: 'model',
-          providerId: 'provider',
-          ruleId: 'company/review',
-        })
-      },
+      handler: 'file',
       runtime: {
         cacheable: false,
         enabledRule: {
@@ -65,7 +50,25 @@ it('detaches a completed outcome from the active rule job', async () => {
           severity: 'warn' as const,
         },
         executionState,
-        handlers: {},
+        handlers: {
+          onTargetFile: () => {
+            const state = executionState.getStore()
+            if (!state)
+              throw new Error('Expected an active rule runtime state.')
+            state.bucket.diagnostics.push({
+              filePath: '/repo/source.ts',
+              message: 'diagnostic',
+              ruleId: 'company/review',
+              severity: 'warn',
+            })
+            state.bucket.usage.push({
+              inputTokens: 1,
+              modelId: 'model',
+              providerId: 'provider',
+              ruleId: 'company/review',
+            })
+          },
+        },
         ruleHash: 'rule-hash',
         ruleIndex: 0,
       },
@@ -74,11 +77,20 @@ it('detaches a completed outcome from the active rule job', async () => {
     orderKey,
     target: {
       cacheOwner,
+      cacheTargetHash: 'target-hash',
       configHash: 'config-hash',
+      descriptor: {
+        file: {
+          contentHash: 'content-hash',
+          language: 'typescript',
+          path: '/repo/source.ts',
+        },
+        identity: 'source.ts',
+        kind: 'file',
+        language: 'typescript',
+      },
       identity: 'source.ts',
       kind: 'file' as const,
-      language: 'typescript',
-      text: 'retained source sentinel',
     },
   }
 
@@ -153,6 +165,66 @@ it.each([
   })
 
   expect(outcome).toMatchObject({ failure: { message }, state: 'failed' })
+})
+
+it('skips the handler and its execution-time source read on a cache hit', async () => {
+  const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+  const rule = defineRule({ cache: true, create: () => ({}) })
+  const run = vi.fn()
+  const job = createTestJob({ executionState, rule, run })
+  job.execution.runtime.cacheable = true
+  job.target.cacheOwner = {
+    commit: () => {},
+    discard: () => {},
+    lookup: () => ({
+      diagnostics: [],
+      fingerprint: {
+        configHash: 'config-hash',
+        modelHash: 'model-hash',
+        ruleHash: 'rule-hash',
+        targetHash: 'target-hash',
+      },
+      target: { hash: 'target-hash', identity: 'source.ts', kind: 'file' },
+      usage: [],
+    }),
+    put: () => {},
+  }
+
+  const outcome = await executeRuleJob(job, {
+    cache: { modelHash: 'model-hash' },
+    runProgress: startedProgress(),
+  })
+
+  expect(outcome.state).toBe('cached')
+  expect(run).not.toHaveBeenCalled()
+})
+
+it('reports descriptor mismatches as source-changed failures with both hashes', async () => {
+  const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+  const rule = defineRule({ create: () => ({}) })
+  const plannedHash = hashText('planned')
+  const actualHash = hashText('changed')
+  const job = createTestJob({
+    executionState,
+    rule,
+    run: async () => {
+      throw new SourceChangedError('/repo/source.ts', plannedHash, actualHash)
+    },
+  })
+
+  const outcome = await executeRuleJob(job, {
+    cache: { modelHash: 'model-hash' },
+    runProgress: startedProgress(),
+  })
+
+  expect(outcome).toMatchObject({
+    failure: {
+      kind: 'source-changed',
+      message: expect.stringContaining(plannedHash),
+    },
+    state: 'failed',
+  })
+  expect(outcome.state === 'failed' && outcome.failure.message).toContain(actualHash)
 })
 
 it('detaches a failed outcome from the active rule job', async () => {
@@ -254,11 +326,14 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
   if (!runtime)
     throw new Error('Expected a rule runtime.')
   const sourceTarget: FileTarget = {
-    file: { language: 'typescript', lines: ['source'], path: '/repo/source.ts', text: 'source' },
+    file: {
+      contentHash: 'content-hash',
+      language: 'typescript',
+      path: '/repo/source.ts',
+    },
     identity: 'source.ts',
     kind: 'file',
     language: 'typescript',
-    text: 'source',
   }
   let cachedEntry: CacheEntry | undefined
   const cacheOwner: CacheOwnerTransaction = {
@@ -373,7 +448,7 @@ function createTestJob(options: {
   run: () => Promise<void> | void
   runtime?: RuleRuntime
 }): RuleJob {
-  const runtime: RuleRuntime = options.runtime ?? {
+  const baseRuntime: RuleRuntime = options.runtime ?? {
     cacheable: false,
     enabledRule: {
       id: 'company/review',
@@ -387,8 +462,12 @@ function createTestJob(options: {
     ruleHash: 'rule-hash',
     ruleIndex: 0,
   }
+  const runtime: RuleRuntime = {
+    ...baseRuntime,
+    handlers: { onTargetFile: options.run },
+  }
   return {
-    execution: { run: options.run, runtime },
+    execution: { handler: 'file', runtime },
     jobRef: {
       id: 'job-1',
       index: 1,
@@ -400,11 +479,20 @@ function createTestJob(options: {
     target: {
       activeFilePath: '/repo/source.ts',
       cacheOwner: options.cacheOwner,
+      cacheTargetHash: 'target-hash',
       configHash: 'config-hash',
+      descriptor: {
+        file: {
+          contentHash: 'content-hash',
+          language: 'typescript',
+          path: '/repo/source.ts',
+        },
+        identity: 'source.ts',
+        kind: 'file',
+        language: 'typescript',
+      },
       identity: 'source.ts',
       kind: 'file',
-      language: 'typescript',
-      text: 'source',
     },
   }
 }

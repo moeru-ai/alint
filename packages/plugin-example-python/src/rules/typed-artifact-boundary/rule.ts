@@ -76,12 +76,29 @@ type PythonTypedArtifactBoundaryFinding = InferOutput<typeof pythonTypedArtifact
 
 export const pythonTypedArtifactBoundaryRule = defineRule({
   create: ctx => ({
+    /**
+     * Reviews one planned Python file for typed-artifact boundary findings.
+     *
+     * Triggering workflow:
+     *
+     * {@link pythonTypedArtifactBoundaryRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgePythonTypedArtifactBoundary}
+     *
+     * Upstream:
+     * - {@link pythonTypedArtifactBoundaryRule}
+     *
+     * Downstream:
+     * - {@link judgePythonTypedArtifactBoundary}
+     * - {@link reportPythonTypedArtifactBoundaryFindings}
+     */
     async onTargetFile(target) {
       if (!target.file.path.endsWith('.py')) {
         return
       }
 
-      const findings = await judgePythonTypedArtifactBoundary(ctx, target.file)
+      const file = await ctx.src.readFile(target.file)
+      const findings = await judgePythonTypedArtifactBoundary(ctx, file)
 
       reportPythonTypedArtifactBoundaryFindings(ctx, target.file.path, findings)
     },

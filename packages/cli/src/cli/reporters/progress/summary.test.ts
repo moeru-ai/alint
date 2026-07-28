@@ -85,11 +85,12 @@ function snapshot(execution: ExecutionCounts, final = false): ProgressSnapshot {
   const jobsCompleted = execution.cached + execution.cancelled + execution.completed + execution.failed + execution.skipped
   return {
     execution: { ...execution },
+    filesPlanned: 0,
     filesTotal: 0,
-    final,
     jobsCompleted,
     jobsStarted: jobsCompleted + execution.running,
     jobsTotal: execution.planned,
+    planningComplete: final,
   }
 }
 
@@ -120,7 +121,7 @@ describe('createSummaryProgressReporter', () => {
     expect(reporter.getRows().at(-1)).toBe('0 tokens (0 cached) -> ~?')
   })
 
-  it('restores the progress bar and projections for a final denominator', () => {
+  it('removes discovering as soon as planning ends while execution is still active', () => {
     vi.useFakeTimers()
     vi.setSystemTime(49_800)
     const reporter = createActualSummaryProgressReporter({
@@ -130,9 +131,9 @@ describe('createSummaryProgressReporter', () => {
       spinnerFrames: ['⠋'],
     })
     reporter.onPrepareStart?.({ startedAt: 0 })
-    reporter.onExecuteEnd?.({ progress: snapshot(counts({ completed: 7, planned: 7 }), true) })
+    reporter.onPlanningEnd?.({ progress: snapshot(counts({ completed: 3, planned: 7, running: 4 }), true) })
 
-    expect(reporter.getRows().at(-3)).toBe('7/7 [██████████] 49.8s -> ~0.0s')
+    expect(reporter.getRows().at(-3)).toBe('3/7 [▓████░░░░░] 49.8s -> ~66.4s')
     expect(reporter.getRows().at(-1)).toBe('0 tokens (0 cached) -> ~0 tokens')
   })
 

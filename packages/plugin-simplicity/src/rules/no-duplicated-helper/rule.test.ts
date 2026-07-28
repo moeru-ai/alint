@@ -1,7 +1,7 @@
 import type { AgentAdapter, AgentRequest, AgentTool } from '@alint-js/core/agent'
 import type { DiagnosticDescriptor, FileTarget, RuleContext } from '@alint-js/plugin'
 
-import { cp, mkdtemp, readFile, rm } from 'node:fs/promises'
+import { cp, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 
@@ -67,13 +67,11 @@ async function createWorkspace(): Promise<string> {
 
 async function lint(run: Run, relativePath: string, settings?: Record<string, unknown>): Promise<void> {
   const path = resolve(run.cwd, relativePath)
-  const text = await readFile(path, 'utf8')
   const target: FileTarget = {
-    file: { language: 'plaintext', lines: text.split('\n'), path, text },
+    file: { contentHash: 'unused', language: 'plaintext', path },
     identity: 'file',
     kind: 'file',
     language: 'plaintext',
-    text,
   }
 
   await duplicatedHelperRule.create(run.contextFor(settings)).onTargetFile?.(target)
@@ -296,11 +294,10 @@ describe('no-duplicated-helper, files it will not touch', () => {
     const run = createRun()
 
     await duplicatedHelperRule.create(run.contextFor(AST_ONLY)).onTargetFile?.({
-      file: { language: 'plaintext', lines: ['# hi'], path: resolve(FIXTURES_DIR, 'README.md'), text: '# hi' },
+      file: { contentHash: 'unused', language: 'plaintext', path: resolve(FIXTURES_DIR, 'README.md') },
       identity: 'file',
       kind: 'file',
       language: 'plaintext',
-      text: '# hi',
     })
 
     expect(run.diagnostics).toStrictEqual([])

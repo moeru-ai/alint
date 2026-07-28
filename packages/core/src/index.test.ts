@@ -1,8 +1,12 @@
 import type {
+  BaseSourceFile,
+  PlannedSourceTarget,
   ProgressReporter,
   ProgressSnapshot,
   ProjectFileEntry,
   ProjectTargetEntry,
+  SourceFile,
+  SourceMetadataValue,
 } from './index'
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
@@ -28,11 +32,12 @@ describe('core public entrypoints', () => {
         running: 0,
         skipped: 0,
       },
+      filesPlanned: 0,
       filesTotal: 1,
-      final: false,
       jobsCompleted: 0,
       jobsStarted: 0,
       jobsTotal: 0,
+      planningComplete: false,
     } satisfies ProgressSnapshot
     const reporter = {
       onExecuteEnd: (payload) => {
@@ -51,6 +56,13 @@ describe('core public entrypoints', () => {
 
     expectTypeOf(progress).toMatchTypeOf<ProgressSnapshot>()
     expectTypeOf(reporter).toMatchTypeOf<ProgressReporter>()
+  })
+
+  it('exports compact source descriptors from the root entrypoint', () => {
+    expectTypeOf<keyof BaseSourceFile>().toEqualTypeOf<'contentHash' | 'language' | 'path'>()
+    expectTypeOf<SourceFile>().toMatchTypeOf<BaseSourceFile>()
+    expectTypeOf<keyof PlannedSourceTarget>().toEqualTypeOf<'file' | 'identity' | 'kind' | 'language' | 'loc' | 'metadata' | 'name' | 'origin' | 'range'>()
+    expectTypeOf<() => void>().not.toMatchTypeOf<SourceMetadataValue>()
   })
 
   it('does not create runtime exports for public type contracts', () => {

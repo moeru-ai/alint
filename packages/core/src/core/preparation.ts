@@ -74,8 +74,8 @@ export interface PreparedRule {
  *
  * It resolves each file's OWN config rather than a caller's, because the language a file resolves to
  * is a config decision and two config groups may register different plugins. It extracts on demand
- * and holds nothing: the windowed lint pipeline (`executeSourceSessions`) releases sources to bound
- * memory, and a run-wide parse memo here would put that back. A caller keeps only what it derives.
+ * and holds nothing: source planning releases rich extractor values after compact jobs are admitted,
+ * and a run-wide parse memo here would put that retention back. A caller keeps only what it derives.
  *
  * `getSrc` defers reading the runtime because the runtime is built around this closure. It is assigned
  * before any rule runs, so by the first call it is present.

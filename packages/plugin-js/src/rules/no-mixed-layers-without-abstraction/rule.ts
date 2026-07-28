@@ -139,7 +139,7 @@ export function createMixedLayersWithoutAbstractionRule(
        *
        * Triggering workflow:
        *
-       * `executeSourceSession`
+       * `planSource`
        *   -> `sourceExecution`
        *     -> `RuleHandlers.onTargetFile`
        *       -> {@link onTargetFile}
@@ -150,8 +150,8 @@ export function createMixedLayersWithoutAbstractionRule(
        *                 -> {@link reportMixedLayerFindings}
        *
        * Upstream:
-       * - `executeSourceSession` owns source extraction, source-backed job lifetime, and
-       *   handler selection through `sourceExecution` in `packages/core/src/core/source/session.ts`
+       * - `planSource` owns source extraction and compact job admission, with handler selection
+       *   through `sourceExecution` in `packages/core/src/core/source/planner.ts`
        *
        * Downstream:
        * - {@link generateStructured} -> coverage and data-flow draft
@@ -162,7 +162,7 @@ export function createMixedLayersWithoutAbstractionRule(
        */
       async function onTargetFile(target: FileTarget): Promise<void> {
         const model = await ctx.model()
-        const source = ctx.src.getText(target)
+        const source = (await ctx.src.readFile(target.file)).text
         const firstDraft = await dependencies.generateDraft({
           createMessages: retryFeedback => createMixedLayerMessages(
             source,

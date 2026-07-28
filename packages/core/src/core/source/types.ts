@@ -1,31 +1,37 @@
+export interface BaseSourceFile {
+  contentHash: string
+  language: string
+  path: string
+}
+
 /**
  * Carried on a file target under `metadata.calls`, in source order.
  *
  * Every call in the file, including those outside any function: a consumer counting how often a
  * name is used has to see the uses, not just the definitions.
  */
-export interface CallSite {
+export interface CallSite extends SourceMetadataObject {
   /** The last segment only: `a.b.helper()` and `helper()` both yield `helper`. */
   name: string
   /** Absolute, into the file's text. */
   range: SourceRange
 }
 
-export type ClassTarget = SourceTargetOfKind<'class'>
+export type ClassTarget = PlannedSourceTargetOfKind<'class'>
 
-export type FileTarget = SourceTargetOfKind<'file'>
+export type FileTarget = PlannedSourceTargetOfKind<'file'>
 
 /**
  * Carried under `metadata.function`, so a consumer can fingerprint, count and classify a function
  * without reaching for a parser of its own.
  *
- * Every producer of function targets should fill it in; a consumer validates on read, because
- * `metadata` is `Record<string, unknown>` and the contract is therefore by convention, not by type.
+ * Every producer of function targets should fill it in; a consumer still validates the expected
+ * domain fields when reading the recursive JSON metadata contract.
  *
  * Ranges are relative to the target's own `text`, not to the file, so a consumer can slice that
  * text directly and never has to rebase.
  */
-export interface FunctionInfo {
+export interface FunctionInfo extends SourceMetadataObject {
   /**
    * Stricter than one statement: a body that is one `if` and its two returns is one statement and
    * not one expression.
@@ -53,7 +59,7 @@ export interface FunctionInfo {
   identifierRanges: readonly SourceRange[]
 }
 
-export type FunctionTarget = SourceTargetOfKind<'function'>
+export type FunctionTarget = PlannedSourceTargetOfKind<'function'>
 
 export interface LanguageContext {
   cwd: string
@@ -64,6 +70,22 @@ export interface LanguageContext {
 export interface LineRange {
   endLine: number
   startLine: number
+}
+
+export interface PlannedSourceTarget {
+  file: BaseSourceFile
+  identity: string
+  kind: SourceTargetKind
+  language: string
+  loc?: SourceLocation
+  metadata?: SourceTargetMetadata
+  name?: string
+  origin?: SourceTargetOrigin
+  range?: SourceRange
+}
+
+export type PlannedSourceTargetOfKind<Kind extends SourceTargetKind> = Omit<PlannedSourceTarget, 'kind'> & {
+  kind: Kind
 }
 
 export interface ProcessedSource {
@@ -100,10 +122,8 @@ export interface SourceExtractOptions {
   language?: string
 }
 
-export interface SourceFile {
-  language: string
+export interface SourceFile extends BaseSourceFile {
   lines: string[]
-  path: string
   text: string
 }
 
@@ -111,6 +131,19 @@ export interface SourceLocation {
   end: SourcePosition
   start: SourcePosition
 }
+
+export interface SourceMetadataObject {
+  readonly [key: string]: SourceMetadataValue
+}
+
+export type SourceMetadataValue
+  = | boolean
+    | null
+    | number
+    | readonly SourceMetadataValue[]
+    | SourceMetadataObject
+    | SourceRange
+    | string
 
 export interface SourcePosition {
   column: number
@@ -136,33 +169,27 @@ export interface SourceRuntime {
    * because there is no config to resolve the file against.
    */
   extract: (filePath: string, options?: SourceExtractOptions) => Promise<SourceTarget[]>
-  getText: (target: SourceFile | SourceTarget) => string
-  readFile: (filePath: string) => Promise<SourceFile>
+  getText: (file: SourceFile) => string
+  readFile: (file: BaseSourceFile | string) => Promise<SourceFile>
   sliceLines: (file: SourceFile, range: LineRange) => SourceText
   sliceRange: (file: SourceFile, range: SourceRange) => SourceText
 }
 
-/** Diagnostic counters for asserting the bounded lifetime of live source text. */
-export interface SourceSessionMetrics {
-  active: number
-  closed: number
-  maximumActive: number
-  opened: number
-}
 export interface SourceTarget {
   file: SourceFile
   identity: string
   kind: SourceTargetKind
   language: string
   loc?: SourceLocation
-  metadata?: Record<string, unknown>
+  metadata?: SourceTargetMetadata
   name?: string
   origin?: SourceTargetOrigin
   range?: SourceRange
   text: string
 }
-
 export type SourceTargetKind = 'class' | 'file' | 'fragment' | 'function' | 'symbol' | (string & {})
+
+export type SourceTargetMetadata = Readonly<Record<string, SourceMetadataValue>>
 
 export type SourceTargetOfKind<Kind extends SourceTargetKind> = Omit<SourceTarget, 'kind'> & {
   kind: Kind

@@ -127,6 +127,7 @@ export function createSummaryProgressReporter(options: SummaryProgressReporterOp
         state: 'running',
       })
     },
+    onPlanningEnd: ({ progress }) => updateProgress(state, progress),
     onPrepareStart: ({ startedAt }) => {
       state.activeJobs.clear()
       state.errorCount = 0
@@ -238,11 +239,12 @@ function createInitialState(): SummaryState {
 function createProgress(): ProgressSnapshot {
   return {
     execution: createCounts(),
+    filesPlanned: 0,
     filesTotal: 0,
-    final: false,
     jobsCompleted: 0,
     jobsStarted: 0,
     jobsTotal: 0,
+    planningComplete: false,
   }
 }
 
@@ -397,14 +399,14 @@ function formatDuration(ms: number): string {
 function formatFooters(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {
   const terminal = terminalCount(state.execution)
   const elapsed = state.runStartedAt === undefined ? 0 : now - state.runStartedAt
-  const progressBar = state.progress.final
+  const progressBar = state.progress.planningComplete
     ? formatMiniBarSegment(terminal, state.execution.planned, state.animationTick, options)
     : ''
-  const eta = state.progress.final ? estimateEta(elapsed, terminal, state.execution.planned) : 'eta ?'
-  const projectedTokens = state.progress.final && terminal > 0 && state.execution.planned > 0
+  const eta = state.progress.planningComplete ? estimateEta(elapsed, terminal, state.execution.planned) : 'eta ?'
+  const projectedTokens = state.progress.planningComplete && terminal > 0 && state.execution.planned > 0
     ? Math.ceil((state.totalTokens + state.cachedTokens) * state.execution.planned / terminal)
     : undefined
-  const discovering = state.progress.final ? '' : ' jobs (discovering)'
+  const discovering = state.progress.planningComplete ? '' : ' jobs (discovering)'
 
   return [
     fitRow(`${terminal}/${state.execution.planned}${discovering}${progressBar} ${formatDuration(elapsed)} -> ${eta === 'eta ?' ? '~?' : eta.replace('eta ', '')}`, options.columns),

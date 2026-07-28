@@ -1,5 +1,6 @@
-import type { RuleContext, SourceTarget } from '@alint-js/core'
+import type { PlannedSourceTarget, RuleContext } from '@alint-js/core'
 
+import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -10,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createBasicStructuredRule, createStructuredMessages, reportDeclarativeFindings } from './basic-structured'
 
 const generateStructuredMock = vi.hoisted(() => vi.fn())
+const source = 'print("hello")\n'
 
 vi.mock('@alint-js/core/structured-output', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@alint-js/core/structured-output')>()
@@ -190,27 +192,26 @@ function createRuleContext(): RuleContext {
     report: vi.fn(),
     settings: {},
     src: createSourceRuntime({
-      readFile: async filePath => ({
+      readFile: async file => ({
+        contentHash: createHash('sha256').update(source).digest('hex'),
         language: 'python',
-        lines: [''],
-        path: filePath,
-        text: '',
+        lines: source.split('\n'),
+        path: typeof file === 'string' ? file : file.path,
+        text: source,
       }),
     }),
   }
 }
 
-function createTarget<Kind extends SourceTarget['kind']>(kind: Kind): SourceTarget & { kind: Kind } {
+function createTarget<Kind extends PlannedSourceTarget['kind']>(kind: Kind): PlannedSourceTarget & { kind: Kind } {
   return {
     file: {
+      contentHash: createHash('sha256').update(source).digest('hex'),
       language: 'python',
-      lines: ['print("hello")', ''],
       path: '/repo/src/main.py',
-      text: 'print("hello")\n',
     },
     identity: `${kind}:main`,
     kind,
     language: 'python',
-    text: 'print("hello")\n',
   }
 }

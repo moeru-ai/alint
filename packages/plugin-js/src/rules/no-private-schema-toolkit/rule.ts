@@ -6,8 +6,25 @@ import { privateSchemaToolkitPrompt } from './prompt'
 export const privateSchemaToolkitRule = defineRule({
   cacheKey: privateSchemaToolkitPrompt,
   create: ctx => ({
+    /**
+     * Reviews one planned file for private schema toolkits.
+     *
+     * Triggering workflow:
+     *
+     * {@link privateSchemaToolkitRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgeSource}
+     *
+     * Upstream:
+     * - {@link privateSchemaToolkitRule}
+     *
+     * Downstream:
+     * - {@link judgeSource}
+     * - `RuleContext.report`
+     */
     async onTargetFile(target) {
       const model = await ctx.model()
+      const file = await ctx.src.readFile(target.file)
       const findings = await judgeSource({
         logger: ctx.logger,
         metering: ctx.metering,
@@ -16,7 +33,7 @@ export const privateSchemaToolkitRule = defineRule({
         outputLanguage: ctx.outputLanguage,
         prompt: privateSchemaToolkitPrompt,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source: file.text,
       })
 
       for (const finding of findings) {

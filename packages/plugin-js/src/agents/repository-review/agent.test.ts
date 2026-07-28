@@ -1,6 +1,8 @@
 import type { AgentAdapter, AgentRequest, AgentTool } from '@alint-js/core/agent'
 import type { FileTarget, RuleContext } from '@alint-js/plugin'
 
+import { createHash } from 'node:crypto'
+
 import { createSourceRuntime } from '@alint-js/core'
 import { createTools } from '@alint-js/tools-fs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -12,11 +14,14 @@ vi.mock('@alint-js/tools-fs', () => ({ createTools: vi.fn() }))
 const mockedCreateTools = vi.mocked(createTools)
 const source = 'export const parse = (value: string) => value.trim()'
 const target: FileTarget = {
-  file: { language: 'typescript', lines: [source], path: '/repo/src/parse.ts', text: source },
+  file: {
+    contentHash: createHash('sha256').update(source).digest('hex'),
+    language: 'typescript',
+    path: '/repo/src/parse.ts',
+  },
   identity: 'file:src/parse.ts',
   kind: 'file',
   language: 'typescript',
-  text: source,
 }
 const options = {
   allowedCategories: ['coupling'],
@@ -45,7 +50,13 @@ function createContext(agent: AgentAdapter, recordUsage = vi.fn()): RuleContext 
     report: () => {},
     settings: {},
     src: createSourceRuntime({
-      readFile: async filePath => ({ language: 'typescript', lines: [], path: filePath, text: '' }),
+      readFile: async file => ({
+        contentHash: createHash('sha256').update(source).digest('hex'),
+        language: 'typescript',
+        lines: [source],
+        path: typeof file === 'string' ? file : file.path,
+        text: source,
+      }),
     }),
   }
 }

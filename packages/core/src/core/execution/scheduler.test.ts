@@ -315,7 +315,7 @@ function createJob(id: string, index: number): RuleJob {
     ruleIndex: 0,
   }
   return {
-    execution: { run: () => {}, runtime },
+    execution: { handler: 'file', runtime },
     jobRef: {
       id,
       index,
@@ -325,11 +325,20 @@ function createJob(id: string, index: number): RuleJob {
     },
     orderKey: { inputIndex: index, ruleIndex: 0, scope: 'source', targetIndex: 0 },
     target: {
+      cacheTargetHash: `target-${id}`,
       configHash: 'config-hash',
+      descriptor: {
+        file: {
+          contentHash: `content-${id}`,
+          language: 'typescript',
+          path: `/repo/${id}.ts`,
+        },
+        identity: id,
+        kind: 'file',
+        language: 'typescript',
+      },
       identity: id,
       kind: 'file',
-      language: 'typescript',
-      text: id,
     },
   }
 }

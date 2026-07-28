@@ -1,9 +1,11 @@
-import type { LineRange, SourceFile, SourcePosition, SourceRange, SourceRuntime, SourceTarget, SourceText } from './types'
+import type { BaseSourceFile, LineRange, SourceFile, SourcePosition, SourceRange, SourceRuntime, SourceText } from './types'
 
 import { readFile } from 'node:fs/promises'
 import { extname } from 'node:path'
 
 import { clamp } from 'es-toolkit'
+
+import { hashText } from '../hash'
 
 export interface SourceRuntimeOptions {
   /**
@@ -15,15 +17,27 @@ export interface SourceRuntimeOptions {
    */
   extract?: SourceRuntime['extract']
   /**
-   * Replaces the disk read, so a test can hand a rule synthetic file content. The other members
-   * need no override: `getText` and the slicers are pure functions over whatever `readFile`
-   * returned, and `extract` already defaults to a throwing stub outside a run.
+   * Replaces the complete source read operation, including descriptor validation. The other
+   * members need no override: `getText` and the slicers are pure functions over whatever
+   * `readFile` returned, and `extract` already defaults to a throwing stub outside a run.
    */
   readFile?: SourceRuntime['readFile']
 }
 
+export class SourceChangedError extends Error {
+  constructor(
+    readonly path: string,
+    readonly expectedHash: string,
+    readonly actualHash: string,
+  ) {
+    super(`Source changed after planning: "${path}" (expected ${expectedHash}, read ${actualHash}).`)
+    this.name = 'SourceChangedError'
+  }
+}
+
 export function createSourceFile(path: string, text: string): SourceFile {
   return {
+    contentHash: hashText(text),
     language: inferLanguage(path),
     lines: text.split(/\r?\n/),
     path,
@@ -35,14 +49,14 @@ export function createSourceRuntime(options: SourceRuntimeOptions = {}): SourceR
   return {
     extract: options.extract ?? extractThrowUndefined,
     getText,
-    readFile: options.readFile ?? (async filePath => createSourceFile(filePath, await readFile(filePath, 'utf8'))),
+    readFile: options.readFile ?? readSourceFile,
     sliceLines,
     sliceRange,
   }
 }
 
-export function getText(target: SourceFile | SourceTarget): string {
-  return target.text
+export function getText(file: SourceFile): string {
+  return file.text
 }
 
 export function sliceLines(file: SourceFile, range: LineRange): SourceText {
@@ -105,7 +119,7 @@ function clampOffset(offset: number, textLength: number): number {
 }
 
 /** Throws a TypeError indicating that the extractor is not defined. */
-function extractThrowUndefined(filePath: string): Promise<SourceTarget[]> {
+function extractThrowUndefined(filePath: string): ReturnType<SourceRuntime['extract']> {
   return Promise.reject(new TypeError(
     `Cannot extract "${filePath}": this source runtime was created without an extractor, so there is no config to resolve the file's language against. Only the runtime a run hands to rules (ctx.src) can extract.`,
   ))
@@ -156,4 +170,14 @@ function inferLanguage(path: string): SourceFile['language'] {
     default:
       return 'unknown'
   }
+}
+
+async function readSourceFile(input: BaseSourceFile | string): Promise<SourceFile> {
+  const path = typeof input === 'string' ? input : input.path
+  const file = createSourceFile(path, await readFile(path, 'utf8'))
+  if (typeof input !== 'string') {
+    if (file.contentHash !== input.contentHash)
+      throw new SourceChangedError(input.path, input.contentHash, file.contentHash)
+  }
+  return file
 }

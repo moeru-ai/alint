@@ -14,8 +14,8 @@ import { stableHash } from './hash'
 import { missingLanguageDiagnostics, unregisteredLanguageDiagnostics } from './languages/diagnostics'
 import { createSourceExtractor, prepareRun } from './preparation'
 import { createProjectJobs, ProjectIndexBuilder } from './project'
+import { planSources } from './source/planner'
 import { createSourceRuntime } from './source/runtime'
-import { executeSourceSessions, resolveSourceWindow } from './source/session'
 import { createDirectoryJobs } from './targets/directory'
 
 export class AlintRunCancelledError extends Error {
@@ -111,7 +111,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     const projectBuilder = preparation.project && projectRuntimes.some(runtime => runtime.handlers.onTargetWith || runtime.handlers.onTargetProject)
       ? new ProjectIndexBuilder(preparation.project.root)
       : undefined
-    const sourceResults = await executeSourceSessions(preparation.files, {
+    const sourceResults = await planSources(preparation.files, {
       cacheStore,
       createRuleRuntimes: createRuntimes,
       cwd,
@@ -119,14 +119,13 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       projectSnapshots: projectBuilder !== undefined,
       scheduler,
       signal: options.signal,
-      sourceWindow: resolveSourceWindow(concurrency),
       src,
     })
     for (const result of sourceResults) {
-      outcomes.push(...result.outcomes)
       if (result.failure)
         fileFailures.push(result.failure)
     }
+    const pendingOutcomes: Promise<RuleJobOutcome[]>[] = sourceResults.map(result => result.outcomes)
     if (projectBuilder) {
       for (const result of [...sourceResults].sort((left, right) => (left.project?.fileIndex ?? Number.MAX_SAFE_INTEGER) - (right.project?.fileIndex ?? Number.MAX_SAFE_INTEGER))) {
         if (result.project)
@@ -137,8 +136,9 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     const directoryBatches = preparation.directories.map((input) => {
       return scheduler.schedule(createDirectoryJobs(input, createRuntimes(input)))
     })
-    outcomes.push(...(await Promise.all(directoryBatches.map(batch => batch.outcomes))).flat())
+    pendingOutcomes.push(...directoryBatches.map(batch => batch.outcomes))
 
+    let clearEmptyProjectOwner = false
     if (fileFailures.length === 0 && preparation.project && !options.signal?.aborted) {
       if (projectBuilder) {
         const project = createProjectJobs({
@@ -149,14 +149,22 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         })
         const projectOwner = project.owner
         const batch = scheduler.schedule(project.jobs)
-        outcomes.push(...await batch.outcomes)
-        projectOwner?.commit({ mode: options.signal?.aborted ? 'merge' : 'replace' })
+        pendingOutcomes.push(batch.outcomes.then((settled) => {
+          projectOwner?.commit({ mode: options.signal?.aborted ? 'merge' : 'replace' })
+          return settled
+        }))
       }
       else if (!options.cacheOnly) {
-        // A complete run with no project handlers still replaces the prior config's slots,
-        // without retaining source descriptors solely to build an empty project index.
-        cacheStore.beginOwner({ kind: 'project', path: preparation.project.root }).commit({ mode: 'replace' })
+        clearEmptyProjectOwner = true
       }
+    }
+    const planningProgress = runProgress.completePlanning()
+    options.progress?.onPlanningEnd?.({ progress: planningProgress })
+    outcomes.push(...(await Promise.all(pendingOutcomes)).flat())
+    if (clearEmptyProjectOwner) {
+      // A complete run with no project handlers still replaces the prior config's slots,
+      // without retaining source descriptors solely to build an empty project index.
+      cacheStore.beginOwner({ kind: 'project', path: preparation.project!.root }).commit({ mode: 'replace' })
     }
   }
   catch (error) {
@@ -166,6 +174,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     admissionFailed = true
   }
   finally {
+    runProgress.completePlanning()
     try {
       await scheduler.close()
     }

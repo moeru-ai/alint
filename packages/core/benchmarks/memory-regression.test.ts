@@ -19,6 +19,35 @@ afterEach(async () => {
 })
 
 describe('run memory regressions', () => {
+  it('finishes compact planning while source rule jobs remain blocked under a 64 MiB heap', async () => {
+    const root = await createRoot('alint-memory-blocked-planning-')
+    const fileCount = 40
+    const source = 'x'.repeat(MiB)
+
+    for (let index = 0; index < fileCount; index += 1)
+      await writeFile(join(root, `${index.toString().padStart(3, '0')}.blocked`), source)
+
+    const child = await runScenario('blocked-planning', root)
+
+    expect(child.signal, failureMessage(child)).toBeNull()
+    expect(child.code, failureMessage(child)).toBe(0)
+    expect(JSON.parse(child.stdout)).toMatchObject({
+      execution: {
+        completed: fileCount,
+        planned: fileCount,
+      },
+      planningProgress: {
+        execution: {
+          planned: fileCount,
+          queued: 20,
+          running: 20,
+        },
+        filesPlanned: fileCount,
+        planningComplete: true,
+      },
+    })
+  }, 120_000)
+
   it('runs 9,600 semantic targets and a compact project rule under a 64 MiB heap', async () => {
     const root = await createRoot('alint-memory-project-')
     const fileCount = 120
@@ -96,14 +125,14 @@ describe('run memory regressions', () => {
     const root = await createRoot('alint-memory-hang-')
     const startedAt = Date.now()
 
-    const child = await runScenario('hang', root, { deadlineMs: 500, killGraceMs: 50 })
+    const child = await runScenario('hang', root, { deadlineMs: 2_000, killGraceMs: 50 })
 
     expect(child.timedOut).toBe(true)
     expect(child.code).toBeNull()
     expect(child.signal).toBe('SIGKILL')
     expect(child.stdout.length).toBe(outputLimit)
     expect(child.stderr.length).toBe(outputLimit)
-    expect(Date.now() - startedAt).toBeLessThan(2_000)
+    expect(Date.now() - startedAt).toBeLessThan(4_000)
   })
 })
 

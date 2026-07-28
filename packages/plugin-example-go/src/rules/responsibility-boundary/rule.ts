@@ -80,12 +80,29 @@ type ResponsibilityBoundaryFinding = InferOutput<typeof responsibilityBoundaryFi
 
 export const responsibilityBoundaryRule = defineRule({
   create: ctx => ({
+    /**
+     * Reviews one planned Go file for responsibility-boundary findings.
+     *
+     * Triggering workflow:
+     *
+     * {@link responsibilityBoundaryRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgeResponsibilityBoundary}
+     *
+     * Upstream:
+     * - {@link responsibilityBoundaryRule}
+     *
+     * Downstream:
+     * - {@link judgeResponsibilityBoundary}
+     * - {@link reportResponsibilityBoundaryFindings}
+     */
     async onTargetFile(target) {
       if (!target.file.path.endsWith('.go')) {
         return
       }
 
-      const findings = await judgeResponsibilityBoundary(ctx, target.file)
+      const file = await ctx.src.readFile(target.file)
+      const findings = await judgeResponsibilityBoundary(ctx, file)
 
       reportResponsibilityBoundaryFindings(ctx, target.file.path, findings)
     },

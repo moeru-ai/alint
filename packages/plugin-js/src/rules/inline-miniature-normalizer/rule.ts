@@ -6,8 +6,25 @@ import { inlineMiniatureNormalizerPrompt } from './prompt'
 export const inlineMiniatureNormalizerRule = defineRule({
   cacheKey: inlineMiniatureNormalizerPrompt,
   create: ctx => ({
+    /**
+     * Reviews one planned file for inline miniature normalizers.
+     *
+     * Triggering workflow:
+     *
+     * {@link inlineMiniatureNormalizerRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgeSource}
+     *
+     * Upstream:
+     * - {@link inlineMiniatureNormalizerRule}
+     *
+     * Downstream:
+     * - {@link judgeSource}
+     * - `RuleContext.report`
+     */
     async onTargetFile(target) {
       const model = await ctx.model()
+      const file = await ctx.src.readFile(target.file)
       const findings = await judgeSource({
         logger: ctx.logger,
         metering: ctx.metering,
@@ -16,7 +33,7 @@ export const inlineMiniatureNormalizerRule = defineRule({
         outputLanguage: ctx.outputLanguage,
         prompt: inlineMiniatureNormalizerPrompt,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source: file.text,
       })
 
       for (const finding of findings) {

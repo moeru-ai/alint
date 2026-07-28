@@ -11,7 +11,7 @@ export const duplicatedConversionKnowledgeRule = defineRule({
      * Triggering workflow:
      *
      * {@link defineRule}
-     *   -> `SourceTarget.kind === "file"`
+     *   -> `PlannedSourceTarget.kind === "file"`
      *     -> `onTargetFile`
      *       -> {@link reviewRepository}
      *
