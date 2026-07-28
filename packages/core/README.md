@@ -28,18 +28,20 @@ export const rule = defineRule({
   create: ctx => ({
     async onTargetFile(target) {
       const model = await ctx.model({ size: 'small' })
+      const file = await ctx.src.readFile(target.file)
 
       ctx.report({
         filePath: target.file.path,
         loc: target.loc,
-        message: `reviewed with ${model.id}`,
+        message: `reviewed ${file.lines.length} lines with ${model.id}`,
       })
     },
   }),
 })
 ```
 
-Project rules receive compact file and target entries. Read source only when the rule needs it:
+Source and project rules receive compact descriptors. Source handlers should pass `target.file`
+to `ctx.src.readFile()` so core can detect changes since planning. Read source only when needed:
 
 ```ts
 import { defineRule } from '@alint-js/core'
@@ -57,9 +59,10 @@ export const projectRule = defineRule({
 })
 ```
 
-`ProjectFileEntry` and `ProjectTargetEntry` intentionally omit source text and arbitrary
-extractor metadata. Calls to `ctx.src.readFile()` are explicit and plugin-owned, so a project
-rule controls which source files it loads and how long it retains them.
+`PlannedSourceTarget`, `ProjectFileEntry`, and `ProjectTargetEntry` intentionally omit source text.
+Calls to `ctx.src.readFile()` are explicit and plugin-owned, so a rule controls which source files
+it loads and how long it retains them. Cache hits do not invoke the handler and therefore do not
+perform its execution-time read.
 
 Use the agent contract for tool-using rules:
 
@@ -119,8 +122,9 @@ explore with tools before answering, because a forced tool call is a single shot
 
 ## Memory boundaries
 
-`alint` bounds its engine-owned source sessions. It cannot bound source files retained by plugin
-code after `ctx.src.readFile()` returns.
+`alint` bounds concurrent source planning reads and parser work. Planning releases rich extractor
+values as soon as compact jobs are admitted; queued jobs do not retain source text. It cannot bound
+source files retained by plugin code after `ctx.src.readFile()` returns.
 
 A valid cache written by the same `alint` version is still read from one monolithic JSON document.
 An extremely large cache may therefore exhaust available memory.

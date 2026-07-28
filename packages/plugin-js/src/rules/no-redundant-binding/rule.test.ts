@@ -1,5 +1,7 @@
 import type { FileTarget, RuleContext } from '@alint-js/plugin'
 
+import { createHash } from 'node:crypto'
+
 import { createSourceRuntime } from '@alint-js/core'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -16,6 +18,14 @@ vi.mock('./verifier', () => ({
 
 const mockedJudgeSource = vi.mocked(judgeSource)
 const mockedVerifyRedundantBindings = vi.mocked(verifyRedundantBindings)
+const source = [
+  'function review(first: object, second: object) {',
+  '  const left = first',
+  '  consume(left)',
+  '  const right = second',
+  '  consume(right)',
+  '}',
+].join('\n')
 
 function createContext() {
   const diagnostics: Parameters<RuleContext['report']>[0][] = []
@@ -42,11 +52,12 @@ function createContext() {
     report: diagnostic => diagnostics.push(diagnostic),
     settings: {},
     src: createSourceRuntime({
-      readFile: async filePath => ({
+      readFile: async file => ({
+        contentHash: createHash('sha256').update(source).digest('hex'),
         language: 'plaintext',
-        lines: [''],
-        path: filePath,
-        text: '',
+        lines: source.split('\n'),
+        path: typeof file === 'string' ? file : file.path,
+        text: source,
       }),
     }),
   }
@@ -55,19 +66,10 @@ function createContext() {
 }
 
 function createFileTarget(): FileTarget {
-  const text = [
-    'function review(first: object, second: object) {',
-    '  const left = first',
-    '  consume(left)',
-    '  const right = second',
-    '  consume(right)',
-    '}',
-  ].join('\n')
   const file = {
+    contentHash: createHash('sha256').update(source).digest('hex'),
     language: 'plaintext',
-    lines: text.split('\n'),
     path: '/repo/source.ts',
-    text,
   }
 
   return {
@@ -75,7 +77,6 @@ function createFileTarget(): FileTarget {
     identity: 'file:source.ts',
     kind: 'file',
     language: file.language,
-    text,
   }
 }
 
@@ -119,7 +120,7 @@ describe('redundantBindingRule', () => {
         { line: 2, message: 'candidate left' },
         { line: 4, message: 'candidate right' },
       ],
-      source: createFileTarget().text,
+      source,
     })
     expect(diagnostics).toEqual([
       {

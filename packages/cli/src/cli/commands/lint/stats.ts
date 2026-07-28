@@ -102,6 +102,9 @@ export function mergeProgressReporters(
     onJobStart: (payload) => {
       deliverBoth(reporter => reporter.onJobStart?.(payload))
     },
+    onPlanningEnd: (payload) => {
+      deliverBoth(reporter => reporter.onPlanningEnd?.(payload))
+    },
     onPrepareEnd: (payload) => {
       deliverBoth(reporter => reporter.onPrepareEnd?.(payload))
     },

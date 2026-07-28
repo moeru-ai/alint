@@ -45,8 +45,25 @@ export function createBasicStructuredRule(rule: DeclarativeRuleDefinition): Rule
   return {
     cache: rule.includeFiles === undefined || rule.includeFiles.length === 0,
     create: ctx => ({
+      /**
+       * Runs one structured declarative review for a planned file.
+       *
+       * Triggering workflow:
+       *
+       * {@link createBasicStructuredRule}
+       *   -> `RuleHandlers.onTargetFile`
+       *     -> {@link generateStructured}
+       *
+       * Upstream:
+       * - {@link createBasicStructuredRule}
+       *
+       * Downstream:
+       * - {@link generateStructured}
+       * - {@link reportDeclarativeFindings}
+       */
       async onTargetFile(target) {
         const model = await ctx.model()
+        const file = await ctx.src.readFile(target.file)
         const supplementalFiles = await collectSupplementalFiles({
           cwd: ctx.cwd,
           includeFiles: rule.includeFiles,
@@ -62,7 +79,7 @@ export function createBasicStructuredRule(rule: DeclarativeRuleDefinition): Rule
             outputLanguage: ctx.outputLanguage,
             retryFeedback,
             ruleFilePath: rule.filePath,
-            sourceText: target.file.text,
+            sourceText: file.text,
             supplementalFiles,
             targetFilePath: target.file.path,
           }),

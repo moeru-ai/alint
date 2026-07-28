@@ -13,7 +13,7 @@ export interface AlintFileFailure {
 
 export interface AlintRuleFailure {
   job: ProgressJobRef
-  kind: 'cache-replay' | 'handler' | 'timeout'
+  kind: 'cache-replay' | 'handler' | 'source-changed' | 'timeout'
   message: string
 }
 
@@ -122,6 +122,7 @@ export interface ProgressReporter {
   onJobQueued?: (payload: JobQueuedPayload) => void
   onJobRetry?: (payload: JobRetryPayload) => void
   onJobStart?: (payload: JobStartPayload) => void
+  onPlanningEnd?: (payload: ExecutionProgressPayload) => void
   onPrepareEnd?: (payload: PrepareEndPayload) => void
   onPrepareStart?: (payload: PrepareStartPayload) => void
   onRunEnd?: (payload: RunEndPayload) => void
@@ -130,11 +131,12 @@ export interface ProgressReporter {
 
 export interface ProgressSnapshot {
   execution: ExecutionCounts
+  filesPlanned: number
   filesTotal: number
-  final: boolean
   jobsCompleted: number
   jobsStarted: number
   jobsTotal: number
+  planningComplete: boolean
 }
 
 export type ProgressTargetKind = SourceTargetKind

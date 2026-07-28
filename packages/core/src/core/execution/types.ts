@@ -1,8 +1,7 @@
 import type { AsyncLocalStorage } from 'node:async_hooks'
 
-import type { Awaitable, EnabledRule, RuleHandlers } from '../../dsl/types'
+import type { EnabledRule, RuleHandlers, Target } from '../../dsl/types'
 import type { CacheEntry, CacheOwnerTransaction } from '../cache'
-import type { SourceTarget } from '../source/types'
 import type { AlintRuleFailure, Diagnostic, InferenceUsageRecord, ProgressJobRef } from '../types'
 import type { RunProgress } from './progress'
 
@@ -13,17 +12,14 @@ export interface CacheRunContext {
 export interface ExecutionTarget {
   activeFilePath?: string
   cacheOwner?: CacheOwnerTransaction
-  cacheTargetHash?: string
+  cacheTargetHash: string
   configHash: string
+  descriptor: Target
   identity: string
   kind: ProgressJobRef['target']['kind']
-  language: string
   loc?: CacheEntry['target']['loc']
-  metadata?: Record<string, unknown>
   name?: string
-  origin?: SourceTarget['origin']
   range?: CacheEntry['target']['range']
-  text: string
 }
 
 export interface JobOrderKey {
@@ -76,7 +72,7 @@ export interface RuleRuntimeState {
 }
 
 export interface RuleTargetExecution {
-  run: () => Awaitable<void>
+  handler: 'class' | 'directory' | 'file' | 'function' | 'language-declaration-error' | 'project' | 'with'
   runtime: RuleRuntime
 }
 

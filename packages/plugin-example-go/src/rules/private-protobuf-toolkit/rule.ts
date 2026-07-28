@@ -50,7 +50,7 @@ export const privateProtobufToolkitRule = defineRule({
      * Triggering workflow:
      *
      * {@link defineRule}
-     *   -> `SourceTarget.kind === "file"`
+     *   -> `PlannedSourceTarget.kind === "file"`
      *     -> `onTargetFile`
      *       -> {@link judgePrivateProtobufToolkit}
      *
@@ -66,7 +66,8 @@ export const privateProtobufToolkitRule = defineRule({
         return
       }
 
-      const findings = await judgePrivateProtobufToolkit(ctx, target.file.text)
+      const file = await ctx.src.readFile(target.file)
+      const findings = await judgePrivateProtobufToolkit(ctx, file.text)
 
       for (const finding of findings) {
         ctx.report({

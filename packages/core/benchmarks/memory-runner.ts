@@ -1,3 +1,5 @@
+import type { ProgressSnapshot } from '../src/index'
+
 import process from 'node:process'
 
 import { readdir } from 'node:fs/promises'
@@ -75,6 +77,71 @@ async function main(): Promise<void> {
       setupConfig,
     })
     process.stdout.write(JSON.stringify(result.execution))
+  }
+  else if (scenario === 'blocked-planning') {
+    const files = (await readdir(root))
+      .filter(path => path.endsWith('.blocked'))
+      .sort()
+      .map(path => join(root, path))
+    let releaseHandlers!: () => void
+    const handlersBlocked = new Promise<void>((resolve) => {
+      releaseHandlers = resolve
+    })
+    const rule = defineRule({
+      create: () => ({
+        /**
+         * Holds every benchmark job until planning has admitted the complete compact workload.
+         *
+         * Triggering workflow:
+         *
+         * {@link rule}
+         *   -> `RuleHandlers.onTargetFile`
+         *     -> `handlersBlocked`
+         *
+         * Upstream:
+         * - {@link rule}
+         *
+         * Downstream:
+         * - `handlersBlocked`
+         */
+        onTargetFile: () => handlersBlocked,
+      }),
+    })
+    const plugin = definePlugin({
+      languages: {
+        blocked: {
+          extensions: ['.blocked'],
+          extract: file => [{
+            file,
+            identity: 'file',
+            kind: 'file',
+            language: 'benchmark/blocked',
+            text: file.text,
+          }],
+          name: 'benchmark/blocked',
+        },
+      },
+      rules: { blocked: rule },
+    })
+    let planningProgress: ProgressSnapshot | undefined
+    const result = await runAlint({
+      config: defineConfig([
+        { plugins: { benchmark: plugin }, rules: { 'benchmark/blocked': 'warn' } },
+        { files: ['**/*.blocked'], language: 'benchmark/blocked' },
+      ]),
+      cwd: root,
+      files,
+      progress: {
+        onPlanningEnd: ({ progress }) => {
+          planningProgress = progress
+          releaseHandlers()
+        },
+      },
+      projectTargets: false,
+      runner: { cache: false, ruleConcurrency: 20 },
+      setupConfig,
+    })
+    process.stdout.write(JSON.stringify({ execution: result.execution, planningProgress }))
   }
   else if (scenario === 'legacy-cache') {
     const result = await runAlint({

@@ -80,12 +80,29 @@ type PythonSemanticBoundaryFinding = InferOutput<typeof pythonSemanticBoundaryFi
 
 export const pythonSemanticBoundaryRule = defineRule({
   create: ctx => ({
+    /**
+     * Reviews one planned Python file for semantic-boundary findings.
+     *
+     * Triggering workflow:
+     *
+     * {@link pythonSemanticBoundaryRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgePythonSemanticBoundary}
+     *
+     * Upstream:
+     * - {@link pythonSemanticBoundaryRule}
+     *
+     * Downstream:
+     * - {@link judgePythonSemanticBoundary}
+     * - {@link reportPythonSemanticBoundaryFindings}
+     */
     async onTargetFile(target) {
       if (!target.file.path.endsWith('.py')) {
         return
       }
 
-      const findings = await judgePythonSemanticBoundary(ctx, target.file)
+      const file = await ctx.src.readFile(target.file)
+      const findings = await judgePythonSemanticBoundary(ctx, file)
 
       reportPythonSemanticBoundaryFindings(ctx, target.file.path, findings)
     },

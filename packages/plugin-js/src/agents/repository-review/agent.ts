@@ -54,9 +54,10 @@ export async function reviewRepository<Category extends string>(
 ): Promise<RepositoryFinding<Category>[]> {
   const agent = requireAgent(ctx)
   const model = await ctx.model()
+  const file = await ctx.src.readFile(target.file)
   const submission = createSubmitReviewTool({
     allowedCategories: options.allowedCategories,
-    lineCount: target.file.lines.length,
+    lineCount: file.lines.length,
     requireFutureFailure: options.requireFutureFailure ?? false,
     requireRelatedLocations: options.requireRelatedLocations ?? false,
   })
@@ -71,7 +72,7 @@ export async function reviewRepository<Category extends string>(
       options.prompt,
       JSON.stringify({
         path: repositoryRelativePath(ctx.cwd, target.file.path),
-        source: formatSourceWithLineNumbers(target.file.text),
+        source: formatSourceWithLineNumbers(file.text),
       }),
     ].join('\n\n'),
     tools: [...withNumberedReads(createTools(ctx.cwd)), submission.tool],

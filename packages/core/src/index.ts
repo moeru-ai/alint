@@ -28,6 +28,7 @@ export { targetIdentity, withStableIdentities } from './core/source/identity'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange, withLanguage } from './core/source/runtime'
 export type { SourceRuntimeOptions } from './core/source/runtime'
 export type {
+  BaseSourceFile,
   CallSite,
   ClassTarget,
   FileTarget,
@@ -35,6 +36,8 @@ export type {
   FunctionTarget,
   LanguageContext,
   LineRange,
+  PlannedSourceTarget,
+  PlannedSourceTargetOfKind,
   ProcessedSource,
   ProcessedSourceOrigin,
   ProcessorContext,
@@ -42,11 +45,14 @@ export type {
   SourceExtractOptions,
   SourceFile,
   SourceLocation,
+  SourceMetadataObject,
+  SourceMetadataValue,
   SourcePosition,
   SourceRange,
   SourceRuntime,
   SourceTarget,
   SourceTargetKind,
+  SourceTargetMetadata,
   SourceTargetOfKind,
   SourceTargetOrigin,
   SourceText,

@@ -22,17 +22,20 @@ describe('createRunProgress', () => {
   it.each([0, 2, 7])('starts with %i files and no admitted jobs', (filesTotal) => {
     expect(createRunProgress(filesTotal).snapshot()).toEqual({
       execution: counts(),
+      filesPlanned: 0,
       filesTotal,
-      final: false,
       jobsCompleted: 0,
       jobsStarted: 0,
       jobsTotal: 0,
+      planningComplete: false,
     })
   })
 
   it('tracks admitted, running, and every terminal job state', () => {
     const progress = createRunProgress(2)
     progress.queue(7)
+    progress.completeFilePlanning()
+    progress.completeFilePlanning()
     progress.start()
     progress.finish('running', 'completed')
     progress.start()
@@ -48,11 +51,12 @@ describe('createRunProgress', () => {
 
     expect(progress.snapshot()).toEqual({
       execution: counts({ cached: 1, cancelled: 3, completed: 1, failed: 1, planned: 7, skipped: 1 }),
+      filesPlanned: 2,
       filesTotal: 2,
-      final: false,
       jobsCompleted: 7,
       jobsStarted: 7,
       jobsTotal: 7,
+      planningComplete: false,
     })
   })
 
@@ -64,15 +68,18 @@ describe('createRunProgress', () => {
     expect(progress.snapshot().execution.planned).toBe(0)
   })
 
-  it('finalizes only after all admitted jobs are terminal', () => {
+  it('seals planning while admitted jobs are still active, then finalizes execution', () => {
     const progress = createRunProgress(1)
+    progress.completeFilePlanning()
     progress.queue(1)
     expect(() => progress.finalize()).toThrow('queued or running')
+    expect(progress.completePlanning()).toMatchObject({ jobsCompleted: 0, jobsTotal: 1, planningComplete: true })
+    expect(() => progress.queue(1)).toThrow('planning is complete')
+    expect(() => progress.completeFilePlanning()).toThrow('planning is complete')
     progress.finish('queued', 'cancelled')
 
-    expect(progress.finalize()).toMatchObject({ final: true, jobsCompleted: 1, jobsStarted: 1, jobsTotal: 1 })
-    expect(progress.snapshot().final).toBe(true)
-    expect(() => progress.queue(1)).toThrow('finalized')
+    expect(progress.finalize()).toMatchObject({ jobsCompleted: 1, jobsStarted: 1, jobsTotal: 1, planningComplete: true })
+    expect(progress.snapshot().planningComplete).toBe(true)
   })
 
   it('rejects invalid counts and transitions', () => {
@@ -80,6 +87,7 @@ describe('createRunProgress', () => {
     expect(() => createRunProgress(1.5)).toThrow(TypeError)
 
     const progress = createRunProgress(1)
+    expect(() => progress.finalize()).toThrow('planning is complete')
     expect(() => progress.queue(-1)).toThrow(TypeError)
     expect(() => progress.queue(1.5)).toThrow(TypeError)
     expect(() => progress.start()).toThrow('queued')

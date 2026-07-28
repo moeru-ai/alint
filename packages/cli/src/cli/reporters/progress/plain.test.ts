@@ -29,7 +29,7 @@ const JOB: ProgressJobRef = {
 
 function progressSnapshot(execution = counts(), final = false): ProgressSnapshot {
   const jobsCompleted = execution.cached + execution.cancelled + execution.completed + execution.failed + execution.skipped
-  return { execution, filesTotal: 1, final, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned }
+  return { execution, filesPlanned: final ? 1 : 0, filesTotal: 1, jobsCompleted, jobsStarted: jobsCompleted + execution.running, jobsTotal: execution.planned, planningComplete: final }
 }
 
 describe('createPlainProgressReporter', () => {

@@ -3,10 +3,12 @@ import type { GenericSchema, InferInput, InferOutput } from 'valibot'
 import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig } from '../config/types'
 import type {
+  BaseSourceFile,
   ClassTarget,
   FileTarget,
   FunctionTarget,
   LanguageContext,
+  PlannedSourceTarget,
   ProcessedSource,
   ProcessorContext,
   ProcessorPostprocessContext,
@@ -124,10 +126,7 @@ export interface ProcessorDefinition {
   ) => Awaitable<ProcessedSource[]>
 }
 
-export interface ProjectFileEntry {
-  contentHash: string
-  language: string
-  path: string
+export interface ProjectFileEntry extends BaseSourceFile {
   targetCount: number
 }
 
@@ -269,4 +268,4 @@ export interface RuleWithHandler {
   onTargetWith: (target: Target) => Awaitable<void>
 }
 
-export type Target = DirectoryTarget | ProjectTarget | SourceTarget
+export type Target = DirectoryTarget | PlannedSourceTarget | ProjectTarget

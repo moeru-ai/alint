@@ -1,4 +1,6 @@
-import type { ResolvedModel, RuleContext, SourceTarget } from '@alint-js/plugin'
+import type { PlannedSourceTarget, ResolvedModel, RuleContext } from '@alint-js/plugin'
+
+import { createHash } from 'node:crypto'
 
 import { createSourceRuntime } from '@alint-js/core'
 import { getDescription } from 'valibot'
@@ -19,6 +21,8 @@ import {
   reportPythonSemanticBoundaryFindings,
   reportPythonTypedArtifactBoundaryFindings,
 } from './index'
+
+const sourceText = 'class Downloader:\n    async def download(self):\n        pass\n'
 
 const generateStructuredMock = vi.hoisted(() => vi.fn())
 
@@ -63,22 +67,22 @@ function createRuleContext(): RuleContext {
     report: () => {},
     settings: {},
     src: createSourceRuntime({
-      readFile: async filePath => ({
+      readFile: async file => ({
+        contentHash: createHash('sha256').update(sourceText).digest('hex'),
         language: 'plaintext',
-        lines: [''],
-        path: filePath,
-        text: '',
+        lines: sourceText.split('\n'),
+        path: typeof file === 'string' ? file : file.path,
+        text: sourceText,
       }),
     }),
   }
 }
 
-function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path = '/repo/processing/media/downloaders/resourceItem.py'): SourceTarget & { kind: Kind } {
+function createSourceTarget<Kind extends PlannedSourceTarget['kind']>(kind: Kind, path = '/repo/processing/media/downloaders/resourceItem.py'): PlannedSourceTarget & { kind: Kind } {
   const file = {
+    contentHash: createHash('sha256').update(sourceText).digest('hex'),
     language: 'plaintext',
-    lines: ['class Downloader:', '    async def download(self):', '        pass'],
     path,
-    text: 'class Downloader:\n    async def download(self):\n        pass\n',
   }
 
   return {
@@ -86,7 +90,6 @@ function createSourceTarget<Kind extends SourceTarget['kind']>(kind: Kind, path 
     identity: `${kind}:demo`,
     kind,
     language: file.language,
-    text: file.text,
   }
 }
 

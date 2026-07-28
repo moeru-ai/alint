@@ -12,7 +12,7 @@ export const vacuousFunctionRule = defineRule({
      * Triggering workflow:
      *
      * {@link defineRule}
-     *   -> `SourceTarget.kind === "file"`
+     *   -> `PlannedSourceTarget.kind === "file"`
      *     -> `onTargetFile`
      *       -> {@link judgeSource}
      *
@@ -25,6 +25,7 @@ export const vacuousFunctionRule = defineRule({
      */
     async onTargetFile(target) {
       const model = await ctx.model()
+      const file = await ctx.src.readFile(target.file)
       const findings = await judgeSource({
         logger: ctx.logger,
         metering: ctx.metering,
@@ -33,7 +34,7 @@ export const vacuousFunctionRule = defineRule({
         outputLanguage: ctx.outputLanguage,
         prompt: vacuousFunctionPrompt,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source: file.text,
       })
 
       for (const finding of findings) {

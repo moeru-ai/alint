@@ -6,8 +6,25 @@ import { redundantJsdocPrompt } from './prompt'
 export const redundantJsdocRule = defineRule({
   cacheKey: redundantJsdocPrompt,
   create: ctx => ({
+    /**
+     * Reviews one planned file for redundant JSDoc.
+     *
+     * Triggering workflow:
+     *
+     * {@link redundantJsdocRule}
+     *   -> `RuleHandlers.onTargetFile`
+     *     -> {@link judgeSource}
+     *
+     * Upstream:
+     * - {@link redundantJsdocRule}
+     *
+     * Downstream:
+     * - {@link judgeSource}
+     * - `RuleContext.report`
+     */
     async onTargetFile(target) {
       const model = await ctx.model()
+      const file = await ctx.src.readFile(target.file)
       const findings = await judgeSource({
         logger: ctx.logger,
         metering: ctx.metering,
@@ -16,7 +33,7 @@ export const redundantJsdocRule = defineRule({
         outputLanguage: ctx.outputLanguage,
         prompt: redundantJsdocPrompt,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source: file.text,
       })
 
       for (const finding of findings) {

@@ -2,6 +2,7 @@ import type { AgentAdapter } from '../agent/types'
 import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { PluginDefinition, ProjectTarget, RuleConfigEntry, RuleContext, RuleDefinition } from '../dsl/types'
 import type { ProgressJobRef, ProgressReporter } from '../index'
+import type { SourceTargetMetadata } from './source/types'
 
 import { getEventListeners } from 'node:events'
 import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
@@ -17,6 +18,12 @@ import { readCacheBody } from './cache'
 import { hashText, stableHash } from './hash'
 import { ProjectIndexBuilder } from './project'
 import { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './run'
+
+function metadataWithUnsupportedValue(key: string, value: unknown): SourceTargetMetadata {
+  const metadata = {}
+  Reflect.set(metadata, key, value)
+  return metadata
+}
 
 describe('runAlint', () => {
   function createSetupConfig(): SetupConfig {
@@ -224,10 +231,11 @@ describe('runAlint', () => {
       create: ctx => ({
         onTargetFile: async (target) => {
           const agent = requireAgent(ctx)
+          const file = await ctx.src.readFile(target.file)
           const { answer } = await agent({
             instructions: 'review',
             model: await ctx.model('default'),
-            prompt: target.text,
+            prompt: file.text,
             tools: [],
           })
 
@@ -350,7 +358,7 @@ describe('runAlint', () => {
       files: [filePath],
       progress: {
         onExecuteEnd: ({ progress }) => {
-          events.push(`execute:end:${progress.final}:${progress.jobsCompleted}/${progress.jobsTotal}`)
+          events.push(`execute:end:${progress.planningComplete}:${progress.jobsCompleted}/${progress.jobsTotal}`)
           denominators.push(progress.jobsTotal)
           progress.execution.planned = 999
         },
@@ -377,7 +385,7 @@ describe('runAlint', () => {
         },
         onPrepareEnd: ({ filesTotal }) => events.push(`prepare:end:${filesTotal}`),
         onPrepareStart: () => events.push('prepare:start'),
-        onRunEnd: ({ progress }) => events.push(`run:end:${progress.final}:${progress.jobsTotal}`),
+        onRunEnd: ({ progress }) => events.push(`run:end:${progress.planningComplete}:${progress.jobsTotal}`),
       },
       setupConfig: createSetupConfig(),
     })
@@ -512,14 +520,14 @@ describe('runAlint', () => {
         files: [firstPath, secondPath, failingPath],
         progress: {
           onExecuteEnd: ({ progress }) => {
-            executeEnd = { final: progress.final, jobsTotal: progress.jobsTotal }
+            executeEnd = { final: progress.planningComplete, jobsTotal: progress.jobsTotal }
           },
           onFileReady: ({ inputPath, jobsAdded, progress }) => {
             fileReady.push({ inputPath, jobsAdded, jobsTotal: progress.jobsTotal })
           },
           onPrepareEnd: (payload) => { filesTotal = payload.filesTotal },
           onRunEnd: ({ progress }) => {
-            runEnd = { final: progress.final, jobsTotal: progress.jobsTotal }
+            runEnd = { final: progress.planningComplete, jobsTotal: progress.jobsTotal }
           },
         },
         runner: { cache: false, ruleConcurrency: 1 },
@@ -531,13 +539,13 @@ describe('runAlint', () => {
     }
 
     expect(filesTotal).toBe(3)
-    expect(fileReady).toHaveLength(2)
-    expect(fileReady[0]?.inputPath).toBe(firstPath)
-    expect(fileReady[0]?.jobsAdded).toBe(1)
-    expect(fileReady[0]?.jobsTotal).toBe(1)
-    expect(fileReady[1]?.inputPath).toBe(secondPath)
-    expect(fileReady[1]?.jobsAdded).toBe(2)
-    expect(fileReady[1]?.jobsTotal).toBe(3)
+    expect(fileReady).toHaveLength(3)
+    const readyByPath = new Map(fileReady.map(event => [event.inputPath, event]))
+    expect(readyByPath.get(firstPath)?.jobsAdded).toBe(1)
+    expect(readyByPath.get(secondPath)?.jobsAdded).toBe(2)
+    expect(readyByPath.get(failingPath)?.jobsAdded).toBe(0)
+    expect(Math.max(...fileReady.map(event => event.jobsTotal))).toBe(3)
+    expect(fileReady.map(event => event.jobsTotal)).toEqual(fileReady.map(event => event.jobsTotal).toSorted((left, right) => left - right))
     expect(executeEnd?.final).toBe(true)
     expect(executeEnd?.jobsTotal).toBe(3)
     expect(runEnd?.final).toBe(true)
@@ -660,7 +668,7 @@ describe('runAlint', () => {
       setupConfig: createSetupConfig(),
     })).rejects.toBe(sentinel)
 
-    expect(finalProgress).toMatchObject({ final: true, jobsCompleted: 2, jobsStarted: 2, jobsTotal: 2 })
+    expect(finalProgress).toMatchObject({ jobsCompleted: 2, jobsStarted: 2, jobsTotal: 2, planningComplete: true })
     expect(finalProgress?.execution).toMatchObject({ cancelled: 2, planned: 2, queued: 0, running: 0 })
   })
 
@@ -859,8 +867,9 @@ describe('runAlint', () => {
 
     const rule = defineRule({
       create: ctx => ({
-        onTargetFile: (target) => {
-          visited.push(`${target.kind}:${target.language}:${target.text}`)
+        onTargetFile: async (target) => {
+          const file = await ctx.src.readFile(target.file)
+          visited.push(`${target.kind}:${target.language}:${file.text}`)
           ctx.report({
             message: `checked ${target.language}`,
           })
@@ -1332,7 +1341,7 @@ describe('runAlint', () => {
             identity: 'file',
             kind: 'file',
             language: 'custom/plain',
-            metadata: { value: 1n },
+            metadata: metadataWithUnsupportedValue('value', 1n),
             text: file.text,
           }],
           name: 'custom/plain',
@@ -1371,7 +1380,7 @@ describe('runAlint', () => {
             identity: 'file',
             kind: 'file',
             language: 'custom/plain',
-            metadata: { value: 1n },
+            metadata: metadataWithUnsupportedValue('value', 1n),
             text: file.text,
           }],
           name: 'custom/plain',
@@ -1396,8 +1405,8 @@ describe('runAlint', () => {
   it('does not inspect extracted target metadata when the project is ignored', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-project-ignored-index-'))
     const filePath = join(root, 'demo.custom')
-    const cyclicMetadata: Record<string, unknown> = {}
-    cyclicMetadata.self = cyclicMetadata
+    const cyclicMetadata = metadataWithUnsupportedValue('self', undefined)
+    Reflect.set(cyclicMetadata, 'self', cyclicMetadata)
     let extractionCalls = 0
 
     await writeFile(filePath, 'unchanged\n')
@@ -1671,15 +1680,20 @@ describe('runAlint', () => {
       languages: {
         custom: {
           extensions: ['.custom'],
-          extract: (file, options) => [{
-            file,
-            identity: 'file',
-            kind: 'file',
-            language: 'custom/plain',
-            metadata: { version: options.languageOptions.version },
-            origin: { physicalPath: file.path },
-            text: file.text,
-          }],
+          extract: (file, options) => {
+            const version = options.languageOptions.version
+            if (typeof version !== 'number')
+              throw new TypeError('Expected numeric language version.')
+            return [{
+              file,
+              identity: 'file',
+              kind: 'file',
+              language: 'custom/plain',
+              metadata: { version },
+              origin: { physicalPath: file.path },
+              text: file.text,
+            }]
+          },
           name: 'custom/plain',
         },
       },
@@ -2082,10 +2096,11 @@ describe('runAlint', () => {
       create: ctx => ({
         onTargetFile: async (target) => {
           const agent = requireAgent(ctx)
+          const file = await ctx.src.readFile(target.file)
           const { answer } = await agent({
             instructions: 'review',
             model: await ctx.model('default'),
-            prompt: target.text,
+            prompt: file.text,
             tools: [],
           })
 
@@ -2306,10 +2321,11 @@ describe('runAlint', () => {
       create: ctx => ({
         onTargetFile: async (target) => {
           observedRuleSignal = ctx.signal
+          const file = await ctx.src.readFile(target.file)
           await requireAgent(ctx)({
             instructions: 'review',
             model: await ctx.model('default'),
-            prompt: target.text,
+            prompt: file.text,
             signal: requestController.signal,
             tools: [],
           })
@@ -2353,11 +2369,12 @@ describe('runAlint', () => {
       create: ctx => ({
         onTargetFile: async (target) => {
           const agent = requireAgent(ctx)
+          const file = await ctx.src.readFile(target.file)
 
           await agent({
             instructions: 'review',
             model: await ctx.model('default'),
-            prompt: target.text,
+            prompt: file.text,
             tools: [],
           })
         },
@@ -2425,11 +2442,13 @@ describe('runAlint', () => {
       create: ctx => ({
         onTargetFunction: async (target) => {
           const model = await ctx.model()
+          const file = await ctx.src.readFile(target.file)
+          const source = target.range ? ctx.src.sliceRange(file, target.range).text : file.text
 
           ctx.report({
             evidence: {
               modelName: model.name,
-              source: ctx.src.getText(target),
+              source,
             },
             loc: target.loc,
             message: `loaded by ${model.id}`,
@@ -2935,11 +2954,13 @@ describe('runAlint', () => {
 
       const rule = defineRule({
         create: ctx => ({
-          onTargetFunction: (target) => {
+          onTargetFunction: async (target) => {
             const name = target.name ?? 'anonymous'
             calls.set(name, (calls.get(name) ?? 0) + 1)
+            const file = await ctx.src.readFile(target.file)
+            const source = target.range ? ctx.src.sliceRange(file, target.range).text : file.text
             ctx.report({
-              message: `${name}:${ctx.src.getText(target).includes('return 3') ? 'changed' : 'original'}`,
+              message: `${name}:${source.includes('return 3') ? 'changed' : 'original'}`,
             })
           },
         }),
@@ -3382,7 +3403,7 @@ describe('runAlint', () => {
         create: ctx => ({
           onTargetFunction: (target) => {
             handlerCalls += 1
-            ctx.report({ message: target.text })
+            ctx.report({ message: String(target.metadata?.label) })
           },
         }),
         languages: 'any',
@@ -3399,6 +3420,7 @@ describe('runAlint', () => {
                 identity: 'same',
                 kind: 'function' as const,
                 language: 'custom',
+                metadata: { label: text },
                 range: { end: 1, start: 0 },
                 text,
               })),

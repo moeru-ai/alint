@@ -146,13 +146,11 @@ function judgePrompt(): string {
 /* The cache is off by default: with it on, a run would write a decision into the fixture workspace and answer the next test from disk instead of the server. The cache tests turn it on, against a copy. */
 async function lint(run: Run, relativePath: string, settings: Record<string, unknown> = { simplicity: { cache: false, ignores: ['**/*.config.ts'] } }): Promise<void> {
   const path = resolve(run.cwd, relativePath)
-  const text = await readFile(path, 'utf8')
   const target: FileTarget = {
-    file: { language: 'plaintext', lines: text.split('\n'), path, text },
+    file: { contentHash: 'unused', language: 'plaintext', path },
     identity: 'file',
     kind: 'file',
     language: 'plaintext',
-    text,
   }
 
   await needlessHelperRule.create(run.contextFor(settings)).onTargetFile?.(target)

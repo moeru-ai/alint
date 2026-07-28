@@ -17,7 +17,7 @@ export const redundantBindingRule = defineRule({
      * Triggering workflow:
      *
      * {@link defineRule}
-     *   -> `SourceTarget.kind === "file"`
+     *   -> `PlannedSourceTarget.kind === "file"`
      *     -> `onTargetFile`
      *       -> {@link judgeSource} / {@link verifyRedundantBindings}
      *
@@ -31,6 +31,7 @@ export const redundantBindingRule = defineRule({
      */
     async onTargetFile(target) {
       const model = await ctx.model()
+      const source = (await ctx.src.readFile(target.file)).text
       const candidates = await judgeSource({
         logger: ctx.logger,
         metering: ctx.metering,
@@ -39,7 +40,7 @@ export const redundantBindingRule = defineRule({
         outputLanguage: ctx.outputLanguage,
         prompt: redundantBindingPrompt,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source,
       })
 
       if (candidates.length === 0) {
@@ -54,7 +55,7 @@ export const redundantBindingRule = defineRule({
         model,
         outputLanguage: ctx.outputLanguage,
         signal: ctx.signal,
-        source: ctx.src.getText(target),
+        source,
       })
       const reportedLines = new Set<number>()
 

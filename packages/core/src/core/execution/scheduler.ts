@@ -72,6 +72,10 @@ export class RuleScheduler {
     return this.closePromise
   }
 
+  completeFilePlanning() {
+    return this.options.progress.completeFilePlanning()
+  }
+
   schedule(jobs: readonly RuleJob[]): ScheduledRuleBatch {
     if (!this.accepting || jobs.length === 0)
       return { jobsAdded: 0, outcomes: Promise.resolve([]) }

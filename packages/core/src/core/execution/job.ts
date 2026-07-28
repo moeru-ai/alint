@@ -1,11 +1,13 @@
+import type { DirectoryTarget, ProjectTarget } from '../../dsl/types'
 import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
+import type { ClassTarget, FileTarget, FunctionTarget } from '../source/types'
 import type { AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
 import type { RunProgress } from './progress'
 import type { CacheRunContext, JobOrderKey, JobScope, RuleExecutionBucket, RuleJob, RuleJobOutcome, RuleRuntimeState, TerminalOutcome } from './types'
 
 import { errorMessageFrom } from '@moeru/std/error'
 
-import { stableHash } from '../hash'
+import { SourceChangedError } from '../source/runtime'
 import { snapshotDiagnostic, snapshotDiagnostics, snapshotFailure, snapshotProgressJobRef, snapshotUsage, snapshotUsageRecords } from './records'
 
 export interface ExecuteRuleJobOptions {
@@ -96,7 +98,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
 
   try {
     // NOTICE: JavaScript handlers cannot be force-terminated. A timed-out handler keeps its permit until its promise settles; process isolation would require a separately approved runtime design.
-    await job.execution.runtime.executionState.run(state, job.execution.run)
+    await job.execution.runtime.executionState.run(state, () => runHandler(job))
   }
   catch (cause) {
     if (state.reporterFailed)
@@ -128,7 +130,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   if (handlerFailed) {
     return finish(job, bucket, {
       cache: 'miss',
-      failure: failure(handlerCause, job, 'handler'),
+      failure: failure(handlerCause, job, handlerCause instanceof SourceChangedError ? 'source-changed' : 'handler'),
       state: 'failed',
     })
   }
@@ -187,16 +189,7 @@ function createFingerprint(job: RuleJob, modelHash: string): CacheFingerprint {
 }
 
 function createTargetHash(job: RuleJob): string {
-  const target = job.target
-  return target.cacheTargetHash ?? stableHash({
-    language: target.language,
-    loc: target.loc,
-    metadata: target.metadata,
-    name: target.name,
-    origin: target.origin,
-    range: target.range,
-    text: target.text,
-  })
+  return job.target.cacheTargetHash
 }
 
 function failure(cause: unknown, job: RuleJob, kind: AlintRuleFailure['kind']): AlintRuleFailure {
@@ -261,6 +254,65 @@ function replayCachedEntry(
     const usageRecord = snapshotUsage(record)
     bucket.usage.push(usageRecord)
     progress?.onUsage?.({ job: snapshotProgressJobRef(job), progress: runProgress.snapshot(), record: snapshotUsage(usageRecord) })
+  }
+}
+
+/**
+ * Dispatches one compact job descriptor to its registered rule handler.
+ *
+ * Triggering workflow:
+ *
+ * {@link executeRuleJob}
+ *   -> {@link runHandler}
+ *     -> `RuleHandlers.onTarget*`
+ *
+ * Upstream:
+ * - {@link executeRuleJob}
+ *
+ * Downstream:
+ * - `RuleRuntime.handlers`
+ */
+function runHandler(job: RuleJob) {
+  const { handlers } = job.execution.runtime
+  const target = job.target.descriptor
+  switch (job.execution.handler) {
+    case 'class':
+      if (target.kind !== 'class')
+        throw new TypeError(`Expected class target, received "${target.kind}".`)
+
+      return handlers.onTargetClass?.(target as ClassTarget)
+
+    case 'directory':
+      if (target.kind !== 'directory')
+        throw new TypeError(`Expected directory target, received "${target.kind}".`)
+
+      return handlers.onTargetDirectory?.(target as DirectoryTarget)
+
+    case 'file':
+      if (target.kind !== 'file')
+        throw new TypeError(`Expected file target, received "${target.kind}".`)
+
+      return handlers.onTargetFile?.(target as FileTarget)
+
+    case 'function':
+      if (target.kind !== 'function')
+        throw new TypeError(`Expected function target, received "${target.kind}".`)
+
+      return handlers.onTargetFunction?.(target as FunctionTarget)
+
+    case 'language-declaration-error':
+      throw new Error(
+        `Rule "${job.execution.runtime.enabledRule.id}" handles function or class targets but declares no "languages", so it receives none. Declare \`languages: 'any'\`, or list the language ids it handles.`,
+      )
+
+    case 'project':
+      if (target.kind !== 'project')
+        throw new TypeError(`Expected project target, received "${target.kind}".`)
+
+      return handlers.onTargetProject?.(target as ProjectTarget)
+
+    case 'with':
+      return handlers.onTargetWith?.(target)
   }
 }
 
