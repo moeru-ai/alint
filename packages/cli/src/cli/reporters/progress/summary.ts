@@ -2,6 +2,7 @@ import type { ExecutionCounts, ProgressJobRef, ProgressReporter, ProgressSnapsho
 
 import { relative } from 'node:path'
 
+import { formatDuration as formatDateFnsDuration, intervalToDuration } from 'date-fns'
 import fastStringTruncatedWidth from 'fast-string-truncated-width'
 import fastStringWidth from 'fast-string-width'
 
@@ -393,7 +394,13 @@ function formatContentRows(
 }
 
 function formatDuration(ms: number): string {
-  return `${(Math.max(ms, 0) / 1000).toFixed(1)}s`
+  const durationMs = Math.max(ms, 0)
+
+  // Sub-minute progress changes quickly enough that the existing decimal precision remains useful.
+  if (durationMs < 60_000)
+    return `${(durationMs / 1000).toFixed(1)}s`
+
+  return formatDateFnsDuration(intervalToDuration({ end: durationMs, start: 0 }))
 }
 
 function formatFooters(state: SummaryState, options: SummaryProgressReporterOptions, now: number): string[] {

@@ -133,8 +133,23 @@ describe('createSummaryProgressReporter', () => {
     reporter.onPrepareStart?.({ startedAt: 0 })
     reporter.onPlanningEnd?.({ progress: snapshot(counts({ completed: 3, planned: 7, running: 4 }), true) })
 
-    expect(reporter.getRows().at(-3)).toBe('3/7 [▓████░░░░░] 49.8s -> ~66.4s')
+    expect(reporter.getRows().at(-3)).toBe('3/7 [▓████░░░░░] 49.8s -> ~1 minute 6 seconds')
     expect(reporter.getRows().at(-1)).toBe('0 tokens (0 cached) -> ~0 tokens')
+  })
+
+  it('formats long elapsed times and estimates with readable duration units', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(4_089_500)
+    const reporter = createActualSummaryProgressReporter({
+      color: false,
+      columns: 140,
+      cwd: '/repo',
+      spinnerFrames: ['⠋'],
+    })
+    reporter.onPrepareStart?.({ startedAt: 0 })
+    reporter.onPlanningEnd?.({ progress: snapshot(counts({ completed: 1, planned: 2, queued: 1 }), true) })
+
+    expect(reporter.getRows().at(-3)).toBe('1/2 [▓█████░░░░] 1 hour 8 minutes 9 seconds -> ~1 hour 8 minutes 9 seconds')
   })
 
   it('keeps only aggregate rule state after thousands of jobs become terminal', () => {

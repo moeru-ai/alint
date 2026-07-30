@@ -60,6 +60,7 @@ catalog:
   chokidar: ^5.0.0
   cli-spinners: ^3.4.0
   cspell: ^10.0.1
+  date-fns: ^4.4.0
   doctoc: ^2.5.0
   effect: ^3.22.0
   es-toolkit: ^1.49.0
