@@ -30,6 +30,7 @@
     "@moeru/std": "catalog:",
     "cac": "catalog:",
     "cli-spinners": "catalog:",
+    "date-fns": "catalog:",
     "fast-string-truncated-width": "catalog:",
     "fast-string-width": "catalog:",
     "gitignore-fs": "catalog:",
