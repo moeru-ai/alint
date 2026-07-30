@@ -2,10 +2,10 @@ import type { ExecutionCounts, ProgressJobRef, ProgressReporter, ProgressSnapsho
 
 import { relative } from 'node:path'
 
-import { formatDuration as formatDateFnsDuration, intervalToDuration } from 'date-fns'
 import fastStringTruncatedWidth from 'fast-string-truncated-width'
 import fastStringWidth from 'fast-string-width'
 
+import { formatDuration as formatDateFnsDuration, intervalToDuration } from 'date-fns'
 import { createColors } from 'tinyrainbow'
 
 import { formatMiniBar } from './bar'
