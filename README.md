@@ -237,7 +237,14 @@ id = "qwen:8b"
 name = "qwen:8b"
 size = "small"
 capabilities = [ "tool-call" ]
+
+[providers.models.default_params]
+thinking = { type = "disabled" }
 ```
+
+`default_params` is merged into every chat request for that model. Use it for provider-specific request fields that are not covered by the rest of the model entry.
+
+`alint` structured output forces a tool call (`tool_choice`). Some models, such as DeepSeek V4, reject that combination while thinking/reasoning is enabled. For those models, set `thinking = { type = "disabled" }` as above so structured output can run.
 
 Note that `-N` stands for `--no-interactive`, which means this is not an interactive setup. TUI is not required, so you can ask Codex or Claude Code to run this command for you.
 

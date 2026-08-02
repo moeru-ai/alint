@@ -103,6 +103,7 @@ export async function generateStructured<Schema extends GenericSchema>(
     try {
       options.signal?.throwIfAborted()
       response = await generateText({
+        ...options.model.params,
         abortSignal: options.signal,
         baseURL: options.model.provider.endpoint,
         headers: options.model.provider.headers,
