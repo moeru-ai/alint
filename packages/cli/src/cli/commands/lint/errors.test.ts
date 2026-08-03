@@ -23,6 +23,7 @@ function failure(
   targetName?: string,
 ): AlintRuleFailure {
   return {
+    causes: [],
     job: {
       id: `job-${index}`,
       index,

@@ -2,6 +2,11 @@ import type { RunnerConfig, SetupConfig } from '../config/types'
 import type { AlintConfig, DiagnosticLocation, RuleInferenceUsageRecord } from '../dsl/types'
 import type { SourceTargetKind } from './source/types'
 
+export interface AlintFailureCause {
+  code?: string
+  message: string
+}
+
 export interface AlintFileFailure {
   file: {
     index: number
@@ -12,6 +17,7 @@ export interface AlintFileFailure {
 }
 
 export interface AlintRuleFailure {
+  causes: AlintFailureCause[]
   job: ProgressJobRef
   kind: 'cache-replay' | 'handler' | 'source-changed' | 'timeout'
   message: string

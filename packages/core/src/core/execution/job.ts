@@ -1,7 +1,7 @@
 import type { DirectoryTarget, ProjectTarget } from '../../dsl/types'
 import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
 import type { ClassTarget, FileTarget, FunctionTarget } from '../source/types'
-import type { AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
+import type { AlintFailureCause, AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
 import type { RunProgress } from './progress'
 import type { CacheRunContext, JobOrderKey, JobScope, RuleExecutionBucket, RuleJob, RuleJobOutcome, RuleRuntimeState, TerminalOutcome } from './types'
 
@@ -192,11 +192,66 @@ function createTargetHash(job: RuleJob): string {
   return job.target.cacheTargetHash
 }
 
+function errorCause(error: unknown): unknown {
+  if (error === null || typeof error !== 'object')
+    return undefined
+
+  try {
+    return 'cause' in error ? error.cause : undefined
+  }
+  catch {
+    return undefined
+  }
+}
+
+function errorCode(error: unknown): string | undefined {
+  if (error === null || typeof error !== 'object')
+    return undefined
+
+  try {
+    const code = 'code' in error ? error.code : undefined
+    return typeof code === 'string' || typeof code === 'number' ? String(code) : undefined
+  }
+  catch {
+    return undefined
+  }
+}
+
 function failure(cause: unknown, job: RuleJob, kind: AlintRuleFailure['kind']): AlintRuleFailure {
   return {
+    causes: failureCauses(cause),
     job: snapshotProgressJobRef(job.jobRef),
     kind,
     message: failureMessage(cause),
+  }
+}
+
+// Error.cause is deliberately flattened into serializable records here. Raw provider errors can
+// retain sockets, request bodies, or hostile getters and must not escape the execution boundary.
+function failureCauses(error: unknown): AlintFailureCause[] {
+  const causes: AlintFailureCause[] = []
+  const seen = new Set<object>()
+  let current = error
+
+  if (current !== null && typeof current === 'object')
+    seen.add(current)
+
+  while (true) {
+    const cause = errorCause(current)
+    if (cause === undefined)
+      return causes
+    if (cause !== null && typeof cause === 'object') {
+      if (seen.has(cause))
+        return causes
+      seen.add(cause)
+    }
+
+    const code = errorCode(cause)
+    causes.push({
+      ...(code === undefined ? {} : { code }),
+      message: failureMessage(cause),
+    })
+    current = cause
   }
 }
 

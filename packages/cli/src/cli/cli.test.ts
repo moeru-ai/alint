@@ -152,6 +152,34 @@ export default [
 `)
 }
 
+async function writeCauseFailureFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: {
+        rules: {
+          review: {
+            create: () => ({
+              onTargetFile: () => {
+                const socketError = Object.assign(new Error('other side closed'), { code: 'UND_ERR_SOCKET' })
+                throw new TypeError('fetch failed', { cause: socketError })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'company/review': 'warn',
+    },
+  },
+]
+`)
+}
+
 async function writeOutputLanguageFixture(cwd: string): Promise<void> {
   await writeFile(join(cwd, 'demo.ts'), 'export function load() {}\n')
   await writeFile(join(cwd, 'alint.config.ts'), `
@@ -3142,6 +3170,21 @@ export default [
     const statsRecord = JSON.parse((await readFile(join(statsDirOf(io), statsFiles[0]!), 'utf8')).trim())
     expect(statsRecord.ruleCounts.failed).toBe(1)
     expect(statsRecord.ruleCounts.cancelled).toBe(0)
+  })
+
+  it('renders the cause of a rule execution failure', async () => {
+    const io = await createTestIo()
+
+    await writeCauseFailureFixture(io.cwd)
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'demo.ts',
+    ], io)
+
+    expect(exitCode).toBe(2)
+    expect(io.stderrText).toContain('    [handler] fetch failed\n      Caused by: [UND_ERR_SOCKET] other side closed')
   })
 
   it('keeps JSON stdout parseable when a rule execution fails after partial diagnostics', async () => {
