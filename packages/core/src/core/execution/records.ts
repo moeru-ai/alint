@@ -21,6 +21,7 @@ export function snapshotDiagnostics(diagnostics: Diagnostic[]): Diagnostic[] {
 
 export function snapshotFailure(failure: AlintRuleFailure): AlintRuleFailure {
   return {
+    causes: failure.causes.map(cause => ({ ...cause })),
     job: snapshotProgressJobRef(failure.job),
     kind: failure.kind,
     message: failure.message,

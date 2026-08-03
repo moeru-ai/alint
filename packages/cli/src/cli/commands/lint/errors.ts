@@ -40,6 +40,10 @@ function formatFailureGroups(groups: Array<[string, AlintRuleFailure[]]>, color:
     for (const failure of group) {
       lines.push(`  ${formatTarget(failure)}`)
       lines.push(`    [${failure.kind}] ${failure.message}`)
+      for (const cause of failure.causes) {
+        const code = cause.code === undefined ? '' : `[${cause.code}] `
+        lines.push(`      Caused by: ${code}${cause.message}`)
+      }
     }
     lines.push('')
   }

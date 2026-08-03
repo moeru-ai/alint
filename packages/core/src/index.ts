@@ -58,6 +58,7 @@ export type {
   SourceText,
 } from './core/source/types'
 export type {
+  AlintFailureCause,
   AlintFileFailure,
   AlintRuleFailure,
   AlintRunFailure,
