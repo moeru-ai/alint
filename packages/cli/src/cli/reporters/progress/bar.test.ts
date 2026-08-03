@@ -10,8 +10,13 @@ describe('formatMiniBar', () => {
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 3, width: 10 })).toBe('[███▓░█░░░░]')
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 4, width: 10 })).toBe('[████▓░░░░░]')
     expect(formatMiniBar({ completed: 5, planned: 10, tick: 5, width: 10 })).toBe('[█████▓░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 6, width: 10 })).toBe('[█████░░░░░]')
-    expect(formatMiniBar({ completed: 5, planned: 10, tick: 7, width: 10 })).toBe('[▓█████░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 6, width: 10 })).toBe('[▓█████░░░░]')
+    expect(formatMiniBar({ completed: 5, planned: 10, tick: 7, width: 10 })).toBe('[█▓░███░░░░]')
+  })
+
+  it('loops immediately after the highlight reaches the progress frontier', () => {
+    expect(formatMiniBar({ completed: 4, planned: 10, tick: 4, width: 10 })).toBe('[████▓░░░░░]')
+    expect(formatMiniBar({ completed: 4, planned: 10, tick: 5, width: 10 })).toBe('[▓████░░░░░]')
   })
 
   it('keeps low progress static until the animation threshold', () => {

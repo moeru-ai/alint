@@ -25,10 +25,7 @@ export function formatMiniBar(options: MiniBarOptions): string {
     return formatStaticBar(completeCells, width)
 
   const frontierIndex = completeCells
-  const phase = positiveModulo(options.tick, frontierIndex + 2)
-
-  if (phase === frontierIndex + 1)
-    return formatStaticBar(completeCells, width)
+  const phase = positiveModulo(options.tick, frontierIndex + 1)
 
   const cells = Array.from({ length: width }, (_, index) => {
     if (phase === 0) {
