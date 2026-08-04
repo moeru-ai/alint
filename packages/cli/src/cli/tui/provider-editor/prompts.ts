@@ -79,7 +79,7 @@ export function createProviderEditorPrompts(prompts: typeof ClackPrompts): Provi
     async headerInput() {
       const result = await prompts.text({
         message: 'Headers (leave empty to skip; type .. to go back)',
-        placeholder: 'Authorization=Bearer token, X-Test=true',
+        placeholder: 'Authorization=Bearer sk-or-v1-xxxxxx, X-Test=true',
         validate: (value) => {
           if (isBackInput(value ?? '')) {
             return undefined
