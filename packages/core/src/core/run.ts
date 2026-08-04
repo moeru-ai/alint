@@ -72,7 +72,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     readOnly: options.cacheOnly,
   })
   const cacheContext: CacheRunContext = {
-    modelHash: stableHash({ modelOverride: options.modelOverride, outputLanguage: options.outputLanguage, setupConfig }),
+    modelHash: stableHash({ defaultModel: options.defaultModel, modelOverride: options.modelOverride, outputLanguage: options.outputLanguage, setupConfig }),
   }
   const createRuntimes = (input: { agent?: typeof preparation.files[number]['agent'], rules: typeof preparation.files[number]['rules'], settings: Record<string, unknown> }) => createRuleRuntimes({
     cwd,

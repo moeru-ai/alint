@@ -167,6 +167,8 @@ Override the matched model for a one-off run:
 alint --model qwen:8b demo.ts
 ```
 
+When the project-local setup does not configure any models, model calls without a rule-level or call-level selector use the `default` alias from the global setup. Rule selectors continue to use normal model matching. Configuring at least one model in `.alint/config.toml` restores project-first matching for unselected calls. An explicit `--model` override always takes precedence.
+
 Ask model-backed rules to write diagnostics in a specific language:
 
 ```bash

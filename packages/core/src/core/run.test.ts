@@ -2523,6 +2523,88 @@ describe('runAlint', () => {
     })
   })
 
+  it('uses defaultModel only when the rule and call have no selector', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-model-default-'))
+    const filePath = join(root, 'demo.ts')
+
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFunction: async (target) => {
+          const defaultModel = await ctx.model()
+          ctx.report({
+            filePath: target.file.path,
+            message: `default: ${defaultModel.id}`,
+          })
+
+          const namedModel = await ctx.model('default')
+          ctx.report({
+            filePath: target.file.path,
+            message: `named: ${namedModel.id}`,
+          })
+
+          const selectedModel = await ctx.model({ size: 'small' })
+          ctx.report({
+            filePath: target.file.path,
+            message: `selected: ${selectedModel.id}`,
+          })
+        },
+      }),
+      languages: 'any',
+    })
+
+    const result = await runAlint({
+      config: createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' }),
+      defaultModel: 'override',
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.diagnostics.map(diagnostic => diagnostic.message)).toEqual([
+      'default: local:qwen-32b',
+      'named: local:qwen-8b',
+      'selected: local:qwen-8b',
+    ])
+  })
+
+  it('does not use defaultModel when the rule declares a model requirement', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-rule-model-default-'))
+    const filePath = join(root, 'demo.ts')
+
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFunction: async (target) => {
+          const model = await ctx.model()
+
+          ctx.report({
+            filePath: target.file.path,
+            message: `loaded by ${model.id}`,
+          })
+        },
+      }),
+      languages: 'any',
+      model: { size: 'small' },
+    })
+
+    const result = await runAlint({
+      config: createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' }),
+      defaultModel: 'override',
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.diagnostics[0]).toMatchObject({
+      message: 'loaded by local:qwen-8b',
+      model: {
+        requested: undefined,
+        resolvedId: 'local:qwen-8b',
+      },
+    })
+  })
+
   it('does not carry model metadata into later reports', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-model-reset-'))
     const filePath = join(root, 'demo.ts')

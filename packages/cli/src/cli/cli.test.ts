@@ -2806,6 +2806,42 @@ export default [
     }
   })
 
+  it('passes the system default separately from an explicit model override', async () => {
+    const io = await createTestIo()
+    const runAlint = vi.spyOn(alintCore, 'runAlint')
+
+    try {
+      await writeProgressFixture(io.cwd)
+
+      await executeCli([
+        'node',
+        'alint',
+        'demo.ts',
+      ], io)
+
+      expect(runAlint).toHaveBeenLastCalledWith(expect.objectContaining({
+        defaultModel: 'default',
+        modelOverride: undefined,
+      }))
+
+      await executeCli([
+        'node',
+        'alint',
+        '--model',
+        'override',
+        'demo.ts',
+      ], io)
+
+      expect(runAlint).toHaveBeenLastCalledWith(expect.objectContaining({
+        defaultModel: 'default',
+        modelOverride: 'override',
+      }))
+    }
+    finally {
+      runAlint.mockRestore()
+    }
+  })
+
   it('resolves concurrency and timeout with CLI over config over setup and no injected default', () => {
     expect(resolveRunnerConfig(
       { providers: [], runner: { ruleConcurrency: 2, timeoutMs: 100 }, version: 1 },

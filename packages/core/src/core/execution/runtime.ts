@@ -88,7 +88,13 @@ export function createRuleRuntimes(options: {
         },
       },
       model: async (selector) => {
-        const request = options.runOptions.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
+        const request = options.runOptions.modelOverride
+          ?? (typeof selector === 'string' ? selector : undefined)
+          ?? (
+            selector === undefined && enabledRule.rule.model === undefined
+              ? options.runOptions.defaultModel
+              : undefined
+          )
         const requirement = mergeModelRequirement(
           enabledRule.rule.model,
           typeof selector === 'string' ? undefined : selector,

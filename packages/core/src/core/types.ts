@@ -168,6 +168,7 @@ export interface RunOptions {
   cacheOnly?: boolean
   config?: AlintConfig
   cwd?: string
+  defaultModel?: string
   directories?: string[]
   files?: string[]
   modelOverride?: string

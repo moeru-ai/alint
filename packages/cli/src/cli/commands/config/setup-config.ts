@@ -25,14 +25,23 @@ export function formatUnknownProvider(providerId: string, scope: SetupConfigScop
 }
 
 export async function loadMergedSetupConfig(io: CliIo): Promise<SetupConfig> {
-  const globalSetupConfigPath = getGlobalSetupConfigPath(io.env ?? process.env)
-  const projectSetupConfigPath = getProjectSetupConfigPath(io.cwd)
-  const [globalSetupConfig, projectSetupConfig] = await Promise.all([
-    loadSetupConfig(globalSetupConfigPath),
-    loadSetupConfig(projectSetupConfigPath),
-  ])
+  const { globalSetupConfig, projectSetupConfig } = await loadSetupConfigs(io)
 
   return mergeSetupConfigs(globalSetupConfig, projectSetupConfig)
+}
+
+export async function loadRunSetupConfig(io: CliIo): Promise<{
+  defaultModel?: string
+  setupConfig: SetupConfig
+}> {
+  const { globalSetupConfig, projectSetupConfig } = await loadSetupConfigs(io)
+
+  return {
+    defaultModel: projectSetupConfig.providers.some(provider => provider.models.length > 0)
+      ? undefined
+      : 'default',
+    setupConfig: mergeSetupConfigs(globalSetupConfig, projectSetupConfig),
+  }
 }
 
 export async function loadScopedSetupConfig(io: CliIo, local: boolean | undefined): Promise<ScopedSetupConfig> {
@@ -42,4 +51,18 @@ export async function loadScopedSetupConfig(io: CliIo, local: boolean | undefine
     : getGlobalSetupConfigPath(io.env ?? process.env)
 
   return { config: await loadSetupConfig(path), path, scope }
+}
+
+async function loadSetupConfigs(io: CliIo): Promise<{
+  globalSetupConfig: SetupConfig
+  projectSetupConfig: SetupConfig
+}> {
+  const globalSetupConfigPath = getGlobalSetupConfigPath(io.env ?? process.env)
+  const projectSetupConfigPath = getProjectSetupConfigPath(io.cwd)
+  const [globalSetupConfig, projectSetupConfig] = await Promise.all([
+    loadSetupConfig(globalSetupConfigPath),
+    loadSetupConfig(projectSetupConfigPath),
+  ])
+
+  return { globalSetupConfig, projectSetupConfig }
 }

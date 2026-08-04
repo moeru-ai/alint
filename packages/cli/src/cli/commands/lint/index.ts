@@ -11,7 +11,7 @@ import { resolve } from 'pathe'
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
-import { loadMergedSetupConfig } from '../config/setup-config'
+import { loadRunSetupConfig } from '../config/setup-config'
 import { findLintTargets, NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
@@ -68,8 +68,8 @@ async function runLintCommand(
     await assertConfigExists(io.cwd, options.config)
   }
 
-  const [setupConfig, config] = await Promise.all([
-    loadMergedSetupConfig(io),
+  const [{ defaultModel, setupConfig }, config] = await Promise.all([
+    loadRunSetupConfig(io),
     loadAlintConfig(io.cwd, options.config),
   ])
   let lintTargets: Awaited<ReturnType<typeof findLintTargets>>
@@ -125,6 +125,7 @@ async function runLintCommand(
       cacheOnly: options.cacheOnly,
       config,
       cwd: io.cwd,
+      defaultModel,
       directories: lintTargets.directories,
       files: lintTargets.files,
       modelOverride: options.model,
