@@ -12,7 +12,7 @@ import { AsyncLocalStorage } from 'node:async_hooks'
 
 import { combineAbortSignals } from '../../agent'
 import { withAgentRetry } from '../../agent/retry'
-import { resolveModel } from '../../models/resolve'
+import { resolveModel, UnknownModelError } from '../../models/resolve'
 import { stableHash } from '../hash'
 import { snapshotDiagnostic, snapshotProgressJobRef, snapshotUsage } from './records'
 
@@ -88,16 +88,37 @@ export function createRuleRuntimes(options: {
         },
       },
       model: async (selector) => {
-        const request = options.runOptions.modelOverride ?? (typeof selector === 'string' ? selector : undefined)
+        const explicitRequest = options.runOptions.modelOverride
+          ?? (typeof selector === 'string' ? selector : undefined)
+        const fallbackRequest = explicitRequest === undefined
+          && selector === undefined
+          && enabledRule.rule.model === undefined
+          ? options.runOptions.defaultModel
+          : undefined
+        const request = explicitRequest ?? fallbackRequest
         const requirement = mergeModelRequirement(
           enabledRule.rule.model,
           typeof selector === 'string' ? undefined : selector,
         )
-        const resolvedModel = resolveModel(options.setupConfig, {
-          request,
-          requirement,
-          ruleId: enabledRule.id,
-        })
+        let resolvedModel: ResolvedModel
+
+        try {
+          resolvedModel = resolveModel(options.setupConfig, {
+            request,
+            requirement,
+            ruleId: enabledRule.id,
+          })
+        }
+        catch (error) {
+          if (fallbackRequest !== undefined && error instanceof UnknownModelError) {
+            throw new Error(
+              `Default model "${fallbackRequest}" is not configured. Configure a system default model or select a model for this project.`,
+              { cause: error },
+            )
+          }
+
+          throw error
+        }
 
         const state = executionState.getStore()
 

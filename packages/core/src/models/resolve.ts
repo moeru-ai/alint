@@ -6,6 +6,16 @@ interface ModelCandidate {
   provider: ProviderDefinition
 }
 
+export class UnknownModelError extends Error {
+  readonly request: string
+
+  constructor(request: string) {
+    super(`Unknown model "${request}".`)
+    this.name = 'UnknownModelError'
+    this.request = request
+  }
+}
+
 export function resolveModel(
   registry: SetupConfig,
   options: ResolveModelOptions = {},
@@ -42,7 +52,7 @@ export function resolveModel(
       }
 
       if (matchingCandidates.length === 0) {
-        throw new Error(`Unknown model "${request}".`)
+        throw new UnknownModelError(request)
       }
 
       if (matchingCandidates.length > 1) {

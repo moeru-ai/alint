@@ -2523,6 +2523,117 @@ describe('runAlint', () => {
     })
   })
 
+  it('uses defaultModel only when the rule and call have no selector', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-model-default-'))
+    const filePath = join(root, 'demo.ts')
+
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFunction: async (target) => {
+          const defaultModel = await ctx.model()
+          ctx.report({
+            filePath: target.file.path,
+            message: `default: ${defaultModel.id}`,
+          })
+
+          const namedModel = await ctx.model('default')
+          ctx.report({
+            filePath: target.file.path,
+            message: `named: ${namedModel.id}`,
+          })
+
+          const selectedModel = await ctx.model({ size: 'small' })
+          ctx.report({
+            filePath: target.file.path,
+            message: `selected: ${selectedModel.id}`,
+          })
+        },
+      }),
+      languages: 'any',
+    })
+
+    const result = await runAlint({
+      config: createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' }),
+      defaultModel: 'override',
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.diagnostics.map(diagnostic => diagnostic.message)).toEqual([
+      'default: local:qwen-32b',
+      'named: local:qwen-8b',
+      'selected: local:qwen-8b',
+    ])
+  })
+
+  it('does not use defaultModel when the rule declares a model requirement', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-rule-model-default-'))
+    const filePath = join(root, 'demo.ts')
+
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFunction: async (target) => {
+          const model = await ctx.model()
+
+          ctx.report({
+            filePath: target.file.path,
+            message: `loaded by ${model.id}`,
+          })
+        },
+      }),
+      languages: 'any',
+      model: { size: 'small' },
+    })
+
+    const result = await runAlint({
+      config: createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' }),
+      defaultModel: 'override',
+      files: [filePath],
+      setupConfig: createSetupConfig(),
+    })
+
+    expect(result.diagnostics[0]).toMatchObject({
+      message: 'loaded by local:qwen-8b',
+      model: {
+        requested: undefined,
+        resolvedId: 'local:qwen-8b',
+      },
+    })
+  })
+
+  it('explains how to configure a missing defaultModel', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-missing-default-model-'))
+    const filePath = join(root, 'demo.ts')
+    const setupConfig = createSetupConfig()
+
+    setupConfig.providers[0]!.models[0]!.aliases = []
+    await writeFile(filePath, 'export function load() {}\n')
+
+    const rule = defineRule({
+      create: ctx => ({
+        onTargetFunction: async () => {
+          await ctx.model()
+        },
+      }),
+      languages: 'any',
+    })
+
+    await expect(runAlint({
+      config: createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' }),
+      defaultModel: 'default',
+      files: [filePath],
+      setupConfig,
+    })).rejects.toMatchObject({
+      failures: [{
+        message: 'Default model "default" is not configured. Configure a system default model or select a model for this project.',
+      }],
+    })
+  })
+
   it('does not carry model metadata into later reports', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-model-reset-'))
     const filePath = join(root, 'demo.ts')
@@ -2626,6 +2737,59 @@ describe('runAlint', () => {
   })
 
   describe('target cache', () => {
+    it('reuses cached entries when defaultModel is ignored by modelOverride', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-model-override-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      let handlerCalls = 0
+
+      await writeFile(filePath, 'export function load() {}\n')
+
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: async (target) => {
+            handlerCalls += 1
+            const model = await ctx.model()
+
+            ctx.report({
+              filePath: target.file.path,
+              message: `loaded by ${model.id}`,
+            })
+          },
+        }),
+        languages: 'any',
+      })
+      const config = createConfig({ 'prefer-load': rule }, { 'company/prefer-load': 'warn' })
+
+      await runAlint({
+        config,
+        defaultModel: 'default',
+        files: [filePath],
+        modelOverride: 'override',
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      const result = await runAlint({
+        config,
+        defaultModel: 'unused-default',
+        files: [filePath],
+        modelOverride: 'override',
+        runner: { cache: { location: cachePath } },
+        setupConfig: createSetupConfig(),
+      })
+
+      expect(handlerCalls).toBe(1)
+      expect(result.diagnostics[0]).toMatchObject({
+        cached: true,
+        message: 'loaded by local:qwen-32b',
+        model: {
+          requested: 'override',
+          resolvedId: 'local:qwen-32b',
+        },
+      })
+    })
+
     it('reuses existing rule entries when another rule is enabled', async () => {
       const root = await mkdtemp(join(tmpdir(), 'alint-cache-added-rule-'))
       const filePath = join(root, 'demo.txt')
