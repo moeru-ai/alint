@@ -209,18 +209,12 @@ alint output inspect alint-output.json
 
 #### Configurations
 
-In order to provision models and LLMs for `alint` while keeping it clean for contributors of your project without requiring them to set up their own LLMs, `alint` offers layers of configuration covering **Project Local**, **Global**, project config, and environment or CLI overrides.
+`alint` uses two configuration systems with separate schemas and responsibilities:
 
-The priorities follow:
-
-```text
-~/.config/alint/config.toml < .alint/config.toml < alint.config.* < environment and CLI overrides
-```
-
-- `~/.config/alint/config.toml` stores user-level provider setup.
-- `.alint/config.toml` stores optional project-local provider setup.
-- `alint.config.*` stores project lint config, plugins, files, ignores, and rule settings.
-- Environment variables and CLI flags are the highest-priority overrides.
+| Configuration | Priority (high → low)                                                                | Content                                                              |
+| --- |--------------------------------------------------------------------------------------|----------------------------------------------------------------------|
+| Setup | Environment and CLI overrides > `.alint/config.toml` > `~/.config/alint/config.toml` | Providers, models, and runner defaults.                              |
+| Lint | Environment and CLI overrides > `alint.config.*`                                     | Files, ignores, plugins, rules, and other project-level lint policy. |
 
 Use setup TOML for machine or project provider definitions:
 

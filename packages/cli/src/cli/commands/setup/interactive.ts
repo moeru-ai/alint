@@ -60,7 +60,7 @@ export async function runInteractiveSetup(io: InteractiveSetupIo): Promise<numbe
         message: 'Where should alint write setup config?',
         options: [
           { label: 'Global', value: 'global' },
-          { label: 'Local project', value: 'local' },
+          { label: 'Local project - Warning: You are about to store your credentials in the folder', value: 'local' },
         ],
       })
 
