@@ -71,6 +71,29 @@ pnpm add -D @alint-js/cli
 pnpm exec alint src
 ```
 
+### Install the Codex plugin (optional)
+
+Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --sparse .agents/plugins \
+  --sparse plugins/alint
+codex plugin add alint@alint
+```
+
+To install a release, use its Git tag:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --ref vX.Y.Z \
+  --sparse .agents/plugins \
+  --sparse plugins/alint
+codex plugin add alint@alint
+```
+
+Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
+
 ### Configure a Model Provider
 
 Use `alint setup` to write provider configuration. The `-N` flag is short for `--no-interactive`, so setup can run in scripts or through coding agents without opening an interactive TUI.
@@ -323,6 +346,8 @@ alint setup -N \
 - `--local` writes `.alint/config.toml` in the current project.
 - You can inspect configs using the `alint config` command group.
 
+##### Codex Stop Gate
+
 Configure the optional Codex Stop Gate integration through the same project config system:
 
 ```bash
@@ -332,30 +357,7 @@ alint config integrations stop-gate set --target all --timeout-ms 1800000
 alint config integrations stop-gate disable
 ```
 
-Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. See [`plugins/alint`](./plugins/alint) for side-loading and runtime behavior.
-
-#### Side-load the Codex plugin
-
-Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
-
-```bash
-codex plugin marketplace add moeru-ai/alint \
-  --sparse .agents/plugins \
-  --sparse plugins/alint
-codex plugin add alint@alint
-```
-
-To install a release, use its Git tag:
-
-```bash
-codex plugin marketplace add moeru-ai/alint \
-  --ref vX.Y.Z \
-  --sparse .agents/plugins \
-  --sparse plugins/alint
-codex plugin add alint@alint
-```
-
-Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
+Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. Read the [`plugins/alint`](https://github.com/moeru-ai/alint/tree/main/plugins/alint) documentation for complete runtime behavior.
 
 #### Using Rules & Plugins
 
