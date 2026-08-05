@@ -11,6 +11,7 @@ export type {
   DirectoryTarget,
   EnabledRule,
   IgnoreConfig,
+  IntegrationsConfig,
   LanguageDefinition,
   PluginDefinition,
   ProcessorDefinition,
@@ -30,5 +31,7 @@ export type {
   RuleSeverity,
   RuleSpecializedHandlers,
   RuleWithHandler,
+  StopGateConfig,
+  StopGateTarget,
   Target,
 } from './types'

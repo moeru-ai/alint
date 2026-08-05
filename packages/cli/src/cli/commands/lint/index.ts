@@ -1,22 +1,25 @@
-import type { RunResult } from '@alint-js/core'
+import type { AlintConfig, RunResult } from '@alint-js/core'
 
 import type { ReporterName } from '../../reporters'
+import type { SessionTargetSelection } from '../../runtime/session'
 import type { CliIo, CliWritable } from '../../types'
+import type { LintTargets } from './discovery'
 import type { LintCommandOptions } from './options'
 
 import { stat } from 'node:fs/promises'
 
+import { loadAlintConfig } from '@alint-js/config'
 import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { resolve } from 'pathe'
 
+import { findGitRoot } from '../../git'
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { createRunSession } from '../../runtime/session'
 import { defineCommand } from '../command'
-import { NoFilesFoundError } from './discovery'
+import { findDirtyLintTargets, NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
-import { resolveRunnerConfig } from './runner'
-import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
+import { executeLint } from './execution'
 
 export const lint = defineCommand({
   action: (context, files: string[] = [], options: LintCommandOptions) =>
@@ -34,6 +37,9 @@ export const lint = defineCommand({
   default: true,
   description: 'Run alint',
   name: 'lint',
+  options: [
+    { description: 'Lint only staged, unstaged, and untracked files', flags: '--dirty' },
+  ],
 })
 
 async function assertConfigExists(cwd: string, configPath: string): Promise<void> {
@@ -65,82 +71,96 @@ async function runLintCommand(
   io: CliIo,
   interceptConsoleOutput: (stdout: CliWritable) => () => void,
 ): Promise<number> {
-  if (options.config) {
-    await assertConfigExists(io.cwd, options.config)
+  if (options.dirty && files.length > 0) {
+    io.stderr.write('The --dirty option does not accept file arguments.\n')
+    return 2
   }
 
-  const session = await createRunSession(io, { configPath: options.config })
+  const cwd = options.dirty ? await findGitRoot(io.cwd) : io.cwd
+  const runIo = cwd === io.cwd ? io : { ...io, cwd }
+
+  if (options.config) {
+    await assertConfigExists(cwd, options.config)
+  }
+
+  let config: AlintConfig | undefined
+  let targets: LintTargets | undefined
+
+  if (options.dirty) {
+    config = await loadAlintConfig(cwd, options.config)
+    targets = await findDirtyLintTargets(config, cwd)
+
+    // Do not initialize model adapters when the repository has nothing to lint.
+    if (targets.files.length === 0) {
+      return 0
+    }
+  }
+
+  const session = await createRunSession(runIo, config === undefined
+    ? { configPath: options.config }
+    : { config })
 
   try {
-    const runner = resolveRunnerConfig(session.runner, options)
-    const progress = shouldEnableProgress(options, io)
+    const progress = shouldEnableProgress(options, runIo)
       ? createCliProgressReporter({
-          color: io.stderr.isTTY === true,
-          columns: io.stderr.columns ?? 80,
-          cwd: io.cwd,
-          isTty: io.stderr.isTTY === true,
-          rows: io.stderr.rows,
-          write: chunk => io.stderr.write(chunk),
+          color: runIo.stderr.isTTY === true,
+          columns: runIo.stderr.columns ?? 80,
+          cwd,
+          isTty: runIo.stderr.isTTY === true,
+          rows: runIo.stderr.rows,
+          write: chunk => runIo.stderr.write(chunk),
         })
       : undefined
     const restoreProgressConsole = progress
       ? interceptConsoleOutput({ write: progress.write })
       : undefined
-    const statsTarget = resolveStatsWrite(runner?.stats, io.env)
-    const statsCollector = statsTarget ? createStatsCollector() : undefined
-    const persistStats = async (runResult: RunResult): Promise<void> => {
-      if (statsTarget && statsCollector)
-        await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
-    }
     const writeResult = (runResult: RunResult): void => {
-      io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
-        color: io.stdout.isTTY === true,
+      runIo.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
+        color: runIo.stdout.isTTY === true,
       }))
     }
+    const targetSelection: SessionTargetSelection = targets === undefined
+      ? { inputs: files }
+      : { targets }
     let result: RunResult
 
     try {
       // TODO: (cli-sigint) Wire SIGINT to SessionRunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
-      result = await session.run({
+      result = await executeLint({
+        ...targetSelection,
         cacheOnly: options.cacheOnly,
-        files,
+        io: runIo,
         modelOverride: options.model,
         outputLanguage: options.outputLanguage,
-        progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
-        runner,
+        progress: progress?.reporter,
+        runnerOptions: options,
+        session,
       })
     }
     catch (error) {
-      restoreProgressConsole?.()
-      progress?.dispose()
-
-      // The session discovers targets, so an unmatched input arrives here and not before the run.
       if (error instanceof NoFilesFoundError) {
-        io.stderr.write(`${error.message}\n`)
+        runIo.stderr.write(`${error.message}\n`)
         return 2
       }
 
       if (error instanceof AlintRunError) {
-        await persistStats(error.result)
         writeResult(error.result)
-        io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
+        runIo.stderr.write(formatRunError(error, runIo.stderr.isTTY === true))
         return 2
       }
 
       if (error instanceof AlintRunCancelledError) {
-        await persistStats(error.result)
         writeResult(error.result)
-        io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
+        runIo.stderr.write(formatCancelledError(error, runIo.stderr.isTTY === true))
         return 2
       }
 
       throw error
     }
-
-    restoreProgressConsole?.()
-    progress?.dispose()
-
-    await persistStats(result)
+    finally {
+      restoreProgressConsole?.()
+      progress?.dispose()
+    }
 
     writeResult(result)
     return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0

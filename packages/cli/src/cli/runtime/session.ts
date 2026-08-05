@@ -7,6 +7,7 @@ import type {
 } from '@alint-js/core'
 
 import type { CliIo } from '../types'
+import type { LintTargets } from '../commands/lint/discovery'
 
 import { loadAlintConfig } from '@alint-js/config'
 import { runAlint } from '@alint-js/core'
@@ -17,6 +18,8 @@ import { startModelAdapters } from './model-adapter'
 import { mergeRunnerConfigs, resolveConfigRunner } from './runner'
 
 export interface CreateRunSessionOptions {
+  /** Reuses a config that the caller already loaded to make a pre-run policy decision. */
+  config?: AlintConfig
   configPath?: string
   /** Spawns ACP processes and binds a loopback port. Replace it to keep a session offline. */
   startModelAdapters?: typeof startModelAdapters
@@ -33,9 +36,8 @@ export interface RunSession {
   shutdown: () => Promise<void>
 }
 
-export interface SessionRunOptions {
+interface SessionRunSettings {
   cacheOnly?: boolean
-  files?: string[]
   modelOverride?: string
   outputLanguage?: string
   progress?: ProgressReporter
@@ -43,6 +45,12 @@ export interface SessionRunOptions {
   runner?: RunnerConfig
   signal?: AbortSignal
 }
+
+export type SessionTargetSelection
+  = | { inputs?: string[], targets?: never }
+    | { inputs?: never, targets: LintTargets }
+
+export type SessionRunOptions = SessionRunSettings & SessionTargetSelection
 
 /**
  * Loads config, setup config, and model adapters once, then runs any number of times.
@@ -56,7 +64,7 @@ export async function createRunSession(
 ): Promise<RunSession> {
   const [{ defaultModel, setupConfig: fileSetupConfig }, config] = await Promise.all([
     loadRunSetupConfig(io),
-    loadAlintConfig(io.cwd, options.configPath),
+    options.config ?? loadAlintConfig(io.cwd, options.configPath),
   ])
   const startAdapters = options.startModelAdapters ?? startModelAdapters
   const runtime = await startAdapters(fileSetupConfig, io)
@@ -71,12 +79,12 @@ export async function createRunSession(
     cwd: io.cwd,
     defaultModel,
     run: async (runOptions) => {
-      const targets = await findLintTargets({
+      const targets = runOptions.targets ?? await findLintTargets({
         config,
         cwd: io.cwd,
         errorOnUnmatchedPattern: true,
         globInputPaths: true,
-        inputs: runOptions.files ?? [],
+        inputs: runOptions.inputs ?? [],
       })
 
       return runAlint({

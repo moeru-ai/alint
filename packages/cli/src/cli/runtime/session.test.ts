@@ -178,7 +178,7 @@ describe('createRunSession', () => {
     try {
       await session.run({
         cacheOnly: true,
-        files: ['demo.ts'],
+        inputs: ['demo.ts'],
         projectTargets: false,
         runner: { stats: false },
         signal,
@@ -209,7 +209,7 @@ describe('createRunSession', () => {
     const session = await createRunSession(io)
 
     try {
-      await expect(session.run({ files: ['missing/**/*.ts'] })).rejects.toThrow('No files matching')
+      await expect(session.run({ inputs: ['missing/**/*.ts'] })).rejects.toThrow('No files matching')
     }
     finally {
       await session.shutdown()

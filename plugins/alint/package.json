@@ -1,0 +1,15 @@
+{
+  "name": "@alint-js/codex-plugin",
+  "type": "module",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "build": "tsdown",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@moeru/std": "catalog:",
+    "tinyexec": "catalog:"
+  }
+}

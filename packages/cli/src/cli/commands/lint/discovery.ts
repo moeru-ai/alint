@@ -10,6 +10,8 @@ import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolv
 import { minimatch, Minimatch } from 'minimatch'
 import { isAbsolute, relative, resolve } from 'pathe'
 
+import { findDirtyFiles } from '../../git'
+
 export interface FindFilesOptions {
   config: AlintConfig
   cwd: string
@@ -61,6 +63,22 @@ export class NoFilesFoundError extends Error {
     this.globInputPaths = options.globInputPaths
     this.pattern = pattern
   }
+}
+
+export async function findDirtyLintTargets(config: AlintConfig, cwd: string): Promise<LintTargets> {
+  const dirtyFiles = await findDirtyFiles(cwd)
+
+  if (dirtyFiles.length === 0) {
+    return { directories: [], files: [] }
+  }
+
+  return findLintTargets({
+    config,
+    cwd,
+    errorOnUnmatchedPattern: false,
+    globInputPaths: false,
+    inputs: dirtyFiles,
+  })
 }
 
 export async function findFiles(options: FindFilesOptions): Promise<string[]> {
