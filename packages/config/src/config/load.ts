@@ -16,23 +16,44 @@ import {
   toAlintConfig,
 } from './static'
 
+export interface LoadedAlintConfig {
+  config: AlintConfig
+  configFile?: string
+}
+
 interface C12LoadConfigResult {
   _configFile?: string
+}
+
+interface LoadedStaticConfigSource {
+  config: ParsedStaticConfig
+  configFile?: string
 }
 
 export async function loadAlintConfig(
   cwd: string,
   configFile?: string,
 ): Promise<AlintConfig> {
-  const staticConfig = await loadStaticConfig(cwd, configFile)
+  return (await loadAlintConfigWithMetadata(cwd, configFile)).config
+}
+
+export async function loadAlintConfigWithMetadata(
+  cwd: string,
+  configFile?: string,
+): Promise<LoadedAlintConfig> {
+  const source = await loadStaticConfigSource(cwd, configFile)
+  const staticConfig = source.config
   const references = staticConfig.groups.flatMap(group => group.plugins)
 
   if (references.length === 0) {
-    return toAlintConfig(staticConfig, {
-      pluginResolver: async (reference) => {
-        throw new Error(`Static plugin "${reference.alias}" was not expected to require resolution.`)
-      },
-    })
+    return {
+      config: await toAlintConfig(staticConfig, {
+        pluginResolver: async (reference) => {
+          throw new Error(`Static plugin "${reference.alias}" was not expected to require resolution.`)
+        },
+      }),
+      configFile: source.configFile,
+    }
   }
 
   const lock = parsePluginLockFile(await loadPluginLockFile(cwd), { cwd })
@@ -49,18 +70,40 @@ export async function loadAlintConfig(
     throw new Error(message, { cause: unresolved[0]?.resolutionError })
   }
 
-  return toAlintConfig(staticConfig, {
-    async pluginResolver(reference) {
-      const resolved = await resolvePluginImportTarget(lock.get(reference))
-      return importPlugin(resolved)
-    },
-  })
+  return {
+    config: await toAlintConfig(staticConfig, {
+      async pluginResolver(reference) {
+        const resolved = await resolvePluginImportTarget(lock.get(reference))
+        return importPlugin(resolved)
+      },
+    }),
+    configFile: source.configFile,
+  }
 }
 
 export async function loadStaticConfig(
   cwd: string,
   configFile?: string,
 ): Promise<ParsedStaticConfig> {
+  return (await loadStaticConfigSource(cwd, configFile)).config
+}
+
+function formatPluginLockEntries(entries: readonly ParsedPluginLockEntry[]): string {
+  return entries
+    .map(entry => `${entry.alias} (${entry.specifier.raw})`)
+    .join(', ')
+}
+
+function formatStaticPluginReferences(references: readonly StaticPluginReference[]): string {
+  return references
+    .map(reference => `${reference.alias} (${reference.specifier.raw})`)
+    .join(', ')
+}
+
+async function loadStaticConfigSource(
+  cwd: string,
+  configFile?: string,
+): Promise<LoadedStaticConfigSource> {
   const jiti = createJiti(resolve(cwd, configFile ?? 'alint.config'), {
     interopDefault: true,
     moduleCache: false,
@@ -84,22 +127,13 @@ export async function loadStaticConfig(
   // resolved config-file marker is the only result field that distinguishes
   // "not found" from an intentionally exported empty object.
   if ((result as C12LoadConfigResult)._configFile === undefined) {
-    return parseStaticConfig(undefined)
+    return { config: parseStaticConfig(undefined) }
   }
 
-  return parseStaticConfig(result.config, {
-    configFile: (result as C12LoadConfigResult)._configFile,
-  })
-}
+  const resolvedConfigFile = (result as C12LoadConfigResult)._configFile
 
-function formatPluginLockEntries(entries: readonly ParsedPluginLockEntry[]): string {
-  return entries
-    .map(entry => `${entry.alias} (${entry.specifier.raw})`)
-    .join(', ')
-}
-
-function formatStaticPluginReferences(references: readonly StaticPluginReference[]): string {
-  return references
-    .map(reference => `${reference.alias} (${reference.specifier.raw})`)
-    .join(', ')
+  return {
+    config: parseStaticConfig(result.config, { configFile: resolvedConfigFile }),
+    configFile: resolvedConfigFile,
+  }
 }

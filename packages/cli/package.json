@@ -37,12 +37,12 @@
     "minimatch": "catalog:",
     "pathe": "catalog:",
     "table": "catalog:",
+    "tinyexec": "catalog:",
     "tinyrainbow": "catalog:"
   },
   "devDependencies": {
     "@pnpm/find-workspace-dir": "catalog:",
     "local-pkg": "catalog:",
-    "mlly": "catalog:",
-    "tinyexec": "catalog:"
+    "mlly": "catalog:"
   }
 }

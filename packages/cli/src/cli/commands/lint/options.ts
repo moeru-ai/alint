@@ -3,6 +3,7 @@ export interface LintCommandOptions {
   cacheLocation?: string
   cacheOnly?: boolean
   config?: string
+  dirty?: boolean
   format: string
   lang?: string
   model?: string

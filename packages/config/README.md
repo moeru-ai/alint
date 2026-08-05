@@ -11,6 +11,7 @@ This package owns the file-system side of configuration:
 - parses and stringifies setup TOML
 - merges setup layers
 - writes provider setup files
+- reads Stop Gate integration settings and writes their non-default TOML overrides
 - installs remote plugin packages or local plugin directories and writes `.alint/plugins/lock.json`
 - exports built-in ignore pattern groups for lower-level tooling
 
@@ -39,6 +40,8 @@ const config = await loadAlintConfig(cwd)
 
 await writeSetupConfig(setupPath, setup)
 ```
+
+Stop Gate configuration uses the project config's `integrations.stopGate` field and remains inactive unless that field explicitly contains `enabled = true`. `setStopGateConfig` only extends the existing TOML write path; it does not add new writable formats or output-path selection.
 
 Static configs can use TOML, YAML, JSON, JSONC, or JSON5. They are data-only alternatives to executable JavaScript and TypeScript flat configs, and identify plugin sources with strings.
 

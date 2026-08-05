@@ -7,6 +7,12 @@ export {
   resolveConfigForProject,
 } from './config/config-array'
 export type { EffectiveAlintConfig, ResolveConfigResult } from './config/config-array'
+export {
+  defaultStopGateConfig,
+  maximumStopGateTimeoutMs,
+  resolveStopGateConfig,
+} from './config/stop-gate'
+export type { ResolvedStopGateConfig } from './config/stop-gate'
 export type {
   ModelSize,
   ProviderDefinition,
@@ -16,6 +22,7 @@ export type {
   SetupConfig,
   SetupModelDefinition,
 } from './config/types'
+export { stableHash } from './core/hash'
 export {
   createBuiltInLanguageRegistry,
   registerLanguage,
@@ -100,6 +107,7 @@ export type {
   DirectoryTarget,
   EnabledRule,
   IgnoreConfig,
+  IntegrationsConfig,
   LanguageDefinition,
   PluginDefinition,
   ProcessorDefinition,
@@ -116,6 +124,8 @@ export type {
   RuleSeverity,
   RuleSpecializedHandlers,
   RuleWithHandler,
+  StopGateConfig,
+  StopGateTarget,
   Target,
 } from './dsl/types'
 export { benchmarkModels } from './models/benchmark'

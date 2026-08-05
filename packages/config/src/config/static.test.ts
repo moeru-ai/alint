@@ -1,3 +1,4 @@
+import { maximumStopGateTimeoutMs } from '@alint-js/core'
 import { describe, expect, it } from 'vitest'
 
 import {
@@ -8,6 +9,42 @@ import {
 } from './static'
 
 describe('static config parsing', () => {
+  it('validates the Stop Gate repository activation', () => {
+    expect(() => parseStaticConfig([
+      {
+        integrations: {
+          stopGate: { enabled: 'yes' },
+        },
+      },
+    ])).toThrow()
+
+    expect(() => parseStaticConfig([
+      {
+        integrations: {
+          stopGate: { enabled: true },
+        },
+      },
+    ])).not.toThrow()
+  })
+
+  it('enforces the Stop Gate timeout budget in static config', () => {
+    expect(() => parseStaticConfig([
+      {
+        integrations: {
+          stopGate: { timeoutMs: maximumStopGateTimeoutMs + 1 },
+        },
+      },
+    ])).toThrow()
+
+    expect(() => parseStaticConfig([
+      {
+        integrations: {
+          stopGate: { timeoutMs: maximumStopGateTimeoutMs },
+        },
+      },
+    ])).not.toThrow()
+  })
+
   it('parses static config groups and extracts string plugin references', () => {
     const config = parseStaticConfig(
       {

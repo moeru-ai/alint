@@ -6,6 +6,7 @@ trustPolicy: no-downgrade
 packages:
   - packages/**
   - apps/**
+  - plugins/**
   - '!**/dist/**'
 
 allowBuilds:

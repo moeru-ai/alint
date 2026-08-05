@@ -161,6 +161,14 @@ alint demo.ts
 alint --format json demo.ts
 ```
 
+Use `--dirty` without file arguments to lint only existing files that differ from `HEAD`:
+
+```bash
+alint --dirty
+```
+
+This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. A clean repository exits successfully without producing lint output.
+
 Override the matched model for a one-off run:
 
 ```bash
@@ -260,6 +268,17 @@ alint setup -N \
 - Without `--local`, `alint` writes the global config under `~/.config/alint/config.toml`.
 - `--local` writes `.alint/config.toml` in the current project.
 - You can inspect configs using the `alint config` command group.
+
+Configure the optional Codex Stop Gate integration through the same project config system:
+
+```bash
+alint config integrations stop-gate enable
+alint config integrations stop-gate show
+alint config integrations stop-gate set --target all --timeout-ms 1800000
+alint config integrations stop-gate disable
+```
+
+Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. See [`plugins/alint`](./plugins/alint) for side-loading and runtime behavior.
 
 #### Using Rules & Plugins
 
