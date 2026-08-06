@@ -16,6 +16,7 @@ const stderrTruncationMarker = '\n... stderr truncated ...\n'
 export interface ResolvedAlintStopGate {
   enabled: boolean
   run: (sessionId: string) => Promise<StopGateEnvelope>
+  target: 'all' | 'dirty-files'
 }
 
 interface Command {
@@ -26,6 +27,7 @@ interface Command {
 
 interface ProbedStopGateConfig {
   enabled: boolean
+  target: 'all' | 'dirty-files'
   timeoutMs: number
 }
 
@@ -50,6 +52,28 @@ export async function hasProjectConfig(gitRoot: string): Promise<boolean> {
   return entries.some(entry => entry.isFile() && entry.name.startsWith('alint.config.'))
 }
 
+export async function isHeadDetached(gitRoot: string): Promise<boolean> {
+  const execution = x('git', ['symbolic-ref', '--quiet', 'HEAD'], commandOptions(gitRoot, startupTimeoutMs))
+  const result = await execution
+
+  if (execution.killed) {
+    throw new Error('Git HEAD inspection exceeded the 1 minute startup limit.')
+  }
+
+  if (result.exitCode === 0) {
+    return false
+  }
+
+  if (result.exitCode === 1) {
+    return true
+  }
+
+  const detail = truncateStderr(result.stderr.trim())
+  throw new Error(detail.length === 0
+    ? `Git HEAD inspection failed with exit code ${result.exitCode ?? 'unknown'} and produced no stderr output.`
+    : `Git HEAD inspection failed with exit code ${result.exitCode ?? 'unknown'}: ${detail}`)
+}
+
 export async function resolveAlintStopGate(
   gitRoot: string,
 ): Promise<ResolvedAlintStopGate> {
@@ -66,6 +90,7 @@ export async function resolveAlintStopGate(
     return {
       enabled: config.enabled,
       run: sessionId => executeStopGate(command, gitRoot, sessionId, config.timeoutMs),
+      target: config.target,
     }
   }
 
@@ -162,6 +187,13 @@ async function detectPackageManager(gitRoot: string): Promise<'bun' | 'npm' | 'p
   }
 
   return undefined
+}
+
+function emptyConfigOutputError(stderr: string): Error {
+  const detail = truncateStderr(stderr.trim())
+  const stderrContext = detail.length === 0 ? '' : ` alint wrote to stderr: ${detail}`
+
+  return new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`)
 }
 
 async function executeStopGate(
@@ -283,13 +315,19 @@ function parseEnvelope(stdout: string): StopGateEnvelope | undefined {
 
 function parseStopGateConfig(stdout: string): ProbedStopGateConfig | undefined {
   const enabled = /^enabled: (true|false)(?: |$)/mu.exec(stdout)?.[1]
+  const target = /^target: (all|dirty-files)(?: |$)/mu.exec(stdout)?.[1]
   const timeoutMs = Number(/^timeoutMs: (\S+)/mu.exec(stdout)?.[1])
 
-  if (enabled === undefined || !Number.isInteger(timeoutMs) || timeoutMs <= 0) {
+  if (
+    enabled === undefined
+    || (target !== 'all' && target !== 'dirty-files')
+    || !Number.isInteger(timeoutMs)
+    || timeoutMs <= 0
+  ) {
     return undefined
   }
 
-  return { enabled: enabled === 'true', timeoutMs }
+  return { enabled: enabled === 'true', target, timeoutMs }
 }
 
 async function pathExists(path: string): Promise<boolean> {
@@ -325,10 +363,14 @@ async function probeStopGateConfig(
 
     if (result.exitCode !== 0) {
       if (command.source === 'local') {
-        throw new Error('The repository-local alint could not read Stop Gate configuration. Run `alint config integrations stop-gate show` manually.')
+        throw repositoryConfigError(result)
       }
 
       return undefined
+    }
+
+    if (result.stdout.trim().length === 0) {
+      throw emptyConfigOutputError(result.stderr)
     }
 
     const config = parseStopGateConfig(result.stdout)
@@ -372,6 +414,16 @@ async function readPackageManagerField(gitRoot: string): Promise<'bun' | 'npm' |
 
     throw error
   }
+}
+
+function repositoryConfigError(result: { exitCode?: number, stderr: string }): Error {
+  const detail = truncateStderr(result.stderr.trim())
+  const exitCode = result.exitCode ?? 'unknown'
+  const reason = detail.length === 0
+    ? `exit code ${exitCode} with no stderr output`
+    : `exit code ${exitCode}: ${detail}`
+
+  return new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`)
 }
 
 async function resolveCommands(gitRoot: string): Promise<Command[]> {

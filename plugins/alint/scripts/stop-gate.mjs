@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import process$1, { cwd } from "node:process";
-import { closeSync, constants, openSync, readFileSync, readSync, statSync } from "node:fs";
+import { closeSync, constants, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { Buffer as Buffer$1 } from "node:buffer";
-import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, normalize, resolve } from "node:path";
+import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { PassThrough } from "node:stream";
@@ -23,6 +24,60 @@ const isErrorLike = (err) => {
 	return "message" in err && typeof err.message === "string" && "name" in err && typeof err.name === "string";
 };
 const errorMessageFrom = (err) => isErrorLike(err) ? err.message : err == null ? void 0 : String(err);
+//#endregion
+//#region src/fatal-diagnostic.ts
+const budgetBytes = 10485760;
+const directory = join(tmpdir(), "alint-stop-gate", "fatal");
+const truncationMarker = "\nNOTICE: fatal diagnostic truncated to fit the 10 MiB budget.\n";
+function writeFatalDiagnostic(context, detail) {
+	const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+	const fileName = `${timestamp.replaceAll(":", "-").replaceAll(".", "-")}-${process$1.pid}.log`;
+	const path = join(directory, fileName);
+	try {
+		mkdirSync(directory, {
+			mode: 448,
+			recursive: true
+		});
+		writeFileSync(path, diagnosticContent(timestamp, context, detail), {
+			flag: "wx",
+			mode: 384
+		});
+	} catch (error) {
+		return { writeError: errorMessageFrom(error) ?? "unknown error" };
+	}
+	try {
+		enforceBudget();
+		return { path };
+	} catch (error) {
+		return {
+			cleanupError: errorMessageFrom(error) ?? "unknown error",
+			path
+		};
+	}
+}
+function diagnosticContent(timestamp, context, detail) {
+	const content = Buffer$1.from(`timestamp: ${timestamp}\ncontext: ${context}\ndetail: ${detail}\n`);
+	if (content.byteLength <= budgetBytes) return content;
+	const marker = Buffer$1.from(truncationMarker);
+	return Buffer$1.concat([content.subarray(0, budgetBytes - marker.byteLength), marker]);
+}
+function enforceBudget() {
+	const diagnostics = readdirSync(directory, { withFileTypes: true }).filter((entry) => entry.isFile() && entry.name.endsWith(".log")).map((entry) => {
+		const path = join(directory, entry.name);
+		const stats = statSync(path);
+		return {
+			mtimeMs: stats.mtimeMs,
+			path,
+			size: stats.size
+		};
+	});
+	let total = diagnostics.reduce((sum, diagnostic) => sum + diagnostic.size, 0);
+	for (const diagnostic of diagnostics.sort((left, right) => left.mtimeMs - right.mtimeMs)) {
+		if (total <= budgetBytes) break;
+		unlinkSync(diagnostic.path);
+		total -= diagnostic.size;
+	}
+}
 //#endregion
 //#region src/policy.ts
 const maximumLintRounds = 9;
@@ -86,7 +141,7 @@ function lintLimitDecision(state) {
 	return { systemMessage: findingMessage(state, state.lastFindings.reportPath) };
 }
 function runtimeFailureMessage(message) {
-	return `alint-plugin: Stop Gate failed. This is not your fault. Do not attempt to fix it yourself; tell the user to resolve the following error: ${message}`;
+	return `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${message}`;
 }
 function findingMessage(state, reportPath) {
 	const findings = state.lastFindings;
@@ -456,6 +511,19 @@ async function findGitRoot(cwd) {
 async function hasProjectConfig(gitRoot) {
 	return (await readdir(gitRoot, { withFileTypes: true })).some((entry) => entry.isFile() && entry.name.startsWith("alint.config."));
 }
+async function isHeadDetached(gitRoot) {
+	const execution = R("git", [
+		"symbolic-ref",
+		"--quiet",
+		"HEAD"
+	], commandOptions(gitRoot, startupTimeoutMs));
+	const result = await execution;
+	if (execution.killed) throw new Error("Git HEAD inspection exceeded the 1 minute startup limit.");
+	if (result.exitCode === 0) return false;
+	if (result.exitCode === 1) return true;
+	const detail = truncateStderr(result.stderr.trim());
+	throw new Error(detail.length === 0 ? `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"} and produced no stderr output.` : `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"}: ${detail}`);
+}
 async function resolveAlintStopGate(gitRoot) {
 	const commands = await resolveCommands(gitRoot);
 	const startupDeadline = Date.now() + startupTimeoutMs;
@@ -464,7 +532,8 @@ async function resolveAlintStopGate(gitRoot) {
 		if (config === void 0) continue;
 		return {
 			enabled: config.enabled,
-			run: (sessionId) => executeStopGate(command, gitRoot, sessionId, config.timeoutMs)
+			run: (sessionId) => executeStopGate(command, gitRoot, sessionId, config.timeoutMs),
+			target: config.target
 		};
 	}
 	throw new Error(["Could not find an alint CLI that supports `integrations stop-gate`.", "Ask the user for approval before installing or updating @alint-js/cli in this repository."].join(" "));
@@ -524,6 +593,11 @@ async function detectPackageManager(gitRoot) {
 		["package-lock.json", "npm"],
 		["npm-shrinkwrap.json", "npm"]
 	]) if (await pathExists(join(gitRoot, lockfile))) return manager;
+}
+function emptyConfigOutputError(stderr) {
+	const detail = truncateStderr(stderr.trim());
+	const stderrContext = detail.length === 0 ? "" : ` alint wrote to stderr: ${detail}`;
+	return /* @__PURE__ */ new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`);
 }
 async function executeStopGate(command, gitRoot, sessionId, lintTimeoutMs) {
 	const timeout = createLongTimeout(addStartupAllowance(lintTimeoutMs));
@@ -610,10 +684,12 @@ function parseEnvelope(stdout) {
 }
 function parseStopGateConfig(stdout) {
 	const enabled = /^enabled: (true|false)(?: |$)/mu.exec(stdout)?.[1];
+	const target = /^target: (all|dirty-files)(?: |$)/mu.exec(stdout)?.[1];
 	const timeoutMs = Number(/^timeoutMs: (\S+)/mu.exec(stdout)?.[1]);
-	if (enabled === void 0 || !Number.isInteger(timeoutMs) || timeoutMs <= 0) return;
+	if (enabled === void 0 || target !== "all" && target !== "dirty-files" || !Number.isInteger(timeoutMs) || timeoutMs <= 0) return;
 	return {
 		enabled: enabled === "true",
+		target,
 		timeoutMs
 	};
 }
@@ -635,9 +711,10 @@ async function probeStopGateConfig(command, gitRoot, deadline) {
 		const result = await execution;
 		if (execution.killed) throw packageManagerTimeoutError(command);
 		if (result.exitCode !== 0) {
-			if (command.source === "local") throw new Error("The repository-local alint could not read Stop Gate configuration. Run `alint config integrations stop-gate show` manually.");
+			if (command.source === "local") throw repositoryConfigError(result);
 			return;
 		}
+		if (result.stdout.trim().length === 0) throw emptyConfigOutputError(result.stderr);
 		const config = parseStopGateConfig(result.stdout);
 		if (config === void 0) throw incompatibleAlintError();
 		return config;
@@ -657,6 +734,12 @@ async function readPackageManagerField(gitRoot) {
 		if (isNodeError$1(error) && error.code === "ENOENT") return;
 		throw error;
 	}
+}
+function repositoryConfigError(result) {
+	const detail = truncateStderr(result.stderr.trim());
+	const exitCode = result.exitCode ?? "unknown";
+	const reason = detail.length === 0 ? `exit code ${exitCode} with no stderr output` : `exit code ${exitCode}: ${detail}`;
+	return /* @__PURE__ */ new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`);
 }
 async function resolveCommands(gitRoot) {
 	const commands = [];
@@ -770,7 +853,7 @@ function emergencyDecision(input, error) {
 	};
 }
 function emit(decision) {
-	if (Object.keys(decision).length > 0) process$1.stdout.write(`${JSON.stringify(decision)}\n`);
+	if (Object.keys(decision).length > 0) writeSync(process$1.stdout.fd, `${JSON.stringify(decision)}\n`);
 }
 function emptyEnvelope(status) {
 	return {
@@ -784,15 +867,32 @@ function readHookInput() {
 	const input = readFileSync(0, "utf8").trim();
 	return input.length === 0 ? {} : JSON.parse(input);
 }
+function reportFatalFailure(context, error) {
+	const detail = errorMessageFrom(error) ?? "unknown error";
+	const diagnostic = writeFatalDiagnostic(context, detail);
+	const saved = diagnostic.path === void 0 ? "" : ` Diagnostic saved to "${diagnostic.path}".`;
+	const writeFailure = diagnostic.writeError === void 0 ? "" : ` Could not save the diagnostic: ${diagnostic.writeError}.`;
+	const cleanupFailure = diagnostic.cleanupError === void 0 ? "" : ` The diagnostic was saved, but old diagnostic cleanup failed: ${diagnostic.cleanupError}.`;
+	writeSync(process$1.stderr.fd, `alint-plugin: Stop Gate ${context}: ${detail}.${saved}${writeFailure}${cleanupFailure}\n`);
+	process$1.exitCode = 1;
+}
 function requiredString(value, message) {
 	if (value === void 0 || value.length === 0) throw new Error(message);
 	return value;
 }
 let parsedInput;
-Promise.resolve(readHookInput()).then((input) => {
-	parsedInput = input;
-	return run(input);
-}).catch((error) => emit(emergencyDecision(parsedInput, error)));
+try {
+	parsedInput = readHookInput();
+} catch (error) {
+	reportFatalFailure("could not read Codex hook input", error);
+}
+if (parsedInput !== void 0) run(parsedInput).catch((error) => {
+	try {
+		emit(emergencyDecision(parsedInput, error));
+	} catch (emitError) {
+		reportFatalFailure("could not return its emergency decision", emitError);
+	}
+});
 async function run(input) {
 	const sessionId = requiredString(input.session_id, "Stop hook input did not include session_id.");
 	const store = createStateStore(requiredString(process$1.env.CLAUDE_PLUGIN_DATA, "Codex did not provide CLAUDE_PLUGIN_DATA to the alint plugin."));
@@ -803,7 +903,7 @@ async function run(input) {
 	} catch (error) {
 		result = { envelope: {
 			...emptyEnvelope("runtime-error"),
-			message: errorMessageFrom(error) ?? "未知错误"
+			message: errorMessageFrom(error) ?? "unknown error"
 		} };
 	}
 	if (result.decision !== void 0) {
@@ -819,6 +919,7 @@ async function runForInput(input, sessionId, state) {
 	if (gitRoot === void 0 || !await hasProjectConfig(gitRoot)) return { envelope: emptyEnvelope("inactive") };
 	const stopGate = await resolveAlintStopGate(gitRoot);
 	if (!stopGate.enabled) return { envelope: emptyEnvelope("inactive") };
+	if (stopGate.target === "dirty-files" && await isHeadDetached(gitRoot)) return { decision: { systemMessage: "alint-plugin: Stop Gate skipped because Git HEAD is detached. You may need to let the user know that. Run `alint --dirty` manually if this checkout should be reviewed." } };
 	if (hasReachedLintLimit(state)) return { decision: lintLimitDecision(state) };
 	return { envelope: await stopGate.run(sessionId) };
 }

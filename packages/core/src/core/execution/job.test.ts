@@ -32,6 +32,7 @@ it('detaches a completed outcome from the active rule job', async () => {
   }
   const rule = defineRule({ create: () => ({}) })
   const cacheOwner: CacheOwnerTransaction = {
+    checkpoint: async () => {},
     commit: () => {},
     discard: () => {},
     lookup: () => undefined,
@@ -174,6 +175,7 @@ it('skips the handler and its execution-time source read on a cache hit', async 
   const job = createTestJob({ executionState, rule, run })
   job.execution.runtime.cacheable = true
   job.target.cacheOwner = {
+    checkpoint: async () => {},
     commit: () => {},
     discard: () => {},
     lookup: () => ({
@@ -197,6 +199,59 @@ it('skips the handler and its execution-time source read on a cache hit', async 
 
   expect(outcome.state).toBe('cached')
   expect(run).not.toHaveBeenCalled()
+})
+
+it('rejects a completed job when its cache transaction write fails', async () => {
+  const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+  const sentinel = new Error('cache transaction write failed')
+  const rule = defineRule({ cache: true, create: () => ({}) })
+  const job = createTestJob({
+    cacheOwner: {
+      checkpoint: async () => {},
+      commit: () => {},
+      discard: () => {},
+      lookup: () => undefined,
+      put: () => {
+        throw sentinel
+      },
+    },
+    executionState,
+    rule,
+    run: () => {},
+  })
+  job.execution.runtime.cacheable = true
+
+  await expect(executeRuleJob(job, {
+    cache: { modelHash: 'model-hash' },
+    runProgress: startedProgress(),
+  })).rejects.toBe(sentinel)
+})
+
+it('checkpoints a completed cacheable job without deriving owner metadata', async () => {
+  const executionState = new AsyncLocalStorage<RuleRuntimeState>()
+  const checkpoint = vi.fn(async () => {})
+  const rule = defineRule({ cache: true, create: () => ({}) })
+  const job = createTestJob({
+    cacheOwner: {
+      checkpoint,
+      commit: () => {},
+      discard: () => {},
+      lookup: () => undefined,
+      put: () => {},
+    },
+    executionState,
+    rule,
+    run: () => {},
+  })
+  job.execution.runtime.cacheable = true
+
+  await executeRuleJob(job, {
+    cache: { modelHash: 'model-hash' },
+    runProgress: startedProgress(),
+  })
+
+  expect(checkpoint).toHaveBeenCalledTimes(1)
+  expect(checkpoint).toHaveBeenCalledWith()
 })
 
 it('reports descriptor mismatches as source-changed failures with both hashes', async () => {
@@ -337,6 +392,7 @@ it('seals terminal records and isolates progress, cache, and outcome snapshots',
   }
   let cachedEntry: CacheEntry | undefined
   const cacheOwner: CacheOwnerTransaction = {
+    checkpoint: async () => {},
     commit: () => {},
     discard: () => {},
     lookup: () => undefined,

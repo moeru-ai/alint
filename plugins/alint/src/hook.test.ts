@@ -1,19 +1,22 @@
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { x } from 'tinyexec'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, onTestFinished } from 'vitest'
 
 const bundledHook = fileURLToPath(new URL('../scripts/stop-gate.mjs', import.meta.url))
 const hookManifest = fileURLToPath(new URL('../hooks/hooks.json', import.meta.url))
 
 type RepositoryActivation
-  = | 'disabled'
+  = | 'config-empty'
+    | 'config-stderr-exit-one'
+    | 'disabled'
     | 'enabled'
+    | 'enabled-all'
     | 'enabled-errors'
     | 'enabled-errors-exit-one'
     | 'enabled-silent-exit-one'
@@ -62,6 +65,81 @@ describe('bundled Stop hook', () => {
     expect(result.stderr).toBe('')
   })
 
+  it('skips dirty-file lint when Git HEAD is detached', async () => {
+    const cwd = await createRepository('enabled')
+    const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
+    await detachHead(cwd)
+
+    const result = await runHook(cwd, pluginData, `detached-${randomUUID()}`)
+    const decision = JSON.parse(result.stdout) as { decision?: string, systemMessage?: string }
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(decision.decision).toBeUndefined()
+    expect(decision.systemMessage).toBe('alint-plugin: Stop Gate skipped because Git HEAD is detached. You may need to let the user know that. Run `alint --dirty` manually if this checkout should be reviewed.')
+  })
+
+  it('runs all-target lint when Git HEAD is detached', async () => {
+    const cwd = await createRepository('enabled-all')
+    const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
+    await detachHead(cwd)
+
+    const result = await runHook(cwd, pluginData, `detached-all-${randomUUID()}`)
+    const decision = JSON.parse(result.stdout) as { decision?: string, reason?: string }
+
+    expect(result.exitCode).toBe(0)
+    expect(result.stderr).toBe('')
+    expect(decision.decision).toBe('block')
+    expect(decision.reason).toContain('alint-plugin: 0 error(s), 1 warning(s).')
+  })
+
+  it('reports malformed Codex hook input in English before exiting non-zero', async () => {
+    const systemTemp = await mkdtemp(join(tmpdir(), 'alint-hook-system-temp-'))
+    onTestFinished(() => rm(systemTemp, { force: true, recursive: true }))
+    const fatalDirectory = join(systemTemp, 'alint-stop-gate', 'fatal')
+    const result = await runMalformedHook(systemTemp)
+    const entriesAfter = await readDirectoryOrEmpty(fatalDirectory)
+    const fatalEntry = entriesAfter[0]
+    const fatalPath = join(fatalDirectory, fatalEntry ?? '')
+    const fatalContent = await readFile(fatalPath, 'utf8')
+    const fatalLines = fatalContent.trimEnd().split('\n')
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('alint-plugin: Stop Gate could not read Codex hook input:')
+    expect(fatalEntry).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-\d+\.log$/u)
+    expect(result.stderr).toContain(`Diagnostic saved to "${fatalPath}".`)
+    expect(fatalLines[0]).toMatch(/^timestamp: .+$/u)
+    expect(fatalLines[1]).toBe('context: could not read Codex hook input')
+    expect(fatalLines[2]).toMatch(/^detail: .+$/u)
+
+    if (process.platform !== 'win32') {
+      expect((await stat(fatalPath)).mode & 0o777).toBe(0o600)
+    }
+  })
+
+  it('keeps fatal diagnostics within the 10 MiB aggregate budget', async () => {
+    const systemTemp = await mkdtemp(join(tmpdir(), 'alint-hook-system-temp-'))
+    onTestFinished(() => rm(systemTemp, { force: true, recursive: true }))
+    const fatalDirectory = join(systemTemp, 'alint-stop-gate', 'fatal')
+    const oldestPath = join(fatalDirectory, 'oldest.log')
+    const recentPath = join(fatalDirectory, 'recent.log')
+    await mkdir(fatalDirectory, { recursive: true })
+    await writeFile(oldestPath, Buffer.alloc(6 * 1024 * 1024))
+    await writeFile(recentPath, Buffer.alloc(5 * 1024 * 1024))
+    await utimes(oldestPath, new Date(0), new Date(0))
+    await utimes(recentPath, new Date(1), new Date(1))
+
+    const result = await runMalformedHook(systemTemp)
+    const entries = await readdir(fatalDirectory)
+    const sizes = await Promise.all(entries.map(async entry => (await stat(join(fatalDirectory, entry))).size))
+
+    expect(result.exitCode).toBe(1)
+    expect(entries).not.toContain('oldest.log')
+    expect(entries).toContain('recent.log')
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(10 * 1024 * 1024)
+  })
+
   it('discovers the package manager from a non-executable lockfile', async () => {
     const cwd = await createRepository('enabled')
     const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
@@ -80,6 +158,31 @@ describe('bundled Stop hook', () => {
     expect(result.exitCode).toBe(0)
     expect(result.stderr).toBe('')
     expect(decision.decision).toBe('block')
+  })
+
+  it('explains when a successful config probe produces no output', async () => {
+    const cwd = await createRepository('config-empty')
+    const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
+
+    const result = await runHook(cwd, pluginData, `config-empty-${randomUUID()}`)
+    const decision = JSON.parse(result.stdout) as { decision?: string, reason?: string }
+
+    expect(result.exitCode).toBe(0)
+    expect(decision.decision).toBe('block')
+    expect(decision.reason).toContain('alint exited successfully but produced no Stop Gate configuration output')
+    expect(decision.reason).toContain('Run `alint config integrations stop-gate show` manually')
+  })
+
+  it('includes the repository-local config probe failure reason', async () => {
+    const cwd = await createRepository('config-stderr-exit-one')
+    const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
+
+    const result = await runHook(cwd, pluginData, `config-stderr-${randomUUID()}`)
+    const decision = JSON.parse(result.stdout) as { decision?: string, reason?: string }
+
+    expect(result.exitCode).toBe(0)
+    expect(decision.decision).toBe('block')
+    expect(decision.reason).toBe('alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: The repository-local alint could not read Stop Gate configuration due to exit code 1: Error: config probe failed. Run `alint config integrations stop-gate show` manually.')
   })
 
   it('blocks the first warning round and emits a system reminder on the next round', async () => {
@@ -183,25 +286,42 @@ async function createRepository(
   return cwd
 }
 
+async function detachHead(cwd: string): Promise<void> {
+  await x('git', ['config', 'user.email', 'test@example.com'], { nodeOptions: { cwd }, nodePath: false, throwOnError: true })
+  await x('git', ['config', 'user.name', 'Test'], { nodeOptions: { cwd }, nodePath: false, throwOnError: true })
+  await x('git', ['add', '.'], { nodeOptions: { cwd }, nodePath: false, throwOnError: true })
+  await x('git', ['commit', '-m', 'initial'], { nodeOptions: { cwd }, nodePath: false, throwOnError: true })
+  await x('git', ['checkout', '--detach'], { nodeOptions: { cwd }, nodePath: false, throwOnError: true })
+}
+
 function fakeAlint(activation: Exclude<RepositoryActivation, 'none'>): string {
   const enabled = activation !== 'disabled'
+  const emptyConfig = activation === 'config-empty'
+  const configStderrExit = activation === 'config-stderr-exit-one'
   const errors = activation === 'enabled-errors' || activation === 'enabled-errors-exit-one'
   const abnormalExit = activation === 'enabled-errors-exit-one'
   const stderrExit = activation === 'enabled-stderr-exit-one'
   const silentExit = activation === 'enabled-silent-exit-one'
+  const target = activation === 'enabled-all' ? 'all' : 'dirty-files'
 
   return `#!/usr/bin/env node
+const { writeSync } = require('node:fs')
 const args = process.argv.slice(2)
 if (args.join(' ') === 'config integrations stop-gate show') {
-  process.stdout.write('config: alint.config.toml\\nenabled: ${enabled}\\ntarget: dirty-files (default)\\ntimeoutMs: 900000 (default)\\n')
+  if (${configStderrExit}) {
+    writeSync(2, 'Error: config probe failed')
+    process.exitCode = 1
+  } else if (!${emptyConfig}) {
+    writeSync(1, 'config: alint.config.toml\\nenabled: ${enabled}\\ntarget: ${target}\\ntimeoutMs: 900000 (default)\\n')
+  }
 } else if (args[0] === 'integrations' && args[1] === 'stop-gate') {
   if (${stderrExit}) {
-    process.stderr.write('stderr-head-' + '界'.repeat(1500) + 'stderr-middle' + '文'.repeat(1500) + '-stderr-tail')
+    writeSync(2, 'stderr-head-' + '界'.repeat(1500) + 'stderr-middle' + '文'.repeat(1500) + '-stderr-tail')
     process.exitCode = 1
   } else if (${silentExit}) {
     process.exitCode = 1
   } else {
-    process.stdout.write(JSON.stringify({
+    writeSync(1, JSON.stringify({
       errorCount: ${errors ? 1 : 0},
       findingsHash: 'a'.repeat(64),
       reportPath: '/tmp/alint-stop-gate/report.json',
@@ -237,6 +357,19 @@ if (args.join(' ') === 'exec alint config integrations stop-gate show') {
 `
 }
 
+async function readDirectoryOrEmpty(path: string): Promise<string[]> {
+  try {
+    return await readdir(path)
+  }
+  catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ENOENT') {
+      return []
+    }
+
+    throw error
+  }
+}
+
 async function runHook(
   cwd: string,
   pluginData: string,
@@ -255,6 +388,22 @@ async function runHook(
       stop_hook_active: stopHookActive,
       turn_id: randomUUID(),
     }),
+    throwOnError: false,
+  })
+}
+
+function runMalformedHook(systemTemp: string) {
+  return x(process.execPath, [bundledHook], {
+    nodeOptions: {
+      env: {
+        ...process.env,
+        CLAUDE_PLUGIN_DATA: systemTemp,
+        TEMP: systemTemp,
+        TMP: systemTemp,
+        TMPDIR: systemTemp,
+      },
+    },
+    stdin: '{',
     throwOnError: false,
   })
 }

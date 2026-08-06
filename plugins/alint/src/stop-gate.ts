@@ -4,12 +4,13 @@ import type { HookDecision, HookInput, SessionState, StopGateEnvelope } from './
 
 import process from 'node:process'
 
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeSync } from 'node:fs'
 
 import { errorMessageFrom } from '@moeru/std'
 
+import { writeFatalDiagnostic } from './fatal-diagnostic'
 import { applyResult, hasReachedLintLimit, lintLimitDecision, runtimeFailureMessage } from './policy'
-import { findGitRoot, hasProjectConfig, resolveAlintStopGate } from './runner'
+import { findGitRoot, hasProjectConfig, isHeadDetached, resolveAlintStopGate } from './runner'
 import { createStateStore } from './state'
 
 function emergencyDecision(input: HookInput | undefined, error: unknown): HookDecision {
@@ -22,7 +23,9 @@ function emergencyDecision(input: HookInput | undefined, error: unknown): HookDe
 
 function emit(decision: HookDecision): void {
   if (Object.keys(decision).length > 0) {
-    process.stdout.write(`${JSON.stringify(decision)}\n`)
+    // Hook processes are short-lived and Codex captures both descriptors through pipes. Write
+    // synchronously so the process cannot exit before the host receives the complete decision.
+    writeSync(process.stdout.fd, `${JSON.stringify(decision)}\n`)
   }
 }
 
@@ -40,6 +43,26 @@ function readHookInput(): HookInput {
   return input.length === 0 ? {} : JSON.parse(input) as HookInput
 }
 
+function reportFatalFailure(context: string, error: unknown): void {
+  const detail = errorMessageFrom(error) ?? 'unknown error'
+  const diagnostic = writeFatalDiagnostic(context, detail)
+  const saved = diagnostic.path === undefined
+    ? ''
+    : ` Diagnostic saved to "${diagnostic.path}".`
+  const writeFailure = diagnostic.writeError === undefined
+    ? ''
+    : ` Could not save the diagnostic: ${diagnostic.writeError}.`
+  const cleanupFailure = diagnostic.cleanupError === undefined
+    ? ''
+    : ` The diagnostic was saved, but old diagnostic cleanup failed: ${diagnostic.cleanupError}.`
+
+  writeSync(
+    process.stderr.fd,
+    `alint-plugin: Stop Gate ${context}: ${detail}.${saved}${writeFailure}${cleanupFailure}\n`,
+  )
+  process.exitCode = 1
+}
+
 function requiredString(value: string | undefined, message: string): string {
   if (value === undefined || value.length === 0) {
     throw new Error(message)
@@ -50,12 +73,23 @@ function requiredString(value: string | undefined, message: string): string {
 
 let parsedInput: HookInput | undefined
 
-Promise.resolve(readHookInput())
-  .then((input) => {
-    parsedInput = input
-    return run(input)
+try {
+  parsedInput = readHookInput()
+}
+catch (error) {
+  reportFatalFailure('could not read Codex hook input', error)
+}
+
+if (parsedInput !== undefined) {
+  void run(parsedInput).catch((error) => {
+    try {
+      emit(emergencyDecision(parsedInput, error))
+    }
+    catch (emitError) {
+      reportFatalFailure('could not return its emergency decision', emitError)
+    }
   })
-  .catch(error => emit(emergencyDecision(parsedInput, error)))
+}
 
 async function run(input: HookInput): Promise<void> {
   const sessionId = requiredString(input.session_id, 'Stop hook input did not include session_id.')
@@ -71,7 +105,7 @@ async function run(input: HookInput): Promise<void> {
     result = {
       envelope: {
         ...emptyEnvelope('runtime-error'),
-        message: errorMessageFrom(error) ?? '未知错误',
+        message: errorMessageFrom(error) ?? 'unknown error',
       },
     }
   }
@@ -102,6 +136,14 @@ async function runForInput(
 
   if (!stopGate.enabled) {
     return { envelope: emptyEnvelope('inactive') }
+  }
+
+  if (stopGate.target === 'dirty-files' && await isHeadDetached(gitRoot)) {
+    return {
+      decision: {
+        systemMessage: 'alint-plugin: Stop Gate skipped because Git HEAD is detached. You may need to let the user know that. Run `alint --dirty` manually if this checkout should be reviewed.',
+      },
+    }
   }
 
   if (hasReachedLintLimit(state)) {

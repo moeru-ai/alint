@@ -14,6 +14,12 @@ export default defineConfig([
     ],
   },
   {
+    ignores: [
+      '**/*.test.ts',
+      '**/*.test.js',
+    ],
+  },
+  {
     ignore: {
       gitignore: true,
     },

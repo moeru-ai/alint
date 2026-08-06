@@ -93,6 +93,9 @@ catalogs:
     date-fns:
       specifier: ^4.4.0
       version: 4.4.0
+    diff:
+      specifier: ^9.0.0
+      version: 9.0.0
     doctoc:
       specifier: ^2.5.0
       version: 2.5.0
@@ -430,6 +433,9 @@ importers:
       date-fns:
         specifier: 'catalog:'
         version: 4.4.0
+      diff:
+        specifier: 'catalog:'
+        version: 9.0.0
       fast-string-truncated-width:
         specifier: 'catalog:'
         version: 3.0.3
@@ -3299,6 +3305,10 @@ packages:
   diff-sequences@29.6.3:
     resolution: {integrity: sha512-EjePK1srD3P08o2j4f0ExnylqRs5B9tJjcp9t1krH2qRi8CCdsYfwe9JgSLurFBWwq4uOlipzfk5fHNvwFKr8Q==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
+
+  diff@9.0.0:
+    resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
+    engines: {node: '>=0.3.1'}
 
   doctoc@2.5.0:
     resolution: {integrity: sha512-xWb2P8mQw9x+T9xPYToytRP0/bA68oexdsY0anMG72RdhZGTVPx6oHJfI57gbZe9LsOSfQUNNLwxSspdoTlJIQ==}
@@ -7678,6 +7688,8 @@ snapshots:
       dequal: 2.0.3
 
   diff-sequences@29.6.3: {}
+
+  diff@9.0.0: {}
 
   doctoc@2.5.0(supports-color@7.2.0):
     dependencies:

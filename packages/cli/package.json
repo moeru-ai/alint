@@ -32,6 +32,7 @@
     "cac": "catalog:",
     "cli-spinners": "catalog:",
     "date-fns": "catalog:",
+    "diff": "catalog:",
     "fast-string-truncated-width": "catalog:",
     "fast-string-width": "catalog:",
     "gitignore-fs": "catalog:",

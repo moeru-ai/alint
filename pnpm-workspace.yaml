@@ -67,6 +67,7 @@ catalog:
   cli-spinners: ^3.4.0
   cspell: ^10.0.1
   date-fns: ^4.4.0
+  diff: ^9.0.0
   doctoc: ^2.5.0
   effect: ^3.22.1
   es-toolkit: ^1.50.0

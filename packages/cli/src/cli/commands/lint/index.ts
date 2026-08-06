@@ -3,6 +3,7 @@ import type { AlintConfig, RunResult } from '@alint-js/core'
 import type { ReporterName } from '../../reporters'
 import type { SessionTargetSelection } from '../../runtime/session'
 import type { CliIo, CliWritable } from '../../types'
+import type { ChangedLineRange } from '../../git'
 import type { LintTargets } from './discovery'
 import type { LintCommandOptions } from './options'
 
@@ -17,6 +18,7 @@ import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { createRunSession } from '../../runtime/session'
 import { defineCommand } from '../command'
+import { filterResultToChangedLines } from './changed-lines'
 import { findDirtyLintTargets, NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
 import { executeLint } from './execution'
@@ -83,12 +85,15 @@ async function runLintCommand(
     await assertConfigExists(cwd, options.config)
   }
 
+  let changedLines: ReadonlyMap<string, readonly ChangedLineRange[]> | undefined
   let config: AlintConfig | undefined
   let targets: LintTargets | undefined
 
   if (options.dirty) {
     config = await loadAlintConfig(cwd, options.config)
-    targets = await findDirtyLintTargets(config, cwd)
+    const dirtyTargets = await findDirtyLintTargets(config, cwd)
+    changedLines = dirtyTargets.changedLines
+    targets = dirtyTargets
 
     // Do not initialize model adapters when the repository has nothing to lint.
     if (targets.files.length === 0) {
@@ -114,8 +119,11 @@ async function runLintCommand(
     const restoreProgressConsole = progress
       ? interceptConsoleOutput({ write: progress.write })
       : undefined
+    const visibleResult = (runResult: RunResult): RunResult => changedLines === undefined
+      ? runResult
+      : filterResultToChangedLines(runResult, { changedLines, cwd })
     const writeResult = (runResult: RunResult): void => {
-      runIo.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
+      runIo.stdout.write(formatDiagnostics(options.format as ReporterName, visibleResult(runResult), {
         color: runIo.stdout.isTTY === true,
       }))
     }
@@ -163,7 +171,7 @@ async function runLintCommand(
     }
 
     writeResult(result)
-    return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
+    return visibleResult(result).diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
   }
   finally {
     await session.shutdown()

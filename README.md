@@ -494,6 +494,8 @@ export default defineConfig([
 
 `alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged source targets.
 
+After each cacheable rule job completes, `alint` writes a cache checkpoint before releasing that job's scheduler slot. Each checkpoint atomically replaces the complete cache file, so an interrupted run can reuse every result that had already become durable. Cache hits, skipped jobs, failed jobs, and rules that opt out of caching do not add checkpoint writes. Any checkpoint or final cache write error causes the run to fail.
+
 > [!NOTE]
 > `.alintcache` should not be committed to Git. Add it to `.gitignore` before running repeated local analysis.
 

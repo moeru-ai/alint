@@ -219,6 +219,25 @@ describe('cache store', () => {
     expect(owner?.contentHash).toBe('partial')
   })
 
+  it('uses owner metadata when it writes a checkpoint', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const owner = store.beginOwner(
+      { kind: 'file', path: sourcePath },
+      { contentHash: 'source-content' },
+    )
+    owner.put(slot, entry('checkpoint'))
+
+    await owner.checkpoint()
+    const body = await readCacheBody(cachePath)
+
+    expect(Object.values(body.owners)[0]?.contentHash).toBe('source-content')
+    expect(Object.values(body.entries)[0]?.fingerprint.targetHash).toBe('checkpoint')
+  })
+
   it('removes cache bodies with orphan entries', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
@@ -503,6 +522,60 @@ describe('cache store', () => {
     await expect(store.reconcile()).rejects.toBe(writeError)
     expect((await readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([])
     await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('serializes flushes and preserves the snapshot from each request', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const firstPath = join(root, 'first.ts')
+    const secondPath = join(root, 'second.ts')
+    const writes: string[] = []
+    let releaseFirstWrite!: () => void
+    let signalFirstWrite!: () => void
+    const firstWriteCanFinish = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
+    const firstWriteStarted = new Promise<void>((resolve) => {
+      signalFirstWrite = resolve
+    })
+    const writeCacheFile: typeof writeFile = async (path, data, options) => {
+      writes.push(String(data))
+      if (writes.length === 1) {
+        signalFirstWrite()
+        await firstWriteCanFinish
+      }
+      await writeFile(path, data, options)
+    }
+    await writeFile(firstPath, 'first')
+    await writeFile(secondPath, 'second')
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      writeFile: writeCacheFile,
+    })
+    const firstOwner = store.beginOwner({ kind: 'file', path: firstPath })
+    firstOwner.put(slot, entry('first'))
+    firstOwner.commit({ contentHash: 'first-content' })
+    const firstFlush = store.flush()
+    await firstWriteStarted
+
+    const secondOwner = store.beginOwner({ kind: 'file', path: secondPath })
+    secondOwner.put(slot, entry('second'))
+    secondOwner.commit({ contentHash: 'second-content' })
+    const secondFlush = store.flush()
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(writes).toHaveLength(1)
+
+    releaseFirstWrite()
+    await firstFlush
+    await secondFlush
+
+    expect(writes).toHaveLength(2)
+    expect(Object.keys(JSON.parse(writes[0]!.slice(writes[0]!.indexOf('\n') + 1)).owners)).toHaveLength(1)
+    expect(Object.keys(JSON.parse(writes[1]!.slice(writes[1]!.indexOf('\n') + 1)).owners)).toHaveLength(2)
   })
 
   it('preserves rename errors and removes the temporary file', async () => {
