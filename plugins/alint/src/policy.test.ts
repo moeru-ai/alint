@@ -60,7 +60,7 @@ describe('stop Gate policy', () => {
     const linted = applyResult(secondFailure.state, warningEnvelope())
 
     expect(firstFailure.decision.decision).toBe('block')
-    expect(firstFailure.decision.reason).toBe('alint-plugin: Stop Gate failed. This is not your fault. Do not attempt to fix it yourself; tell the user to resolve the following error: missing provider')
+    expect(firstFailure.decision.reason).toBe('alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: missing provider')
     expect(firstFailure.state.lintRounds).toBe(0)
     expect(firstFailure.state.runtimeFailures).toBe(1)
     expect(secondFailure.decision.decision).toBeUndefined()

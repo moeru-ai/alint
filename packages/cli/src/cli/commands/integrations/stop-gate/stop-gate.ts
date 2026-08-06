@@ -126,13 +126,17 @@ function runtimeErrorEnvelope(message: string): StopGateEnvelope {
 }
 
 function runtimeErrorMessage(error: unknown): string {
+  let detail: string
+
   if (error instanceof StopGateReportTooLargeError) {
-    return error.message
+    detail = error.message
+  }
+  else if (error instanceof AlintRunCancelledError) {
+    detail = 'Stop Gate timed out before lint completed.'
+  }
+  else {
+    detail = errorMessageFrom(error) ?? 'unknown error'
   }
 
-  if (error instanceof AlintRunCancelledError) {
-    return 'Stop Gate timed out before lint completed.'
-  }
-
-  return errorMessageFrom(error) ?? 'Stop Gate failed with an unknown runtime error.'
+  return `Stop Gate runtime error: ${detail}`
 }

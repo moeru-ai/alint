@@ -49,8 +49,13 @@ export interface CacheOwnerIdentity {
 
 export type CacheOwnerKind = 'file' | 'project'
 
+export interface CacheOwnerMetadata {
+  contentHash?: string
+}
+
 export interface CacheOwnerTransaction {
-  commit: (metadata?: { contentHash?: string, mode?: 'merge' | 'replace' }) => void
+  checkpoint: () => Promise<void>
+  commit: (metadata?: CacheOwnerMetadata & { mode?: 'merge' | 'replace' }) => void
   discard: (slot: CacheSlotIdentity) => void
   lookup: (slot: CacheSlotIdentity, fingerprint: CacheFingerprint) => CacheEntry | undefined
   put: (slot: CacheSlotIdentity, entry: CacheEntry) => void
@@ -63,7 +68,8 @@ export interface CacheSlotIdentity {
 }
 
 export interface CacheStore {
-  beginOwner: (owner: CacheOwnerIdentity) => CacheOwnerTransaction
+  beginOwner: (owner: CacheOwnerIdentity, metadata?: CacheOwnerMetadata) => CacheOwnerTransaction
+  flush: () => Promise<void>
   location: string
   reconcile: () => Promise<void>
 }

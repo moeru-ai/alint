@@ -33,7 +33,7 @@ Explicitly enable Stop Gate in the repository before configuring optional overri
 alint config integrations stop-gate enable
 ```
 
-The default behavior checks dirty files: staged, unstaged, and untracked files that are not ignored. Deleted files are excluded. Files with both staged and unstaged changes are checked from their current working-tree contents. The same selection is available outside Codex through `alint --dirty`.
+The default behavior checks dirty files: staged, unstaged, and untracked files that are not ignored. Deleted files and registered submodules are excluded. Files with both staged and unstaged changes are checked from their current working-tree contents. Diagnostics with locations remain only when they intersect changed lines. Diagnostics without locations remain. The same behavior is available outside Codex through `alint --dirty`.
 
 Show the effective configuration:
 
@@ -80,7 +80,11 @@ The hook always uses the Git root as the `alint` working directory and resolves 
 
 It never installs or updates `alint` automatically. If no compatible CLI is available, it asks Codex to obtain user approval before changing the repository installation. CLI/config discovery and other startup work have a one-minute limit; lint itself uses `timeoutMs`, with a separate one-minute startup allowance.
 
+After the plugin reads an enabled configuration, it checks Git HEAD for the `dirty-files` target. If HEAD is detached, the plugin skips lint and returns a non-blocking explanation. The `all` target runs normally with a detached HEAD.
+
 The internal `integrations stop-gate` protocol exits `0` whenever alint successfully produces a result envelope, including envelopes containing error diagnostics. It exits `1` only for an alint runtime or configuration failure. The plugin converts either kind of result into a Codex Hook decision and exits `0`; Codex continuation is controlled by the structured Hook output, not by the inner alint process exit code.
+
+If the hook cannot parse Codex input or otherwise cannot return a structured decision, every non-zero exit writes a stable English diagnostic to stderr before the process ends. It also writes a `0600` diagnostic file under the system temporary directory at `alint-stop-gate/fatal/<timestamp>-<process-id>.log` and includes that path in stderr. The file contains the timestamp, failure context, and error detail, but not the raw Hook input. Fatal diagnostics share a 10 MiB aggregate budget; the oldest files are removed first. This fatal fallback is separate from recoverable runtime failures, which continue to use the structured Hook decision protocol above.
 
 The first successful lint with warnings blocks once so Codex evaluates the warnings. Later warning-only results are reminders. Error results block while the automatic correction loop is active. If two consecutive successful lints return the same diagnostic multiset, the second result becomes a non-blocking reminder instead. The fingerprint includes each diagnostic's rule, severity, file, location, message, and evidence; it ignores diagnostic order plus cache and model metadata. Clean, inactive, no-dirty-file, and runtime-error results break this consecutive-match chain. The plugin runs at most nine successful lint rounds per Codex session and keeps runtime/config failure counting separate.
 

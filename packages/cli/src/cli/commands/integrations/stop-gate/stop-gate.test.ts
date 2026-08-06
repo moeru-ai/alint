@@ -9,6 +9,25 @@ import { describe, expect, it } from 'vitest'
 import { executeCli } from '../../../cli'
 
 describe('integrations stop-gate', () => {
+  it('writes an English usage error before exiting non-zero', async () => {
+    let stderr = ''
+    let stdout = ''
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'integrations',
+      'stop-gate',
+    ], {
+      cwd: process.cwd(),
+      stderr: { write: chunk => stderr += chunk },
+      stdout: { write: chunk => stdout += chunk },
+    })
+
+    expect(exitCode).toBe(2)
+    expect(stdout).toBe('')
+    expect(stderr).toBe('Stop Gate requires --session-id.\n')
+  })
+
   it('is inactive until the repository explicitly enables Stop Gate', async () => {
     const cwd = await createRepository(ruleConfig('warn', false))
 
@@ -61,6 +80,7 @@ describe('integrations stop-gate', () => {
     const result = await run(cwd, sessionId)
 
     expect(result.exitCode).toBe(1)
+    expect(result.envelope.message).toMatch(/^Stop Gate runtime error:/u)
     expect(result.envelope.status).toBe('runtime-error')
   })
 
@@ -81,6 +101,30 @@ describe('integrations stop-gate', () => {
 
     expect(result.exitCode).toBe(0)
     expect(result.envelope.status).toBe('no-dirty-files')
+  })
+
+  it('counts only changed-line and locationless diagnostics for dirty files', async () => {
+    const cwd = await createRepository(locatedRuleConfig())
+    await writeFile(join(cwd, 'input.ts'), 'first\noriginal\nthird\n', 'utf8')
+    await git(cwd, ['add', 'input.ts'])
+    await git(cwd, ['commit', '-m', 'add line fixture'])
+    await writeFile(join(cwd, 'input.ts'), 'first\nchanged\nthird\n', 'utf8')
+
+    const result = await run(cwd, `changed-lines-${randomUUID()}`)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.envelope.status).toBe('warnings')
+    expect(result.envelope.warningCount).toBe(2)
+  })
+
+  it('does not filter diagnostics for the all target', async () => {
+    const cwd = await createRepository(locatedRuleConfig('all'))
+
+    const result = await run(cwd, `all-lines-${randomUUID()}`)
+
+    expect(result.exitCode).toBe(0)
+    expect(result.envelope.status).toBe('warnings')
+    expect(result.envelope.warningCount).toBe(3)
   })
 })
 
@@ -117,6 +161,41 @@ async function git(cwd: string, args: string[]): Promise<void> {
     nodePath: false,
     throwOnError: true,
   })
+}
+
+function locatedRuleConfig(target: 'all' | 'dirty-files' = 'dirty-files'): string {
+  return `export default [{
+    integrations: { stopGate: { enabled: true, target: '${target}' } },
+  }, {
+    files: ['input.ts'],
+    plugins: {
+      test: {
+        rules: {
+          finding: {
+            create: context => ({
+              onTargetFile: target => {
+                context.report({
+                  filePath: target.file.path,
+                  loc: { start: { column: 0, line: 1 } },
+                  message: 'unchanged line',
+                })
+                context.report({
+                  filePath: target.file.path,
+                  loc: { start: { column: 0, line: 2 } },
+                  message: 'changed line',
+                })
+                context.report({
+                  filePath: target.file.path,
+                  message: 'file-wide finding',
+                })
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: { 'test/finding': 'warn' },
+  }]\n`
 }
 
 function ruleConfig(severity: 'error' | 'warn', enabled = true): string {

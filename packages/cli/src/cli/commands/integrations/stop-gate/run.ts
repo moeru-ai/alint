@@ -2,6 +2,7 @@ import type { AlintConfig, ResolvedStopGateConfig, RunResult } from '@alint-js/c
 
 import type { CliIo } from '../../../types'
 
+import { filterResultToChangedLines } from '../../lint/changed-lines'
 import { findDirtyLintTargets, findLintTargets } from '../../lint/discovery'
 import { executeLint } from '../../lint/execution'
 import { createTimeoutSignal } from './timeout'
@@ -17,15 +18,17 @@ export async function runStopGateLint(options: {
   io: CliIo
   stopGate: ResolvedStopGateConfig
 }): Promise<StopGateLintResult | undefined> {
-  const targets = options.stopGate.target === 'dirty-files'
+  const dirtyTargets = options.stopGate.target === 'dirty-files'
     ? await findDirtyLintTargets(options.config, options.cwd)
-    : await findLintTargets({
-        config: options.config,
-        cwd: options.cwd,
-        errorOnUnmatchedPattern: true,
-        globInputPaths: true,
-        inputs: ['.'],
-      })
+    : undefined
+  const targets = dirtyTargets
+    ?? await findLintTargets({
+      config: options.config,
+      cwd: options.cwd,
+      errorOnUnmatchedPattern: true,
+      globInputPaths: true,
+      inputs: ['.'],
+    })
 
   if (
     options.stopGate.target === 'dirty-files'
@@ -37,7 +40,7 @@ export async function runStopGateLint(options: {
   let timeout: ReturnType<typeof createTimeoutSignal> | undefined
 
   try {
-    const result = await executeLint({
+    let result = await executeLint({
       config: options.config,
       createSignal: () => {
         // The configured budget covers lint execution, not setup-config and runner resolution.
@@ -50,6 +53,14 @@ export async function runStopGateLint(options: {
       io: options.io,
       runnerOptions: { format: 'json' },
     })
+
+    if (dirtyTargets !== undefined) {
+      result = filterResultToChangedLines(result, {
+        changedLines: dirtyTargets.changedLines,
+        cwd: options.cwd,
+      })
+    }
+
     return { files: targets.files, result }
   }
   finally {

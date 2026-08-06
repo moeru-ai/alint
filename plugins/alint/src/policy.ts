@@ -90,7 +90,7 @@ export function lintLimitDecision(state: SessionState): HookDecision {
 }
 
 export function runtimeFailureMessage(message: string): string {
-  return `alint-plugin: Stop Gate failed. This is not your fault. Do not attempt to fix it yourself; tell the user to resolve the following error: ${message}`
+  return `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${message}`
 }
 
 function findingMessage(state: SessionState, reportPath: string): string {

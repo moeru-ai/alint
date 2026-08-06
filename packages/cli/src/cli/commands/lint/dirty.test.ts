@@ -63,6 +63,40 @@ describe('lint --dirty', () => {
     expect(io.stderrText).toBe('The --dirty option does not accept file arguments.\n')
     expect(io.stdoutText).toBe('')
   })
+
+  it('shows changed-line and locationless diagnostics only', async () => {
+    const io = await createRepository(locatedConfig())
+    await writeFile(join(io.cwd, 'clean.ts'), 'first\noriginal\nthird\n', 'utf8')
+    await git(io.cwd, ['add', 'clean.ts'])
+    await git(io.cwd, ['commit', '-m', 'add line fixture'])
+    await writeFile(join(io.cwd, 'clean.ts'), 'first\nchanged\nthird\n', 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', '--dirty', '--format', 'json'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics as Array<{ message: string }>
+
+    expect(exitCode).toBe(0)
+    expect(diagnostics.map(diagnostic => diagnostic.message)).toEqual([
+      'changed line',
+      'file-wide finding',
+    ])
+  })
+
+  it('filters the partial result from AlintRunError', async () => {
+    const io = await createRepository(locatedConfig(true))
+    await writeFile(join(io.cwd, 'clean.ts'), 'first\noriginal\nthird\n', 'utf8')
+    await git(io.cwd, ['add', 'clean.ts'])
+    await git(io.cwd, ['commit', '-m', 'add line fixture'])
+    await writeFile(join(io.cwd, 'clean.ts'), 'first\nchanged\nthird\n', 'utf8')
+
+    const exitCode = await executeCli(['node', 'alint', '--dirty', '--format', 'json'], io)
+    const diagnostics = JSON.parse(io.stdoutText).diagnostics as Array<{ message: string }>
+
+    expect(exitCode).toBe(2)
+    expect(diagnostics.map(diagnostic => diagnostic.message)).toEqual([
+      'changed line',
+      'file-wide finding',
+    ])
+  })
 })
 
 interface TestIo {
@@ -96,7 +130,7 @@ function config(): string {
   }]\n`
 }
 
-async function createRepository(): Promise<TestIo> {
+async function createRepository(configSource = config()): Promise<TestIo> {
   const cwd = await mkdtemp(join(tmpdir(), 'alint-dirty-'))
   const configHome = await mkdtemp(join(tmpdir(), 'alint-dirty-config-'))
   const io: TestIo = {
@@ -110,7 +144,7 @@ async function createRepository(): Promise<TestIo> {
   await git(cwd, ['init'])
   await git(cwd, ['config', 'user.email', 'test@example.com'])
   await git(cwd, ['config', 'user.name', 'Test'])
-  await writeFile(join(cwd, 'alint.config.ts'), config(), 'utf8')
+  await writeFile(join(cwd, 'alint.config.ts'), configSource, 'utf8')
   await writeFile(join(cwd, '.gitignore'), 'ignored.ts\n', 'utf8')
 
   for (const file of ['clean.ts', 'staged.ts', 'unstaged.ts']) {
@@ -128,4 +162,39 @@ async function git(cwd: string, args: string[]): Promise<void> {
     nodePath: false,
     throwOnError: true,
   })
+}
+
+function locatedConfig(throws = false): string {
+  return `export default [{
+    files: ['**/*.ts'],
+    language: 'plaintext',
+    plugins: {
+      test: {
+        rules: {
+          visit: {
+            create: context => ({
+              onTargetFile: target => {
+                context.report({
+                  filePath: target.file.path,
+                  loc: { start: { column: 0, line: 1 } },
+                  message: 'unchanged line',
+                })
+                context.report({
+                  filePath: target.file.path,
+                  loc: { start: { column: 0, line: 2 } },
+                  message: 'changed line',
+                })
+                context.report({
+                  filePath: target.file.path,
+                  message: 'file-wide finding',
+                })
+                if (${throws}) throw new Error('rule failed after reporting')
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: { 'test/visit': 'warn' },
+  }]\n`
 }

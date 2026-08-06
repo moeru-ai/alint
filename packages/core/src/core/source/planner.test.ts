@@ -26,7 +26,8 @@ describe('source planning', () => {
     const sentinel = 'source planning sentinel'
     const commits: Array<undefined | { contentHash?: string, mode?: 'merge' | 'replace' }> = []
     const owner = createOwner(commits)
-    const cacheStore = createCacheStore(owner)
+    const beginOwner = vi.fn(() => owner)
+    const cacheStore: CacheStore = { beginOwner, flush: async () => {}, location: '', reconcile: async () => {} }
     const input = createInput(0, '/repo/demo.custom', async file => [
       { file, identity: 'same', kind: 'symbol', language: 'custom', text: `${file.text}:first` },
       { file, identity: 'same', kind: 'symbol', language: 'custom', text: `${file.text}:second` },
@@ -50,7 +51,11 @@ describe('source planning', () => {
     expect(result.project?.file.targetCount).toBe(2)
     expect(JSON.stringify(result.project)).not.toContain(sentinel)
     expect(JSON.stringify(outcomes)).not.toContain(sentinel)
-    expect(commits).toEqual([{ contentHash: hashText(sentinel) }])
+    expect(beginOwner).toHaveBeenCalledWith(
+      { kind: 'file', path: '/repo/demo.custom' },
+      { contentHash: hashText(sentinel) },
+    )
+    expect(commits).toEqual([undefined])
   })
 
   it('returns an extract failure without opening cache ownership or scheduling jobs', async () => {
@@ -61,7 +66,7 @@ describe('source planning', () => {
     })
 
     const result = await planSource(input, {
-      cacheStore: { beginOwner, location: '', reconcile: async () => {} },
+      cacheStore: { beginOwner, flush: async () => {}, location: '', reconcile: async () => {} },
       cwd: '/repo',
       ruleRuntimes: [createRuntime()],
       scheduler,
@@ -179,7 +184,7 @@ function completed(job: Parameters<ConstructorParameters<typeof RuleScheduler>[0
 }
 
 function createCacheStore(owner: CacheOwnerTransaction): CacheStore {
-  return { beginOwner: () => owner, location: '', reconcile: async () => {} }
+  return { beginOwner: () => owner, flush: async () => {}, location: '', reconcile: async () => {} }
 }
 
 function createInput(fileIndex: number, path: string, extract: PreparedInput['language']['extract']): PreparedInput {
@@ -195,7 +200,7 @@ function createInput(fileIndex: number, path: string, extract: PreparedInput['la
 }
 
 function createOwner(commits: Array<undefined | { contentHash?: string, mode?: 'merge' | 'replace' }>): CacheOwnerTransaction {
-  return { commit: metadata => commits.push(metadata), discard: () => {}, lookup: () => undefined, put: () => {} }
+  return { checkpoint: async () => {}, commit: metadata => commits.push(metadata), discard: () => {}, lookup: () => undefined, put: () => {} }
 }
 
 function createRuntime(): RuleRuntime {

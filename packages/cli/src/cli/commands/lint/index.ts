@@ -14,6 +14,7 @@ import { findGitRoot } from '../../git'
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
+import { filterResultToChangedLines } from './changed-lines'
 import { findDirtyLintTargets, findLintTargets, NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
 import { executeLint } from './execution'
@@ -82,17 +83,23 @@ async function runLintCommand(
 
   const config = await loadAlintConfig(cwd, options.config)
   let lintTargets: Awaited<ReturnType<typeof findLintTargets>>
+  let changedLines: Awaited<ReturnType<typeof findDirtyLintTargets>>['changedLines'] | undefined
 
   try {
-    lintTargets = options.dirty
-      ? await findDirtyLintTargets(config, cwd)
-      : await findLintTargets({
-          config,
-          cwd,
-          errorOnUnmatchedPattern: true,
-          globInputPaths: true,
-          inputs: files,
-        })
+    if (options.dirty) {
+      const dirtyTargets = await findDirtyLintTargets(config, cwd)
+      lintTargets = dirtyTargets
+      changedLines = dirtyTargets.changedLines
+    }
+    else {
+      lintTargets = await findLintTargets({
+        config,
+        cwd,
+        errorOnUnmatchedPattern: true,
+        globInputPaths: true,
+        inputs: files,
+      })
+    }
   }
   catch (error) {
     if (error instanceof NoFilesFoundError) {
@@ -120,8 +127,11 @@ async function runLintCommand(
   const restoreProgressConsole = progress
     ? interceptConsoleOutput({ write: progress.write })
     : undefined
+  const visibleResult = (runResult: RunResult): RunResult => changedLines === undefined
+    ? runResult
+    : filterResultToChangedLines(runResult, { changedLines, cwd })
   const writeResult = (runResult: RunResult): void => {
-    runIo.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
+    runIo.stdout.write(formatDiagnostics(options.format as ReporterName, visibleResult(runResult), {
       color: runIo.stdout.isTTY === true,
     }))
   }
@@ -163,7 +173,7 @@ async function runLintCommand(
   }
 
   writeResult(result)
-  return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
+  return visibleResult(result).diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
 function shouldEnableProgress(options: LintCommandOptions, io: CliIo): boolean {

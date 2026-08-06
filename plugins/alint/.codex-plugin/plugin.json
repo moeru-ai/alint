@@ -1,6 +1,6 @@
 {
   "name": "alint",
-  "version": "0.2.0+codex.20260805125535",
+  "version": "0.2.0+codex.20260805190825",
   "description": "Runs alint automatically before Codex finishes work in a configured repository.",
   "author": {
     "name": "moeru-ai",
