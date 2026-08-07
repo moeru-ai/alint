@@ -1,8 +1,8 @@
-import type {
-  ProviderDefinition,
-  SetupConfig,
-  SetupModelDefinition,
-} from '@alint-js/core'
+import type { SetupModelDefinition } from '@alint-js/core'
+
+import type { ModelConfig, ProviderConfig, SetupConfig } from './types'
+
+import { isAcpModel } from './types'
 
 export function addProviderModels(
   config: SetupConfig,
@@ -36,7 +36,7 @@ export function pruneProviderModels(
 ): SetupConfig {
   return updateProvider(config, providerId, provider => ({
     ...provider,
-    models: provider.models.filter(model => remoteModelIds.has(model.id)),
+    models: provider.models.filter(model => isAcpModel(model) || remoteModelIds.has(model.id)),
   }))
 }
 
@@ -53,7 +53,7 @@ export function removeProviderModels(
 
 export function replaceSetupProvider(
   config: SetupConfig,
-  replacement: ProviderDefinition,
+  replacement: ProviderConfig,
 ): SetupConfig {
   return updateProvider(config, replacement.id, () => cloneProvider(replacement))
 }
@@ -103,7 +103,7 @@ export function unsetProviderHeader(
   })
 }
 
-function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
+function cloneModel(model: ModelConfig): ModelConfig {
   return {
     ...model,
     aliases: model.aliases === undefined ? undefined : [...model.aliases],
@@ -112,7 +112,7 @@ function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
   }
 }
 
-function cloneProvider(provider: ProviderDefinition): ProviderDefinition {
+function cloneProvider(provider: ProviderConfig): ProviderConfig {
   return {
     ...provider,
     headers: provider.headers === undefined ? undefined : { ...provider.headers },
@@ -134,7 +134,7 @@ function headersWithoutName(
 function updateProvider(
   config: SetupConfig,
   providerId: string,
-  update: (provider: ProviderDefinition) => ProviderDefinition,
+  update: (provider: ProviderConfig) => ProviderConfig,
 ): SetupConfig {
   const providerIndex = config.providers.findIndex(provider => provider.id === providerId)
 

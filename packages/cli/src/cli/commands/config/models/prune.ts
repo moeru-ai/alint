@@ -2,7 +2,7 @@ import type { ProviderDefinition, SetupConfig, SetupModelDefinition } from '@ali
 
 import type { CommandContext } from '../../command'
 
-import { pruneProviderModels, writeSetupConfig } from '@alint-js/config'
+import { isAcpModel, pruneProviderModels, writeSetupConfig } from '@alint-js/config'
 import { errorMessageFrom } from '@moeru/std/error'
 
 import { escapeLineValue } from '../../../output'
@@ -91,20 +91,28 @@ export async function runPruneModelsCommand(
   let hadFailure = false
 
   for (const provider of providers) {
+    const endpoint = provider.endpoint
+
+    if (endpoint === undefined) {
+      hadFailure = true
+      context.io.stderr.write(`cannot prune provider "${escapeLineValue(provider.id)}" because it has no remote endpoint.\n`)
+      continue
+    }
+
     let remoteModelIds: Set<string>
 
     try {
-      remoteModelIds = new Set(await probeModels(provider.endpoint, provider.headers))
+      remoteModelIds = new Set(await probeModels(endpoint, provider.headers))
     }
     catch (error) {
       hadFailure = true
       context.io.stderr.write(
-        `failed to probe provider "${escapeLineValue(provider.id)}" at "${escapeLineValue(provider.endpoint)}": ${classifyProbeFailure(error)}.\n`,
+        `failed to probe provider "${escapeLineValue(provider.id)}" at "${escapeLineValue(endpoint)}": ${classifyProbeFailure(error)}.\n`,
       )
       continue
     }
 
-    const removedModels = provider.models.filter(model => !remoteModelIds.has(model.id))
+    const removedModels = provider.models.filter(model => !isAcpModel(model) && !remoteModelIds.has(model.id))
     const defaultModel = removedModels.find(model => (model.aliases ?? []).includes('default'))
 
     if (defaultModel !== undefined) {

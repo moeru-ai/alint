@@ -17,13 +17,12 @@ export {
 export type { GlobalSetupConfigPathOptions } from './paths'
 export * from './plugins'
 export * from './setup'
+export type { ProviderConfig as ProviderDefinition } from './setup/types'
 export type {
   AlintConfig,
   ModelSize,
-  ProviderDefinition,
   ProviderType,
   RunnerConfig,
   RunnerStatsConfig,
-  SetupConfig,
   SetupModelDefinition,
 } from '@alint-js/core'

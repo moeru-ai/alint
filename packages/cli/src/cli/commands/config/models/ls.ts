@@ -4,6 +4,7 @@ import { benchmarkModels } from '@alint-js/core'
 import { errorMessageFrom } from '@moeru/std/error'
 
 import { formatModelBenchmarkList, formatModelList, resolveProviderBenchmarkConcurrency } from '../../../provider-registry'
+import { startModelAdapters } from '../../../runtime/model-adapter'
 import { defineCommand } from '../../command'
 import { loadMergedSetupConfig } from '../setup-config'
 import { createModelBenchmarkProgressDisplay } from './benchmark-progress'
@@ -71,23 +72,25 @@ async function runListModelsCommand(
     return 2
   }
 
+  const runtime = await startModelAdapters(config, context.io)
   const progress = context.io.stderr.isTTY === true
     ? createModelBenchmarkProgressDisplay({
         color: true,
-        config,
+        config: runtime.setupConfig,
         output: context.io.stderr,
       })
     : undefined
   let benchmarks
 
   try {
-    benchmarks = await benchmarkModels(config, {
+    benchmarks = await benchmarkModels(runtime.setupConfig, {
       onProgress: snapshot => progress?.update(snapshot),
       providerConcurrency,
     })
   }
   finally {
     progress?.finish()
+    await runtime.shutdown()
   }
 
   context.io.stdout.write(formatModelBenchmarkList(config, benchmarks, {

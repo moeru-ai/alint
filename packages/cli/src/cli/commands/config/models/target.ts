@@ -2,7 +2,7 @@ import type {
   ProviderDefinition,
   SetupConfig,
   SetupModelDefinition,
-} from '@alint-js/core'
+} from '@alint-js/config'
 
 export type ExactModelTargetResult
   = | { candidates: Array<{ modelId: string, providerId: string }>, status: 'ambiguous' }

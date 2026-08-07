@@ -1,0 +1,31 @@
+{
+  "name": "@alint-js/model-adapter-acp",
+  "type": "module",
+  "version": "0.3.2",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.mts",
+      "default": "./dist/index.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "catalog:",
+    "@modelcontextprotocol/sdk": "catalog:",
+    "h3": "catalog:",
+    "tinyexec": "catalog:",
+    "valibot": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@alint-js/core": "workspace:*"
+  }
+}

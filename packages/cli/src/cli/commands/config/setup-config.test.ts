@@ -74,4 +74,21 @@ describe('loadRunSetupConfig', () => {
     expect(result.defaultModel).toBeUndefined()
     expect(result.setupConfig.providers[0]?.models[0]?.id).toBe('project-model')
   })
+
+  it('keeps project model matching when the project configures an ACP-driven model', async () => {
+    const io = await createTestIo()
+
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [{
+        id: 'local-acp',
+        models: [{ command: 'codex-acp', driver: 'acp', id: 'codex' }],
+      }],
+      version: 1,
+    })
+
+    const result = await loadRunSetupConfig(io)
+
+    expect(result.defaultModel).toBeUndefined()
+    expect(result.setupConfig.providers[0]?.models[0]?.id).toBe('codex')
+  })
 })

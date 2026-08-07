@@ -1,22 +1,162 @@
 import type {
   ModelSize,
-  ProviderDefinition,
   ProviderType,
   RunnerConfig,
-  SetupConfig,
   SetupModelDefinition,
 } from '@alint-js/core'
 
-import { parse, stringify } from 'smol-toml'
+import type { AcpModelConfig, ModelConfig, ProviderConfig, SetupConfig } from './types'
 
-const modelSizes = new Set<ModelSize>(['large', 'medium', 'small'])
+import { parse as parseToml, stringify } from 'smol-toml'
+import { array, boolean, check, finite, integer, literal, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, string, transform, undefined_, union, unknown, variant } from 'valibot'
+
+import { isAcpModel } from './types'
+
+const modelEntries = {
+  aliases: optional(array(string())),
+  capabilities: optional(array(string())),
+  context_window: optional(number()),
+  default_params: optional(record(string(), unknown())),
+  driver: optional(undefined_()),
+  id: pipe(string(), nonEmpty('Model id must be a non-empty string.')),
+  name: optional(string()),
+  size: optional(picklist(['large', 'medium', 'small'])),
+}
+
+const providerModelSchema = object(modelEntries)
+
+const acpModelSchema = object({
+  ...modelEntries,
+  args: optional(array(string())),
+  command: pipe(string(), nonEmpty('ACP model command must be a non-empty string.')),
+  cwd: optional(pipe(string(), nonEmpty('ACP model cwd must be a non-empty string.'))),
+  driver: literal('acp'),
+  env: optional(record(string(), string())),
+})
+
+const modelSchema = pipe(
+  variant('driver', [acpModelSchema, providerModelSchema]),
+  transform(({ context_window: contextWindow, default_params: defaultParams, ...model }): ModelConfig => ({
+    ...model,
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(defaultParams === undefined ? {} : { defaultParams }),
+  })),
+)
+const providerSchema = pipe(
+  object({
+    endpoint: optional(pipe(string(), nonEmpty('Provider endpoint must be a non-empty string.'))),
+    headers: optional(record(string(), string())),
+    id: pipe(string(), nonEmpty('Provider id must be a non-empty string.')),
+    models: array(modelSchema),
+    type: optional(literal('openai-compatible')),
+  }),
+  check(
+    provider => provider.models.every(isAcpModel) || provider.type === 'openai-compatible',
+    issue => `Invalid provider "${issue.input.id}": type is required for models without a driver.`,
+  ),
+  check(
+    provider => provider.models.every(isAcpModel) || provider.endpoint !== undefined,
+    issue => `Invalid provider "${issue.input.id}": endpoint is required for models without a driver.`,
+  ),
+)
+
+const runnerCacheSchema = union([
+  boolean(),
+  object({
+    enabled: optional(boolean()),
+    location: optional(pipe(
+      string('Invalid runner cache location: must be a string.'),
+      nonEmpty('Invalid runner cache location: must be a non-empty string.'),
+    )),
+  }),
+])
+
+const positiveIntegerSchemas = {
+  retentionMonths: pipe(
+    number('Invalid runner stats retention_months: must be a positive integer.'),
+    integer('Invalid runner stats retention_months: must be a positive integer.'),
+    minValue(1, 'Invalid runner stats retention_months: must be a positive integer.'),
+  ),
+  ruleConcurrency: pipe(
+    number('Invalid runner rule_concurrency: must be a positive integer.'),
+    integer('Invalid runner rule_concurrency: must be a positive integer.'),
+    minValue(1, 'Invalid runner rule_concurrency: must be a positive integer.'),
+  ),
+  timeoutMs: pipe(
+    number('Invalid runner timeout_ms: must be a positive integer.'),
+    integer('Invalid runner timeout_ms: must be a positive integer.'),
+    minValue(1, 'Invalid runner timeout_ms: must be a positive integer.'),
+  ),
+}
+
+const runnerStatsSchema = union([
+  boolean(),
+  pipe(
+    object({
+      enabled: optional(boolean()),
+      location: optional(pipe(
+        string('Invalid runner stats location: must be a string.'),
+        nonEmpty('Invalid runner stats location: must be a non-empty string.'),
+      )),
+      retention_months: optional(positiveIntegerSchemas.retentionMonths),
+    }),
+    transform(({ retention_months: retentionMonths, ...stats }) => ({
+      ...stats,
+      ...(retentionMonths === undefined ? {} : { retentionMonths }),
+    })),
+  ),
+])
+
+const runnerSchema = pipe(
+  object({
+    agent_retries: optional(pipe(
+      number('Invalid runner agent_retries: must be a finite number.'),
+      finite('Invalid runner agent_retries: must be a finite number.'),
+    )),
+    cache: optional(runnerCacheSchema),
+    rule_concurrency: optional(positiveIntegerSchemas.ruleConcurrency),
+    stats: optional(runnerStatsSchema),
+    timeout_ms: optional(positiveIntegerSchemas.timeoutMs),
+  }),
+  transform(({
+    agent_retries: agentRetries,
+    rule_concurrency: ruleConcurrency,
+    timeout_ms: timeoutMs,
+    ...runner
+  }): RunnerConfig => ({
+    ...runner,
+    ...(agentRetries === undefined ? {} : { agentRetries }),
+    ...(ruleConcurrency === undefined ? {} : { ruleConcurrency }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+  })),
+)
+
+const setupConfigSchema = pipe(
+  object({
+    providers: optional(array(providerSchema), []),
+    runner: optional(runnerSchema),
+    version: literal(1, 'Invalid setup config: version must be 1.'),
+  }),
+  transform(({ runner, ...config }): SetupConfig => ({
+    ...config,
+    ...(runner === undefined ? {} : { runner }),
+  })),
+)
+
+interface StringifiableAcpModelConfig extends StringifiableSetupModelDefinition {
+  args?: string[]
+  command: string
+  cwd?: string
+  driver: 'acp'
+  env?: Record<string, string>
+}
 
 interface StringifiableProviderDefinition {
-  endpoint: string
+  endpoint?: string
   headers?: Record<string, string>
   id: string
-  models: StringifiableSetupModelDefinition[]
-  type: ProviderType
+  models: Array<StringifiableAcpModelConfig | StringifiableSetupModelDefinition>
+  type?: ProviderType
 }
 
 interface StringifiableRunnerCacheConfig {
@@ -54,72 +194,8 @@ interface StringifiableSetupModelDefinition {
   size?: ModelSize
 }
 
-interface TomlProviderDefinition {
-  endpoint?: unknown
-  headers?: unknown
-  id?: unknown
-  models?: unknown
-  type?: unknown
-}
-
-interface TomlRunnerCacheConfig {
-  enabled?: unknown
-  location?: unknown
-}
-
-interface TomlRunnerConfig {
-  agent_retries?: unknown
-  cache?: unknown
-  rule_concurrency?: unknown
-  stats?: unknown
-  timeout_ms?: unknown
-}
-
-interface TomlRunnerStatsConfig {
-  enabled?: unknown
-  location?: unknown
-  retention_months?: unknown
-}
-
-interface TomlSetupConfig {
-  providers?: unknown
-  runner?: unknown
-  version?: unknown
-}
-
-interface TomlSetupModelDefinition {
-  aliases?: unknown
-  capabilities?: unknown
-  context_window?: unknown
-  default_params?: unknown
-  id?: unknown
-  name?: unknown
-  size?: unknown
-}
-
 export function parseSetupConfigToml(toml: string): SetupConfig {
-  const rawConfig = parse(toml) as TomlSetupConfig
-
-  if (rawConfig.version !== 1) {
-    throw new Error('Invalid setup config: version must be 1.')
-  }
-
-  if (!Array.isArray(rawConfig.providers)) {
-    throw new TypeError('Invalid setup config: providers must be an array.')
-  }
-
-  const parsedConfig: SetupConfig = {
-    providers: rawConfig.providers.map(provider =>
-      parseProvider(provider as TomlProviderDefinition),
-    ),
-    version: 1,
-  }
-
-  if (rawConfig.runner !== undefined) {
-    parsedConfig.runner = parseRunner(rawConfig.runner as TomlRunnerConfig)
-  }
-
-  return parsedConfig
+  return parse(setupConfigSchema, parseToml(toml))
 }
 
 export function stringifySetupConfigToml(config: SetupConfig): string {
@@ -135,257 +211,15 @@ export function stringifySetupConfigToml(config: SetupConfig): string {
   return stringify(stringifiableConfig)
 }
 
-function isModelSize(value: unknown): value is ModelSize {
-  return typeof value === 'string' && modelSizes.has(value as ModelSize)
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function parseModel(
-  providerId: string,
-  model: TomlSetupModelDefinition,
-): SetupModelDefinition {
-  const id = readNonEmptyString(model.id, `provider "${providerId}" model id`)
-  const parsedModel: SetupModelDefinition = { id }
-
-  if (model.name !== undefined) {
-    parsedModel.name = readString(model.name, `model "${id}" name`)
+function toTomlAcpModel(model: AcpModelConfig): StringifiableAcpModelConfig {
+  return {
+    ...toTomlModel(model),
+    args: model.args,
+    command: model.command,
+    cwd: model.cwd,
+    driver: 'acp',
+    env: model.env,
   }
-
-  if (model.aliases !== undefined) {
-    parsedModel.aliases = readStringArray(model.aliases, `model "${id}" aliases`)
-  }
-
-  if (model.capabilities !== undefined) {
-    parsedModel.capabilities = readStringArray(
-      model.capabilities,
-      `model "${id}" capabilities`,
-    )
-  }
-
-  if (model.size !== undefined) {
-    if (!isModelSize(model.size)) {
-      throw new Error(
-        `Invalid model "${id}": size must be "small", "medium", or "large".`,
-      )
-    }
-
-    parsedModel.size = model.size
-  }
-
-  if (model.context_window !== undefined) {
-    parsedModel.contextWindow = readFiniteNumber(
-      model.context_window,
-      `model "${id}" context_window`,
-    )
-  }
-
-  if (model.default_params !== undefined) {
-    parsedModel.defaultParams = readRecord(
-      model.default_params,
-      `model "${id}" default_params`,
-    )
-  }
-
-  return parsedModel
-}
-
-function parsePositiveInteger(value: unknown, label: string): number {
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new TypeError(`Invalid ${label}: must be a positive integer.`)
-  }
-
-  return value
-}
-
-function parseProvider(provider: TomlProviderDefinition): ProviderDefinition {
-  const id = readNonEmptyString(provider.id, 'provider id')
-
-  if (provider.type !== 'openai-compatible') {
-    throw new Error(
-      `Invalid provider "${id}": type must be "openai-compatible".`,
-    )
-  }
-
-  const endpoint = readNonEmptyString(provider.endpoint, `provider "${id}" endpoint`)
-
-  if (!Array.isArray(provider.models)) {
-    throw new TypeError(`Invalid provider "${id}": models must be an array.`)
-  }
-
-  const parsedProvider: ProviderDefinition = {
-    endpoint,
-    id,
-    models: provider.models.map(model =>
-      parseModel(id, model as TomlSetupModelDefinition),
-    ),
-    type: provider.type,
-  }
-
-  if (provider.headers !== undefined) {
-    parsedProvider.headers = readStringMap(
-      provider.headers,
-      `provider "${id}" headers`,
-    )
-  }
-
-  return parsedProvider
-}
-
-function parseRunner(runner: TomlRunnerConfig): RunnerConfig {
-  const parsedRunner: RunnerConfig = {}
-
-  if (runner.agent_retries !== undefined) {
-    parsedRunner.agentRetries = readFiniteNumber(
-      runner.agent_retries,
-      'runner agent_retries',
-    )
-  }
-
-  if (runner.cache !== undefined) {
-    parsedRunner.cache = parseRunnerCache(runner.cache)
-  }
-
-  if (runner.rule_concurrency !== undefined) {
-    parsedRunner.ruleConcurrency = parsePositiveInteger(
-      runner.rule_concurrency,
-      'runner rule_concurrency',
-    )
-  }
-
-  if (runner.stats !== undefined) {
-    parsedRunner.stats = parseRunnerStats(runner.stats)
-  }
-
-  if (runner.timeout_ms !== undefined) {
-    parsedRunner.timeoutMs = parsePositiveInteger(
-      runner.timeout_ms,
-      'runner timeout_ms',
-    )
-  }
-
-  return parsedRunner
-}
-
-function parseRunnerCache(cache: unknown): RunnerConfig['cache'] {
-  if (typeof cache === 'boolean') {
-    return cache
-  }
-
-  if (!isPlainObject(cache)) {
-    throw new TypeError('Invalid runner cache: must be a boolean or table.')
-  }
-
-  const tomlCache = cache as TomlRunnerCacheConfig
-  const parsedCache: Exclude<RunnerConfig['cache'], boolean | undefined> = {}
-
-  if (tomlCache.enabled !== undefined) {
-    if (typeof tomlCache.enabled !== 'boolean') {
-      throw new TypeError('Invalid runner cache enabled: must be a boolean.')
-    }
-
-    parsedCache.enabled = tomlCache.enabled
-  }
-
-  if (tomlCache.location !== undefined) {
-    parsedCache.location = readNonEmptyString(
-      tomlCache.location,
-      'runner cache location',
-    )
-  }
-
-  return parsedCache
-}
-
-function parseRunnerStats(stats: unknown): RunnerConfig['stats'] {
-  if (typeof stats === 'boolean') {
-    return stats
-  }
-
-  if (!isPlainObject(stats)) {
-    throw new TypeError('Invalid runner stats: must be a boolean or an object.')
-  }
-
-  const tomlStats = stats as TomlRunnerStatsConfig
-  const parsedStats: Exclude<RunnerConfig['stats'], boolean | undefined> = {}
-
-  if (tomlStats.enabled !== undefined) {
-    if (typeof tomlStats.enabled !== 'boolean') {
-      throw new TypeError('Invalid runner stats enabled: must be a boolean.')
-    }
-
-    parsedStats.enabled = tomlStats.enabled
-  }
-
-  if (tomlStats.location !== undefined) {
-    parsedStats.location = readNonEmptyString(
-      tomlStats.location,
-      'runner stats location',
-    )
-  }
-
-  if (tomlStats.retention_months !== undefined) {
-    parsedStats.retentionMonths = parsePositiveInteger(
-      tomlStats.retention_months,
-      'runner stats retention_months',
-    )
-  }
-
-  return parsedStats
-}
-
-function readFiniteNumber(value: unknown, label: string): number {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    throw new TypeError(`Invalid ${label}: must be a finite number.`)
-  }
-
-  return value
-}
-
-function readNonEmptyString(value: unknown, label: string): string {
-  const stringValue = readString(value, label)
-
-  if (stringValue.length === 0) {
-    throw new Error(`Invalid ${label}: must be a non-empty string.`)
-  }
-
-  return stringValue
-}
-
-function readRecord(value: unknown, label: string): Record<string, unknown> {
-  if (!isPlainObject(value)) {
-    throw new Error(`Invalid ${label}: must be a table.`)
-  }
-
-  return value as Record<string, unknown>
-}
-
-function readString(value: unknown, label: string): string {
-  if (typeof value !== 'string') {
-    throw new TypeError(`Invalid ${label}: must be a string.`)
-  }
-
-  return value
-}
-
-function readStringArray(value: unknown, label: string): string[] {
-  if (!Array.isArray(value) || !value.every(item => typeof item === 'string')) {
-    throw new Error(`Invalid ${label}: must be an array of strings.`)
-  }
-
-  return value
-}
-
-function readStringMap(value: unknown, label: string): Record<string, string> {
-  const record = readRecord(value, label)
-
-  if (!Object.values(record).every(item => typeof item === 'string')) {
-    throw new Error(`Invalid ${label}: must be a string map.`)
-  }
-
-  return record as Record<string, string>
 }
 
 function toTomlModel(
@@ -423,12 +257,14 @@ function toTomlModel(
 }
 
 function toTomlProvider(
-  provider: ProviderDefinition,
+  provider: ProviderConfig,
 ): StringifiableProviderDefinition {
   const tomlProvider: StringifiableProviderDefinition = {
     endpoint: provider.endpoint,
     id: provider.id,
-    models: provider.models.map(toTomlModel),
+    models: provider.models.map(model => 'driver' in model && model.driver === 'acp'
+      ? toTomlAcpModel(model)
+      : toTomlModel(model)),
     type: provider.type,
   }
 

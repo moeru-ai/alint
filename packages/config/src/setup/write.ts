@@ -1,4 +1,4 @@
-import type { SetupConfig } from '@alint-js/core'
+import type { SetupConfig } from './types'
 
 import { mkdir, writeFile } from 'node:fs/promises'
 

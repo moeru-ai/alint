@@ -10,6 +10,7 @@ import { resolve } from 'pathe'
 
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
+import { startModelAdapters } from '../../runtime/model-adapter'
 import { defineCommand } from '../command'
 import { loadRunSetupConfig } from '../config/setup-config'
 import { findLintTargets, NoFilesFoundError } from './discovery'
@@ -117,52 +118,58 @@ async function runLintCommand(
       color: io.stdout.isTTY === true,
     }))
   }
+  const runtime = await startModelAdapters(setupConfig, io)
   let result: Awaited<ReturnType<typeof runAlint>>
 
   try {
-    // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
-    result = await runAlint({
-      cacheOnly: options.cacheOnly,
-      config,
-      cwd: io.cwd,
-      defaultModel,
-      directories: lintTargets.directories,
-      files: lintTargets.files,
-      modelOverride: options.model,
-      outputLanguage: options.outputLanguage,
-      progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
-      runner,
-      setupConfig,
-    })
-  }
-  catch (error) {
+    try {
+      // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
+      result = await runAlint({
+        cacheOnly: options.cacheOnly,
+        config,
+        cwd: io.cwd,
+        defaultModel,
+        directories: lintTargets.directories,
+        files: lintTargets.files,
+        modelOverride: options.model,
+        outputLanguage: options.outputLanguage,
+        progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
+        runner,
+        setupConfig: runtime.setupConfig,
+      })
+    }
+    catch (error) {
+      restoreProgressConsole?.()
+      progress?.dispose()
+
+      if (error instanceof AlintRunError) {
+        await persistStats(error.result)
+        writeResult(error.result)
+        io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
+        return 2
+      }
+
+      if (error instanceof AlintRunCancelledError) {
+        await persistStats(error.result)
+        writeResult(error.result)
+        io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
+        return 2
+      }
+
+      throw error
+    }
+
     restoreProgressConsole?.()
     progress?.dispose()
 
-    if (error instanceof AlintRunError) {
-      await persistStats(error.result)
-      writeResult(error.result)
-      io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
-      return 2
-    }
+    await persistStats(result)
 
-    if (error instanceof AlintRunCancelledError) {
-      await persistStats(error.result)
-      writeResult(error.result)
-      io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
-      return 2
-    }
-
-    throw error
+    writeResult(result)
+    return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
   }
-
-  restoreProgressConsole?.()
-  progress?.dispose()
-
-  await persistStats(result)
-
-  writeResult(result)
-  return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
+  finally {
+    await runtime.shutdown()
+  }
 }
 
 function shouldEnableProgress(options: LintCommandOptions, io: CliIo): boolean {

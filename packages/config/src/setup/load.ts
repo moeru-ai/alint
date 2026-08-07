@@ -1,13 +1,12 @@
-import type {
-  ProviderDefinition,
-  SetupConfig,
-  SetupModelDefinition,
-} from '@alint-js/core'
+import type { ModelConfig, ProviderConfig, SetupConfig } from './types'
 
 import { readFile } from 'node:fs/promises'
 
+import { merge } from '@moeru/std/merge'
+
 import { isENOENTError } from '../utils/fs'
 import { parseSetupConfigToml } from './toml'
+import { isAcpModel } from './types'
 
 export const emptySetupConfig: SetupConfig = { providers: [], version: 1 }
 
@@ -25,12 +24,12 @@ export async function loadSetupConfig(filePath: string): Promise<SetupConfig> {
 }
 
 export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
-  let providers: ProviderDefinition[] = []
+  let providers: ProviderConfig[] = []
   let runner: SetupConfig['runner']
-  const providersById = new Map<string, ProviderDefinition>()
+  const providersById = new Map<string, ProviderConfig>()
 
   for (const config of configs) {
-    const configProviders: ProviderDefinition[] = []
+    const configProviders: ProviderConfig[] = []
 
     if (config.runner !== undefined) {
       runner = {
@@ -50,8 +49,13 @@ export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
         continue
       }
 
-      existingProvider.endpoint = provider.endpoint
-      existingProvider.type = provider.type
+      if (provider.endpoint !== undefined) {
+        existingProvider.endpoint = provider.endpoint
+      }
+
+      if (provider.type !== undefined) {
+        existingProvider.type = provider.type
+      }
       configProviders.push(existingProvider)
 
       if (provider.headers !== undefined) {
@@ -61,7 +65,7 @@ export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
         }
       }
 
-      const nextModels: SetupModelDefinition[] = []
+      const nextModels: ModelConfig[] = []
 
       for (const incomingModel of provider.models) {
         const existingModelIndex = existingProvider.models.findIndex(model => model.id === incomingModel.id)
@@ -97,8 +101,10 @@ export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
   return mergedConfig
 }
 
-function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
-  const clonedModel: SetupModelDefinition = { ...model }
+function cloneModel(model: ModelConfig): ModelConfig {
+  const clonedModel: ModelConfig = isAcpModel(model)
+    ? { ...model, args: model.args ? [...model.args] : undefined, env: model.env ? { ...model.env } : undefined }
+    : { ...model }
 
   if (model.aliases !== undefined) {
     clonedModel.aliases = [...model.aliases]
@@ -115,8 +121,8 @@ function cloneModel(model: SetupModelDefinition): SetupModelDefinition {
   return clonedModel
 }
 
-function cloneProvider(provider: ProviderDefinition): ProviderDefinition {
-  const clonedProvider: ProviderDefinition = {
+function cloneProvider(provider: ProviderConfig): ProviderConfig {
+  const clonedProvider: ProviderConfig = {
     ...provider,
     models: provider.models.map(cloneModel),
   }
@@ -133,25 +139,19 @@ function createEmptySetupConfig(): SetupConfig {
 }
 
 function mergeModel(
-  existingModel: SetupModelDefinition,
-  incomingModel: SetupModelDefinition,
-): SetupModelDefinition {
+  existingModel: ModelConfig,
+  incomingModel: ModelConfig,
+): ModelConfig {
   const existing = cloneModel(existingModel)
   const incoming = cloneModel(incomingModel)
 
-  return {
-    ...existing,
-    ...incoming,
-    aliases: incoming.aliases ?? existing.aliases,
-    capabilities: incoming.capabilities ?? existing.capabilities,
-    defaultParams: incoming.defaultParams ?? existing.defaultParams,
-  }
+  return merge<ModelConfig>(existing, incoming)
 }
 
 function prioritizeProviders(
-  providers: ProviderDefinition[],
-  prioritizedProviders: ProviderDefinition[],
-): ProviderDefinition[] {
+  providers: ProviderConfig[],
+  prioritizedProviders: ProviderConfig[],
+): ProviderConfig[] {
   const prioritizedProviderIds = new Set(prioritizedProviders.map(provider => provider.id))
 
   return [

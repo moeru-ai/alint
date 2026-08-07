@@ -3,6 +3,69 @@ import { describe, expect, it } from 'vitest'
 import { parseSetupConfigToml, stringifySetupConfigToml } from './toml'
 
 describe('setup TOML registry', () => {
+  it('parses ACP-driven models without requiring a remote endpoint', () => {
+    const config = parseSetupConfigToml(`
+version = 1
+
+[[providers]]
+id = "coding-agents"
+
+[[providers.models]]
+id = "codex"
+name = "Codex"
+driver = "acp"
+aliases = ["default"]
+capabilities = ["tool-call"]
+command = "codex-acp"
+args = ["--profile", "alint"]
+cwd = "."
+
+[providers.models.env]
+CODEX_HOME = "/tmp/codex"
+`)
+
+    expect(config).toEqual({
+      providers: [{
+        id: 'coding-agents',
+        models: [{
+          aliases: ['default'],
+          args: ['--profile', 'alint'],
+          capabilities: ['tool-call'],
+          command: 'codex-acp',
+          cwd: '.',
+          driver: 'acp',
+          env: { CODEX_HOME: '/tmp/codex' },
+          id: 'codex',
+          name: 'Codex',
+        }],
+      }],
+      version: 1,
+    })
+  })
+
+  it('stringifies ACP-driven provider models', () => {
+    const toml = stringifySetupConfigToml({
+      providers: [{
+        id: 'acp',
+        models: [{
+          args: ['--acp'],
+          command: 'coding-agent',
+          driver: 'acp',
+          env: { AGENT_PROFILE: 'review' },
+          id: 'reviewer',
+        }],
+      }],
+      version: 1,
+    })
+
+    expect(toml).toContain('[[providers.models]]')
+    expect(toml).toContain('driver = "acp"')
+    expect(toml).toContain('command = "coding-agent"')
+    expect(toml).toContain('args = [ "--acp" ]')
+    expect(toml).toContain('[providers.models.env]')
+    expect(toml).toContain('AGENT_PROFILE = "review"')
+  })
+
   it('parses provider model fields from snake_case TOML', () => {
     const apiKeyVariable = '$' + '{OLLAMA_API_KEY}'
     const config = parseSetupConfigToml(`
@@ -208,7 +271,7 @@ id = "qwen"
       '',
       '[[providers.models]]',
       'id = "qwen"',
-    ].join('\n'))).toThrow('Invalid runner stats retention_months: must be a positive integer.')
+    ].join('\n'))).toThrow()
   })
 
   it('rejects invalid runner settings', () => {
@@ -287,8 +350,35 @@ id = "qwen"
 version = 1
 [[providers]]
 id = "bad"
+models = []
 type = "unknown"
 endpoint = "http://localhost:9999/v1"
-`)).toThrow('Invalid provider "bad": type must be "openai-compatible".')
+    `)).toThrow('Invalid type: Expected "openai-compatible" but received "unknown"')
+  })
+
+  it('requires a provider endpoint for models without a driver', () => {
+    expect(() => parseSetupConfigToml(`
+version = 1
+
+[[providers]]
+id = "remote"
+type = "openai-compatible"
+
+[[providers.models]]
+id = "model"
+`)).toThrow('Invalid provider "remote": endpoint is required for models without a driver.')
+  })
+
+  it('requires a command for ACP-driven models', () => {
+    expect(() => parseSetupConfigToml(`
+version = 1
+
+[[providers]]
+id = "local"
+
+[[providers.models]]
+id = "codex"
+driver = "acp"
+`)).toThrow('Invalid key: Expected "command" but received undefined')
   })
 })
