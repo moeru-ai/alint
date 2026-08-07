@@ -1,23 +1,28 @@
-import { mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, realpath, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { getGlobalSetupConfigPath, getProjectSetupConfigPath, writeSetupConfig } from '@alint-js/config'
+import { getGlobalSetupConfigPath, getProjectSetupConfigPath, installStaticPlugins, writeSetupConfig } from '@alint-js/config'
 import { describe, expect, it, vi } from 'vitest'
 
 import { executeCli } from './cli'
 
-const acpCases: Array<{ runtime: 'fake' | 'real', scope: 'global' | 'project' }> = [
-  { runtime: 'fake', scope: 'global' },
-  { runtime: 'fake', scope: 'project' },
+const acpCases: Array<{
+  rule: 'coding-agent' | 'structured'
+  runtime: 'fake' | 'real'
+  scope: 'global' | 'project'
+}> = [
+  { rule: 'structured', runtime: 'fake', scope: 'global' },
+  { rule: 'structured', runtime: 'fake', scope: 'project' },
+  { rule: 'coding-agent', runtime: 'fake', scope: 'global' },
   ...(process.env.ALINT_ACP_E2E_COMMAND
-    ? [{ runtime: 'real' as const, scope: 'project' as const }]
+    ? [{ rule: 'structured' as const, runtime: 'real' as const, scope: 'project' as const }]
     : []),
 ]
 
 describe('cli ACP adapter end to end', () => {
-  it.each(acpCases)('starts a $runtime ACP model from $scope setup and runs an alint structured rule', async ({ runtime, scope }) => {
+  it.each(acpCases)('starts a $runtime ACP model from $scope setup and runs an alint $rule rule', async ({ rule, runtime, scope }) => {
     const cwd = await mkdtemp(join(tmpdir(), 'alint-cli-acp-'))
     const configHome = await mkdtemp(join(tmpdir(), 'alint-cli-acp-home-'))
     const agentPath = join(cwd, 'agent.mjs')
@@ -45,7 +50,28 @@ describe('cli ACP adapter end to end', () => {
     )).href
 
     await writeFile(join(cwd, 'demo.ts'), 'export function reviewMe() { return 1 }\n', 'utf8')
-    await writeFile(join(cwd, 'alint.config.ts'), `
+    if (rule === 'coding-agent') {
+      const rulesPath = join(cwd, 'rules')
+      await mkdir(rulesPath)
+      await writeFile(join(cwd, 'alint.config.toml'), `
+[[config.group]]
+files = ["**/*.ts"]
+
+[config.group.plugins]
+review = "./rules"
+
+[config.group.rules]
+"review/code-review" = "warn"
+`, 'utf8')
+      await writeFile(join(rulesPath, 'rule.alint.toml'), `
+name = "code-review"
+builtInAgent = "basic-coding-agent"
+instruction = "Report one finding."
+`, 'utf8')
+      await installStaticPlugins({ cwd })
+    }
+    else {
+      await writeFile(join(cwd, 'alint.config.ts'), `
 import { generateStructured } from ${JSON.stringify(structuredOutputUrl)}
 import { array, object, string } from ${JSON.stringify(valibotUrl)}
 
@@ -81,7 +107,20 @@ export default [{
   rules: { 'e2e/review': 'warn' },
 }]
 `, 'utf8')
+    }
     if (runtime === 'fake') {
+      const reportToolName = rule === 'coding-agent' ? 'report_findings' : 'reportFindings'
+      const reportArguments = rule === 'coding-agent'
+        ? {
+            findings: [{
+              confidence: 'high',
+              filePath: 'demo.ts',
+              line: 1,
+              message: 'Use a named constant.',
+              suggestion: 'Extract the value into a named constant.',
+            }],
+          }
+        : { findings: [{ message: 'Use a named constant.' }] }
       await writeFile(agentPath, `
 import { writeFileSync } from 'node:fs'
 import { Readable, Writable } from 'node:stream'
@@ -110,9 +149,10 @@ acp.agent({ name: 'alint-e2e-agent' })
     await client.connect(new StreamableHTTPClientTransport(new URL(mcpServer.url), { requestInit: { headers } }))
     try {
       const tools = await client.listTools()
-      const report = tools.tools.find(tool => tool.name === 'reportFindings')
+      const report = tools.tools.find(tool => tool.name === ${JSON.stringify(reportToolName)})
+      if (!report) throw new Error('Expected report tool.')
       await client.callTool({
-        arguments: { findings: [{ message: 'Use a named constant.' }] },
+        arguments: ${JSON.stringify(reportArguments)},
         name: report.name,
       })
       return { stopReason: 'end_turn' }
@@ -164,7 +204,7 @@ acp.agent({ name: 'alint-e2e-agent' })
     expect(JSON.parse(stdout.join('')).diagnostics).toMatchObject([{
       message: 'Use a named constant.',
       model: { providerId: 'acp', resolvedId: 'reviewer' },
-      ruleId: 'e2e/review',
+      ruleId: rule === 'coding-agent' ? 'review/code-review' : 'e2e/review',
     }])
     expect(stderr.join('')).toBe('')
     if (runtime === 'fake') {
