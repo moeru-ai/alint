@@ -191,8 +191,9 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
       try {
         await cacheStore.reconcile()
       }
-      catch {
-        // Cache writes are opportunistic and must not mask lint results.
+      catch (error) {
+        infrastructureError ??= error
+        infrastructureFailed = true
       }
     }
   }

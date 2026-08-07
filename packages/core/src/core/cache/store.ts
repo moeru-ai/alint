@@ -8,6 +8,7 @@ import type {
   CacheFileBody,
   CacheFingerprint,
   CacheOwnerIdentity,
+  CacheOwnerMetadata,
   CacheOwnerTransaction,
   CacheSlotIdentity,
   CacheStore,
@@ -183,14 +184,20 @@ export async function createCacheStore(options: CacheStoreOptions): Promise<Cach
     return createReadOnlyCacheStore(location, body, options.cwd)
   const fileExists = options.fileExists ?? defaultFileExists
   const writeFile = options.writeFile ?? writeFileToDisk
+  const persist = createCacheWriter(location, header, writeFile)
+
+  const flush = async (): Promise<void> => {
+    body.updatedAt = new Date().toISOString()
+    await persist(body)
+  }
 
   return {
-    beginOwner: owner => beginOwner(body, owner, options.cwd),
+    beginOwner: (owner, metadata) => beginOwner(body, owner, options.cwd, flush, metadata),
+    flush,
     location,
     reconcile: async () => {
       await collectMissingFileOwners(body, options.cwd, fileExists)
-      body.updatedAt = new Date().toISOString()
-      await persistCacheBody(location, header, body, writeFile)
+      await flush()
     },
   }
 }
@@ -265,39 +272,54 @@ export function resolveCacheLocation(cwd: string, location?: string): string {
   return resolved
 }
 
-function beginOwner(body: CacheFileBody, owner: CacheOwnerIdentity, cwd: string): CacheOwnerTransaction {
+function beginOwner(
+  body: CacheFileBody,
+  owner: CacheOwnerIdentity,
+  cwd: string,
+  flush: CacheStore['flush'],
+  ownerMetadata: CacheOwnerMetadata = {},
+): CacheOwnerTransaction {
   const normalizedOwner = { kind: owner.kind, path: normalizeCachePath(cwd, owner.path) }
   const key = ownerKey(normalizedOwner, cwd)
   const previousOwner = body.owners[key]
   const nextEntries = new Map<string, CacheEntry>()
 
+  const commit: CacheOwnerTransaction['commit'] = (metadata = {}) => {
+    const contentHash = metadata.contentHash ?? ownerMetadata.contentHash
+    const committedEntries = metadata.mode === 'merge'
+      ? ownerEntries(body, body.owners[key])
+      : new Map<string, CacheEntry>()
+    for (const [entryKey, cacheEntry] of nextEntries)
+      committedEntries.set(entryKey, cacheEntry)
+
+    // Replace owns the final snapshot; merge rebases on the current snapshot. Clear every
+    // slot visible to either boundary before publishing the computed owner atomically.
+    const replacedSlots = new Set([
+      ...(previousOwner?.slots ?? []),
+      ...(body.owners[key]?.slots ?? []),
+    ])
+    for (const replacedSlot of replacedSlots)
+      delete body.entries[replacedSlot]
+    for (const [entryKey, cacheEntry] of committedEntries)
+      body.entries[entryKey] = cacheEntry
+
+    body.owners[key] = {
+      contentHash,
+      kind: normalizedOwner.kind,
+      path: normalizedOwner.path,
+      slots: [...committedEntries.keys()].sort(),
+    }
+    body.updatedAt = new Date().toISOString()
+  }
+
   return {
-    commit: (metadata = {}) => {
-      const committedEntries = metadata.mode === 'merge'
-        ? ownerEntries(body, body.owners[key])
-        : new Map<string, CacheEntry>()
-      for (const [entryKey, cacheEntry] of nextEntries)
-        committedEntries.set(entryKey, cacheEntry)
-
-      // Replace owns the final snapshot; merge rebases on the current snapshot. Clear every
-      // slot visible to either boundary before publishing the computed owner atomically.
-      const replacedSlots = new Set([
-        ...(previousOwner?.slots ?? []),
-        ...(body.owners[key]?.slots ?? []),
-      ])
-      for (const replacedSlot of replacedSlots)
-        delete body.entries[replacedSlot]
-      for (const [entryKey, cacheEntry] of committedEntries)
-        body.entries[entryKey] = cacheEntry
-
-      body.owners[key] = {
-        contentHash: metadata.contentHash,
-        kind: normalizedOwner.kind,
-        path: normalizedOwner.path,
-        slots: [...committedEntries.keys()].sort(),
-      }
-      body.updatedAt = new Date().toISOString()
+    checkpoint: async () => {
+      // A completed inference must become durable before its scheduler permit is released. Merge
+      // keeps old slots until the owner reaches its final replace boundary after the full run.
+      commit({ mode: 'merge' })
+      await flush()
     },
+    commit,
     discard: cacheSlot => nextEntries.delete(slotKey(normalizedOwner, cacheSlot, cwd)),
     lookup: (cacheSlot, fingerprint) => {
       const entryKey = slotKey(normalizedOwner, cacheSlot, cwd)
@@ -340,6 +362,25 @@ function createBaseTargetIdentity(target: TargetIdentityInput): string {
   return target.kind
 }
 
+function createCacheWriter(
+  location: string,
+  header: string,
+  writeFile: typeof writeFileToDisk,
+): (body: CacheFileBody) => Promise<void> {
+  let previousWrite = Promise.resolve()
+
+  return (body) => {
+    // Snapshot before entering the queue so this flush represents exactly the owner commits that
+    // were visible when it was requested. Serial writes prevent an older snapshot from winning.
+    const snapshot = parse(CacheFileBodySchema, body)
+    const currentWrite = previousWrite
+      .catch(() => {})
+      .then(() => persistCacheBody(location, header, snapshot, writeFile))
+    previousWrite = currentWrite
+    return currentWrite
+  }
+}
+
 function createEmptyCacheBody(): CacheFileBody {
   const now = new Date().toISOString()
   return { createdAt: now, entries: {}, owners: {}, updatedAt: now }
@@ -347,6 +388,7 @@ function createEmptyCacheBody(): CacheFileBody {
 
 function createNoopCacheStore(location: string): CacheStore {
   const transaction: CacheOwnerTransaction = {
+    checkpoint: async () => {},
     commit: () => {},
     discard: () => {},
     lookup: () => undefined,
@@ -354,6 +396,7 @@ function createNoopCacheStore(location: string): CacheStore {
   }
   return {
     beginOwner: () => transaction,
+    flush: async () => {},
     location,
     reconcile: async () => {},
   }
@@ -361,6 +404,7 @@ function createNoopCacheStore(location: string): CacheStore {
 
 function createReadOnlyCacheStore(location: string, body: CacheFileBody, cwd: string): CacheStore {
   const transaction = (owner: CacheOwnerIdentity): CacheOwnerTransaction => ({
+    checkpoint: async () => {},
     commit: () => {},
     discard: () => {},
     lookup: (slot, fingerprint) => {
@@ -371,6 +415,7 @@ function createReadOnlyCacheStore(location: string, body: CacheFileBody, cwd: st
   })
   return {
     beginOwner: transaction,
+    flush: async () => {},
     location,
     reconcile: async () => {},
   }

@@ -1,3 +1,5 @@
+import type { RunResult } from '@alint-js/core'
+
 import type { ReporterName } from '../../reporters'
 import type { CliIo, CliWritable } from '../../types'
 import type { LintCommandOptions } from './options'
@@ -5,17 +7,17 @@ import type { LintCommandOptions } from './options'
 import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
+import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { resolve } from 'pathe'
 
+import { findGitRoot } from '../../git'
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { defineCommand } from '../command'
-import { loadRunSetupConfig } from '../config/setup-config'
-import { findLintTargets, NoFilesFoundError } from './discovery'
+import { filterResultToChangedLines } from './changed-lines'
+import { findDirtyLintTargets, findLintTargets, NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
-import { resolveConfigRunner, resolveRunnerConfig } from './runner'
-import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
+import { executeLint } from './execution'
 
 export const lint = defineCommand({
   action: (context, files: string[] = [], options: LintCommandOptions) =>
@@ -33,6 +35,9 @@ export const lint = defineCommand({
   default: true,
   description: 'Run alint',
   name: 'lint',
+  options: [
+    { description: 'Lint only staged, unstaged, and untracked files', flags: '--dirty' },
+  ],
 })
 
 async function assertConfigExists(cwd: string, configPath: string): Promise<void> {
@@ -64,24 +69,37 @@ async function runLintCommand(
   io: CliIo,
   interceptConsoleOutput: (stdout: CliWritable) => () => void,
 ): Promise<number> {
-  if (options.config) {
-    await assertConfigExists(io.cwd, options.config)
+  if (options.dirty && files.length > 0) {
+    io.stderr.write('The --dirty option does not accept file arguments.\n')
+    return 2
   }
 
-  const [{ defaultModel, setupConfig }, config] = await Promise.all([
-    loadRunSetupConfig(io),
-    loadAlintConfig(io.cwd, options.config),
-  ])
+  const cwd = options.dirty ? await findGitRoot(io.cwd) : io.cwd
+  const runIo = cwd === io.cwd ? io : { ...io, cwd }
+
+  if (options.config) {
+    await assertConfigExists(cwd, options.config)
+  }
+
+  const config = await loadAlintConfig(cwd, options.config)
   let lintTargets: Awaited<ReturnType<typeof findLintTargets>>
+  let changedLines: Awaited<ReturnType<typeof findDirtyLintTargets>>['changedLines'] | undefined
 
   try {
-    lintTargets = await findLintTargets({
-      config,
-      cwd: io.cwd,
-      errorOnUnmatchedPattern: true,
-      globInputPaths: true,
-      inputs: files,
-    })
+    if (options.dirty) {
+      const dirtyTargets = await findDirtyLintTargets(config, cwd)
+      lintTargets = dirtyTargets
+      changedLines = dirtyTargets.changedLines
+    }
+    else {
+      lintTargets = await findLintTargets({
+        config,
+        cwd,
+        errorOnUnmatchedPattern: true,
+        globInputPaths: true,
+        inputs: files,
+      })
+    }
   }
   catch (error) {
     if (error instanceof NoFilesFoundError) {
@@ -92,77 +110,70 @@ async function runLintCommand(
     throw error
   }
 
-  const runner = resolveRunnerConfig(setupConfig, { runner: resolveConfigRunner(config) }, options)
-  const progress = shouldEnableProgress(options, io)
+  if (options.dirty && lintTargets.files.length === 0) {
+    return 0
+  }
+
+  const progress = shouldEnableProgress(options, runIo)
     ? createCliProgressReporter({
-        color: io.stderr.isTTY === true,
-        columns: io.stderr.columns ?? 80,
-        cwd: io.cwd,
-        isTty: io.stderr.isTTY === true,
-        rows: io.stderr.rows,
-        write: chunk => io.stderr.write(chunk),
+        color: runIo.stderr.isTTY === true,
+        columns: runIo.stderr.columns ?? 80,
+        cwd,
+        isTty: runIo.stderr.isTTY === true,
+        rows: runIo.stderr.rows,
+        write: chunk => runIo.stderr.write(chunk),
       })
     : undefined
   const restoreProgressConsole = progress
     ? interceptConsoleOutput({ write: progress.write })
     : undefined
-  const statsTarget = resolveStatsWrite(runner?.stats, io.env)
-  const statsCollector = statsTarget ? createStatsCollector() : undefined
-  const persistStats = async (runResult: Awaited<ReturnType<typeof runAlint>>): Promise<void> => {
-    if (statsTarget && statsCollector)
-      await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
-  }
-  const writeResult = (runResult: Awaited<ReturnType<typeof runAlint>>): void => {
-    io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
-      color: io.stdout.isTTY === true,
+  const visibleResult = (runResult: RunResult): RunResult => changedLines === undefined
+    ? runResult
+    : filterResultToChangedLines(runResult, { changedLines, cwd })
+  const writeResult = (runResult: RunResult): void => {
+    runIo.stdout.write(formatDiagnostics(options.format as ReporterName, visibleResult(runResult), {
+      color: runIo.stdout.isTTY === true,
     }))
   }
-  let result: Awaited<ReturnType<typeof runAlint>>
+  let result: RunResult
 
   try {
     // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
-    result = await runAlint({
+    result = await executeLint({
       cacheOnly: options.cacheOnly,
       config,
-      cwd: io.cwd,
-      defaultModel,
+      cwd,
       directories: lintTargets.directories,
       files: lintTargets.files,
+      io: runIo,
       modelOverride: options.model,
       outputLanguage: options.outputLanguage,
-      progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
-      runner,
-      setupConfig,
+      progress: progress?.reporter,
+      runnerOptions: options,
     })
   }
   catch (error) {
-    restoreProgressConsole?.()
-    progress?.dispose()
-
     if (error instanceof AlintRunError) {
-      await persistStats(error.result)
       writeResult(error.result)
-      io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
+      runIo.stderr.write(formatRunError(error, runIo.stderr.isTTY === true))
       return 2
     }
 
     if (error instanceof AlintRunCancelledError) {
-      await persistStats(error.result)
       writeResult(error.result)
-      io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
+      runIo.stderr.write(formatCancelledError(error, runIo.stderr.isTTY === true))
       return 2
     }
 
     throw error
   }
-
-  restoreProgressConsole?.()
-  progress?.dispose()
-
-  await persistStats(result)
+  finally {
+    restoreProgressConsole?.()
+    progress?.dispose()
+  }
 
   writeResult(result)
-  return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
+  return visibleResult(result).diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
 function shouldEnableProgress(options: LintCommandOptions, io: CliIo): boolean {

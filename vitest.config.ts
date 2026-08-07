@@ -18,6 +18,7 @@ export default defineConfig({
       'packages/agent-apeira',
       'packages/agent-pi',
       'packages/agent-codex-cli',
+      'plugins/alint',
     ],
   },
 })

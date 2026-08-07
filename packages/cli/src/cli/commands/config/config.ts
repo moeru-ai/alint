@@ -1,11 +1,13 @@
 import { defineCommand } from '../command'
 import { inspect } from './inspect'
+import { integrations } from './integrations'
 import { models } from './models'
 import { providers } from './providers'
 
 export const config = defineCommand({
   children: [
     inspect,
+    integrations,
     models,
     providers,
   ],

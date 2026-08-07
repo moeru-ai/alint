@@ -2,6 +2,8 @@ import type { Stats } from 'node:fs'
 
 import type { AlintConfig, AlintConfigItem } from '@alint-js/core'
 
+import type { ChangedLineRange } from '../../git'
+
 import { opendir, stat } from 'node:fs/promises'
 
 import Gitignore from 'gitignore-fs'
@@ -9,6 +11,12 @@ import Gitignore from 'gitignore-fs'
 import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolveConfigForFile } from '@alint-js/core'
 import { minimatch, Minimatch } from 'minimatch'
 import { isAbsolute, relative, resolve } from 'pathe'
+
+import { findDirtyChanges } from '../../git'
+
+export interface DirtyLintTargets extends LintTargets {
+  changedLines: ReadonlyMap<string, readonly ChangedLineRange[]>
+}
 
 export interface FindFilesOptions {
   config: AlintConfig
@@ -61,6 +69,24 @@ export class NoFilesFoundError extends Error {
     this.globInputPaths = options.globInputPaths
     this.pattern = pattern
   }
+}
+
+export async function findDirtyLintTargets(config: AlintConfig, cwd: string): Promise<DirtyLintTargets> {
+  const changes = await findDirtyChanges(cwd)
+
+  if (changes.files.length === 0) {
+    return { changedLines: changes.changedLines, directories: [], files: [] }
+  }
+
+  const targets = await findLintTargets({
+    config,
+    cwd,
+    errorOnUnmatchedPattern: false,
+    globInputPaths: false,
+    inputs: changes.files,
+  })
+
+  return { ...targets, changedLines: changes.changedLines }
 }
 
 export async function findFiles(options: FindFilesOptions): Promise<string[]> {

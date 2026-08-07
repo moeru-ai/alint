@@ -87,6 +87,9 @@ catalogs:
     date-fns:
       specifier: ^4.4.0
       version: 4.4.0
+    diff:
+      specifier: ^9.0.0
+      version: 9.0.0
     doctoc:
       specifier: ^2.5.0
       version: 2.5.0
@@ -402,6 +405,9 @@ importers:
       date-fns:
         specifier: 'catalog:'
         version: 4.4.0
+      diff:
+        specifier: 'catalog:'
+        version: 9.0.0
       fast-string-truncated-width:
         specifier: 'catalog:'
         version: 3.0.3
@@ -420,6 +426,9 @@ importers:
       table:
         specifier: 'catalog:'
         version: 6.9.0
+      tinyexec:
+        specifier: 'catalog:'
+        version: 1.2.4
       tinyrainbow:
         specifier: 'catalog:'
         version: 3.1.1
@@ -433,9 +442,6 @@ importers:
       mlly:
         specifier: 'catalog:'
         version: 1.8.2
-      tinyexec:
-        specifier: 'catalog:'
-        version: 1.2.4
 
   packages/config:
     dependencies:
@@ -716,6 +722,15 @@ importers:
       '@alint-js/core':
         specifier: workspace:*
         version: link:../core
+
+  plugins/alint:
+    dependencies:
+      '@moeru/std':
+        specifier: 'catalog:'
+        version: 0.1.0-beta.20
+      tinyexec:
+        specifier: 'catalog:'
+        version: 1.2.4
 
 packages:
 
@@ -3226,6 +3241,10 @@ packages:
   diff-sequences@29.6.3:
     resolution: {integrity: sha512-EjePK1srD3P08o2j4f0ExnylqRs5B9tJjcp9t1krH2qRi8CCdsYfwe9JgSLurFBWwq4uOlipzfk5fHNvwFKr8Q==}
     engines: {node: ^14.15.0 || ^16.10.0 || >=18.0.0}
+
+  diff@9.0.0:
+    resolution: {integrity: sha512-svtcdpS8CgJyqAjEQIXdb3OjhFVVYjzGAPO8WGCmRbrml64SPw/jJD4GoE98aR7r25A0XcgrK3F02yw9R/vhQw==}
+    engines: {node: '>=0.3.1'}
 
   doctoc@2.5.0:
     resolution: {integrity: sha512-xWb2P8mQw9x+T9xPYToytRP0/bA68oexdsY0anMG72RdhZGTVPx6oHJfI57gbZe9LsOSfQUNNLwxSspdoTlJIQ==}
@@ -7578,6 +7597,8 @@ snapshots:
       dequal: 2.0.3
 
   diff-sequences@29.6.3: {}
+
+  diff@9.0.0: {}
 
   doctoc@2.5.0(supports-color@7.2.0):
     dependencies:

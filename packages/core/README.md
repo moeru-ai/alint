@@ -128,3 +128,10 @@ source files retained by plugin code after `ctx.src.readFile()` returns.
 
 A valid cache written by the same `alint` version is still read from one monolithic JSON document.
 An extremely large cache may therefore exhaust available memory.
+
+After each cacheable rule job completes, `alint` writes a cache checkpoint before releasing its
+scheduler slot. Each checkpoint atomically replaces the monolithic cache file. An interrupted run
+can therefore reuse every result that had already become durable, but large caches can cause
+substantial disk writes during runs with many cache misses. Cache hits, skipped jobs, failed jobs,
+and rules that opt out of caching do not add checkpoint writes. A checkpoint or final cache write
+error is fatal and causes the run to fail.

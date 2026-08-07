@@ -1,0 +1,29 @@
+{
+  "name": "alint",
+  "version": "0.2.0+codex.20260805190825",
+  "description": "Runs alint automatically before Codex finishes work in a configured repository.",
+  "author": {
+    "name": "moeru-ai",
+    "url": "https://github.com/moeru-ai"
+  },
+  "homepage": "https://github.com/moeru-ai/alint/tree/main/plugins/alint",
+  "repository": "https://github.com/moeru-ai/alint",
+  "license": "MIT",
+  "keywords": [
+    "alint",
+    "lint",
+    "stop-hook"
+  ],
+  "interface": {
+    "displayName": "alint",
+    "shortDescription": "Run alint before Codex stops.",
+    "longDescription": "Adds a repository-activated Stop hook that runs alint on dirty files or the full project, persists compact session policy state, and directs Codex to detailed reports.",
+    "developerName": "moeru-ai",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Hooks"
+    ],
+    "websiteURL": "https://github.com/moeru-ai/alint",
+    "defaultPrompt": "Configure alint Stop Gate for this repository."
+  }
+}
