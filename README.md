@@ -253,17 +253,17 @@ The codex plugin explicitly requires per-repo enable. Use this command to enable
 - .js/.ts:
 ```typescript
 export default defineConfig([
-    //...
-    {
-        integrations: {
-            stopGate: {
-                enabled: true,
-                // target: 'dirty-files' | 'all'
-                // timeoutMs: 900000
-            },
-        },
+  // ...
+  {
+    integrations: {
+      stopGate: {
+        enabled: true,
+        // target: 'dirty-files' | 'all'
+        // timeoutMs: 900000
+      },
     },
-    //...
+  },
+  // ...
 ])
 ```
 
