@@ -51,6 +51,8 @@ export interface GatewayServer {
   shutdown: () => Promise<void>
 }
 
+type BufferedCompletionOutput = Exclude<CompletionOutput, { type: 'text-delta' | 'text-reset' }> & { text: string }
+
 interface ChatCompletionRequest {
   extensions: Record<string, unknown>
   messages: unknown[]
@@ -63,8 +65,9 @@ interface ChatCompletionRequest {
 
 type CompletionOutput
   = | { call: PendingToolCall, type: 'tool-call' }
-    | { stopReason: StopReason, text: string, type: 'completion', usage?: null | Usage }
+    | { stopReason: StopReason, type: 'completion', usage?: null | Usage }
     | { text: string, type: 'text-delta' }
+    | { type: 'text-reset' }
 
 type ToolChoice
   = | 'auto'
@@ -361,8 +364,10 @@ class CompletionTurn {
             const callCountBeforePrompt = this.#toolCallCount
             const prompt = session.prompt(attempt === 0
               ? renderMessages(request)
-              : 'The request requires a tool call. Call the available function before returning an answer.')
-            let text = ''
+              : [
+                  'The request requires a request-scoped MCP tool call.',
+                  `Call one of these functions before returning an answer: ${this.#options.tools.map(tool => tool.function.name).join(', ')}.`,
+                ].join(' '))
 
             for (;;) {
               const message = await session.nextUpdate()
@@ -375,12 +380,13 @@ class CompletionTurn {
                 }
 
                 if (requiresTool(request.toolChoice) && this.#toolCallCount === callCountBeforePrompt) {
+                  // Buffered responses can discard this rejected attempt. Streams already sent its live deltas.
+                  this.#outputs.push({ type: 'text-reset' })
                   break
                 }
 
                 this.#outputs.push({
                   stopReason: message.stopReason,
-                  text,
                   type: 'completion',
                   usage: message.response.usage,
                 })
@@ -388,12 +394,7 @@ class CompletionTurn {
               }
 
               if (message.update.sessionUpdate === 'agent_message_chunk' && message.update.content.type === 'text') {
-                if (request.stream) {
-                  this.#outputs.push({ text: message.update.content.text, type: 'text-delta' })
-                }
-                else {
-                  text += message.update.content.text
-                }
+                this.#outputs.push({ text: message.update.content.text, type: 'text-delta' })
               }
             }
           }
@@ -474,11 +475,6 @@ export function createGateway(options: GatewayOptions): GatewayApp {
     const toolResult = lastToolResult(request.messages)
     let turn: CompletionTurn
 
-    if (request.stream && (request.tools.length > 0 || toolResult)) {
-      event.res.status = 400
-      return openAIError('Streaming tool calls are not supported.', 'invalid_request_error')
-    }
-
     if (toolResult) {
       const pendingTurn = pendingTurns.get(toolResult.toolCallId)
 
@@ -525,13 +521,13 @@ export function createGateway(options: GatewayOptions): GatewayApp {
     }
 
     if (request.stream) {
-      return streamCompletion(turn, model.id)
+      return streamCompletion(turn, model.id, options.onCompatibilityDiagnostic)
     }
 
-    let output: CompletionOutput
+    let output: BufferedCompletionOutput
 
     try {
-      output = await turn.nextOutput(event.req.signal)
+      output = await bufferCompletion(turn, event.req.signal)
     }
     catch {
       event.res.status = 500
@@ -548,7 +544,7 @@ export function createGateway(options: GatewayOptions): GatewayApp {
       return chatCompletion(turn.modelId, {
         finishReason: 'tool_calls',
         message: {
-          content: null,
+          content: output.text || null,
           role: 'assistant',
           tool_calls: [{
             function: { arguments: output.call.arguments, name: output.call.name },
@@ -561,10 +557,6 @@ export function createGateway(options: GatewayOptions): GatewayApp {
         outputTokens: 0,
         totalTokens: 0,
       })
-    }
-
-    if (output.type === 'text-delta') {
-      throw new Error('Text deltas are only emitted for streaming requests.')
     }
 
     return chatCompletion(turn.modelId, {
@@ -671,6 +663,29 @@ function authorizeRequestTools(client: ClientApp): ClientApp {
 
     return { outcome: { outcome: 'cancelled' } }
   })
+}
+
+async function bufferCompletion(
+  turn: CompletionTurn,
+  signal: AbortSignal,
+): Promise<BufferedCompletionOutput> {
+  let text = ''
+
+  for (;;) {
+    const output = await turn.nextOutput(signal)
+
+    if (output.type === 'text-reset') {
+      text = ''
+      continue
+    }
+
+    if (output.type === 'text-delta') {
+      text += output.text
+      continue
+    }
+
+    return { ...output, text }
+  }
 }
 
 function chatCompletion(
@@ -799,12 +814,17 @@ function renderMessages(request: ChatCompletionRequest): string {
   const requiredTool = request.toolChoice && typeof request.toolChoice === 'object'
     ? request.toolChoice.function.name
     : undefined
+  const toolNames = request.tools.map(tool => tool.function.name).join(', ')
 
   return [
     'Process this OpenAI chat transcript. Preserve message order and role intent.',
     'Return only the assistant response requested by the transcript.',
-    request.toolChoice === 'required' ? 'You must call one of the supplied tools before answering.' : '',
-    requiredTool ? `You must call the ${JSON.stringify(requiredTool)} tool before answering.` : '',
+    request.toolChoice === 'required'
+      ? `You must call one of these request-scoped MCP tools before answering: ${toolNames}.`
+      : '',
+    requiredTool
+      ? `You must call the request-scoped MCP tool ${JSON.stringify(requiredTool)} before answering.`
+      : '',
     '',
     JSON.stringify({ messages: request.messages }),
   ].join('\n')
@@ -830,7 +850,11 @@ function sessionExtensions(extensions: Record<string, unknown>): Record<string, 
   }
 }
 
-function streamCompletion(turn: CompletionTurn, model: string): Response {
+function streamCompletion(
+  turn: CompletionTurn,
+  model: string,
+  onCompatibilityDiagnostic?: GatewayOptions['onCompatibilityDiagnostic'],
+): Response {
   const encoder = new TextEncoder()
   const id = `chatcmpl-${crypto.randomUUID()}`
   const created = Math.floor(Date.now() / 1_000)
@@ -844,6 +868,10 @@ function streamCompletion(turn: CompletionTurn, model: string): Response {
         for (;;) {
           const output = await turn.nextOutput()
 
+          if (output.type === 'text-reset') {
+            continue
+          }
+
           if (output.type === 'text-delta') {
             enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
               delta: { content: output.text, role: 'assistant' },
@@ -853,7 +881,41 @@ function streamCompletion(turn: CompletionTurn, model: string): Response {
           }
 
           if (output.type === 'tool-call') {
-            throw new Error('Streaming tool calls are not supported.')
+            // The ACP call stays blocked until the next OpenAI request returns its tool result.
+            turn.armContinuation(output.call.id)
+            onCompatibilityDiagnostic?.({
+              field: 'usage',
+              message: 'ACP usage is unavailable while a deferred tool call is pending; zero usage was reported.',
+              value: null,
+            })
+            enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
+              delta: {
+                role: 'assistant',
+                tool_calls: [{
+                  function: { arguments: output.call.arguments, name: output.call.name },
+                  id: output.call.id,
+                  index: 0,
+                  type: 'function',
+                }],
+              },
+              index: 0,
+            }]))
+            enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
+              delta: {},
+              finish_reason: 'tool_calls',
+              index: 0,
+            }]))
+            enqueueSse(controller, encoder, {
+              ...chatCompletionChunk(id, created, model, []),
+              usage: {
+                completion_tokens: 0,
+                prompt_tokens: 0,
+                total_tokens: 0,
+              },
+            })
+            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+            controller.close()
+            return
           }
 
           enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
