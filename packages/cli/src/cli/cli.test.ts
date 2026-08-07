@@ -376,11 +376,60 @@ describe('createProviderId', () => {
 })
 
 describe('interactive setup navigation', () => {
+  it('provides documented ACP presets for supported coding-agent CLIs', () => {
+    expect(providerSetupSources).toContainEqual({
+      args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+      command: 'npx',
+      defaultProviderId: 'claude-code',
+      kind: 'acp',
+      label: 'Claude Code (ACP)',
+      model: { id: 'claude-code', name: 'Claude Code' },
+      value: 'claudeCodeAcp',
+    })
+    expect(providerSetupSources).toContainEqual({
+      args: ['-y', '@agentclientprotocol/codex-acp'],
+      command: 'npx',
+      defaultProviderId: 'codex',
+      kind: 'acp',
+      label: 'Codex (ACP)',
+      model: { id: 'codex', name: 'Codex' },
+      value: 'codexAcp',
+    })
+    expect(providerSetupSources).toContainEqual({
+      args: ['-y', '@google/gemini-cli', '--acp'],
+      command: 'npx',
+      defaultProviderId: 'gemini-cli',
+      kind: 'acp',
+      label: 'Gemini CLI (ACP)',
+      model: { id: 'gemini-cli', name: 'Gemini CLI' },
+      value: 'geminiCliAcp',
+    })
+    expect(providerSetupSources).toContainEqual({
+      args: ['acp'],
+      command: 'kimi',
+      defaultProviderId: 'kimi-code',
+      kind: 'acp',
+      label: 'Kimi Code CLI (ACP)',
+      model: { id: 'kimi-code', name: 'Kimi Code CLI' },
+      value: 'kimiCliAcp',
+    })
+    expect(providerSetupSources).toContainEqual({
+      args: ['acp'],
+      command: 'opencode',
+      defaultProviderId: 'opencode',
+      kind: 'acp',
+      label: 'OpenCode (ACP)',
+      model: { id: 'opencode', name: 'OpenCode' },
+      value: 'openCodeAcp',
+    })
+  })
+
   it('keeps built-in provider setup defaults in the provider registry', () => {
     expect(providerSetupSources).toContainEqual({
       benchmarkConcurrency: 2,
       defaultEndpoint: 'http://127.0.0.1:8317/v1',
       defaultProviderId: 'CLIProxyAPI',
+      kind: 'openai-compatible',
       label: 'CLIProxyAPI',
       probeModels: true,
       value: 'cliProxyApi',
@@ -388,6 +437,7 @@ describe('interactive setup navigation', () => {
     expect(providerSetupSources).toContainEqual({
       benchmarkConcurrency: 2,
       defaultEndpoint: 'http://localhost:11434/v1',
+      kind: 'openai-compatible',
       label: 'Ollama',
       probeModels: true,
       value: 'ollama',
@@ -396,6 +446,7 @@ describe('interactive setup navigation', () => {
       benchmarkConcurrency: 2,
       defaultEndpoint: 'https://api.cerebras.ai/v1',
       defaultProviderId: 'cerebras',
+      kind: 'openai-compatible',
       label: 'Cerebras',
       probeModels: true,
       value: 'cerebras',
@@ -404,6 +455,7 @@ describe('interactive setup navigation', () => {
       benchmarkConcurrency: 2,
       defaultEndpoint: 'https://api.groq.com/openai/v1',
       defaultProviderId: 'groq',
+      kind: 'openai-compatible',
       label: 'Groq',
       probeModels: true,
       value: 'groq',
@@ -412,6 +464,7 @@ describe('interactive setup navigation', () => {
       benchmarkConcurrency: 20,
       defaultEndpoint: 'https://openrouter.ai/api/v1',
       defaultProviderId: 'openrouter',
+      kind: 'openai-compatible',
       label: 'OpenRouter',
       probeModels: true,
       value: 'openrouter',

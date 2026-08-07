@@ -546,7 +546,7 @@ describe('alint ACP gateway end to end', () => {
         setupConfig: {
           providers: [{
             endpoint: new URL('/v1/', server.url).href,
-            id: 'local-acp',
+            id: 'acp',
             models: [{
               aliases: ['default'],
               capabilities: ['tool-call'],
@@ -563,7 +563,7 @@ describe('alint ACP gateway end to end', () => {
       expect(result.diagnostics).toMatchObject([{
         message: 'Split this function.',
         model: {
-          providerId: 'local-acp',
+          providerId: 'acp',
           resolvedId: 'acp-reviewer',
         },
         ruleId: 'e2e/review',

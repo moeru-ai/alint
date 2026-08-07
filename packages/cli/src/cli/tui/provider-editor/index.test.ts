@@ -14,6 +14,7 @@ const io = {
 
 const source = {
   benchmarkConcurrency: 2,
+  kind: 'openai-compatible' as const,
   label: 'Custom OpenAI-compatible provider',
   probeModels: true,
   value: 'custom' as const,
@@ -70,6 +71,45 @@ function createPromptPort(overrides: Partial<ProviderEditorPromptPort> = {}): Pr
 }
 
 describe('runProviderEditor', () => {
+  it('creates an ACP provider from a setup preset without HTTP prompts', async () => {
+    const promptPort = createPromptPort()
+
+    const result = await runProviderEditor({
+      config: { providers: [], version: 1 },
+      io,
+      mode: 'create',
+      source: {
+        args: ['--experimental-acp'],
+        command: 'example-agent',
+        defaultProviderId: 'example-acp',
+        kind: 'acp',
+        label: 'Example ACP agent',
+        model: { id: 'example', name: 'Example Agent' },
+        value: 'codexAcp',
+      },
+    }, promptPort)
+
+    expect(result).toEqual({
+      provider: {
+        id: 'example-acp',
+        models: [{
+          args: ['--experimental-acp'],
+          capabilities: ['tool-call'],
+          command: 'example-agent',
+          driver: 'acp',
+          id: 'example',
+          name: 'Example Agent',
+        }],
+      },
+      status: 'confirmed',
+    })
+    expect(promptPort.endpoint).not.toHaveBeenCalled()
+    expect(promptPort.headerInput).not.toHaveBeenCalled()
+    expect(promptPort.manualModels).not.toHaveBeenCalled()
+    expect(promptPort.models).not.toHaveBeenCalled()
+    expect(promptPort.probe).not.toHaveBeenCalled()
+  })
+
   it('updates a provider without exposing secret values in prompts or the summary', async () => {
     const summaries: string[] = []
     const promptPort = createPromptPort({
@@ -180,7 +220,7 @@ describe('runProviderEditor', () => {
       config: { providers: [], version: 1 },
       io,
       mode: 'create',
-      source: { benchmarkConcurrency: 2, label: 'Manual model entry', probeModels: false, value: 'manual' },
+      source: { benchmarkConcurrency: 2, kind: 'openai-compatible', label: 'Manual model entry', probeModels: false, value: 'manual' },
     }, promptPort)
 
     expect(promptPort.probe).not.toHaveBeenCalled()
@@ -212,6 +252,7 @@ describe('runProviderEditor', () => {
         benchmarkConcurrency: 2,
         defaultEndpoint: 'http://127.0.0.1:8317/v1',
         defaultProviderId: 'CLIProxyAPI',
+        kind: 'openai-compatible',
         label: 'CLIProxyAPI',
         probeModels: true,
         value: 'cliProxyApi',

@@ -240,13 +240,13 @@ thinking = { type = "disabled" }
 
 `default_params` is merged into every chat request for that model. Use it for provider-specific request fields that are not covered by the rest of the model entry.
 
-The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Put the machine-specific command in the global setup config, or in `.alint/config.toml` when the repository standardizes the same command for every contributor:
+The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode:
 
 ```toml
 version = 1
 
 [[providers]]
-id = "local-acp"
+id = "acp"
 
 [[providers.models]]
 id = "codex"
@@ -259,7 +259,7 @@ args = []
 cwd = "."
 ```
 
-Then run `alint --model local-acp/codex src`. The checked-in `alint.config.ts` remains lint policy; process commands come only from global setup or `.alint/config.toml`. The command inherits the environment that launched `alint`; optional model `env` entries are literal overrides and should not contain committed credentials. Each concurrent request starts one ACP process, and request tools require MCP-over-HTTP support from the agent.
+Then run `alint --model acp/codex src`. The checked-in `alint.config.ts` remains lint policy; process commands come only from global setup or `.alint/config.toml`. The command inherits the environment that launched `alint`; optional model `env` entries are literal overrides and should not contain committed credentials. Each concurrent request starts one ACP process, and request tools require MCP-over-HTTP support from the agent.
 
 `alint` structured output forces a tool call (`tool_choice`). Some models, such as DeepSeek V4, reject that combination while thinking/reasoning is enabled. For those models, set `thinking = { type = "disabled" }` as above so structured output can run.
 

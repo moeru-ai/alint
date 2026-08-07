@@ -244,13 +244,13 @@ thinking = { type = "disabled" }
 
 `default_params` is merged into every chat request for that model. Use it for provider-specific request fields that are not covered by the rest of the model entry.
 
-The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Put the machine-specific command in the global setup config, or in `.alint/config.toml` when the repository standardizes the same command for every contributor:
+The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode. Put a custom machine-specific command in the global setup config, or in `.alint/config.toml` when the repository standardizes the same command for every contributor:
 
 ```toml
 version = 1
 
 [[providers]]
-id = "local-acp"
+id = "acp"
 
 [[providers.models]]
 id = "codex"
@@ -266,7 +266,7 @@ cwd = "."
 Then select it like any other model:
 
 ```bash
-alint --model local-acp/codex src
+alint --model acp/codex src
 ```
 
 `alint.config.ts` remains the shareable lint policy: it selects models, plugins, and rules but does not launch processes. The CLI merges global setup with `.alint/config.toml`, starts a loopback OpenAI-compatible adapter for the run, and shuts it down afterward. Each concurrent model request gets its own ACP process, so `--rule-concurrency` also bounds how many coding-agent processes a run can require.

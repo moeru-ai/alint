@@ -80,7 +80,7 @@ describe('loadRunSetupConfig', () => {
 
     await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
       providers: [{
-        id: 'local-acp',
+        id: 'acp',
         models: [{ command: 'codex-acp', driver: 'acp', id: 'codex' }],
       }],
       version: 1,

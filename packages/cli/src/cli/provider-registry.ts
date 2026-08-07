@@ -7,6 +7,19 @@ import { createColors } from 'tinyrainbow'
 import { escapeLineValue } from './output'
 import { formatMiniBar } from './reporters/progress/bar'
 
+export interface AcpProviderSetupSource {
+  args?: string[]
+  command: string
+  defaultProviderId: string
+  kind: 'acp'
+  label: string
+  model: {
+    id: string
+    name: string
+  }
+  value: 'claudeCodeAcp' | 'codexAcp' | 'geminiCliAcp' | 'kimiCliAcp' | 'openCodeAcp'
+}
+
 export interface FlattenedModel {
   model: SetupModelDefinition
   provider: ProviderDefinition
@@ -31,14 +44,17 @@ export interface ModelBenchmarkProgressFrameRow {
   suffix: string
 }
 
-export interface ProviderSetupSource {
+export interface OpenAICompatibleProviderSetupSource {
   benchmarkConcurrency: number
   defaultEndpoint?: string
   defaultProviderId?: string
+  kind: 'openai-compatible'
   label: string
   probeModels: boolean
   value: 'cerebras' | 'cliProxyApi' | 'custom' | 'groq' | 'manual' | 'ollama' | 'openrouter'
 }
+
+export type ProviderSetupSource = AcpProviderSetupSource | OpenAICompatibleProviderSetupSource
 
 const colors = createColors({ force: true })
 const defaultBenchmarkConcurrency = 2
@@ -56,12 +72,14 @@ export const providerSetupSources: ProviderSetupSource[] = [
     benchmarkConcurrency: 2,
     defaultEndpoint: 'http://127.0.0.1:8317/v1',
     defaultProviderId: 'CLIProxyAPI',
+    kind: 'openai-compatible',
     label: 'CLIProxyAPI',
     probeModels: true,
     value: 'cliProxyApi',
   },
   {
     benchmarkConcurrency: 2,
+    kind: 'openai-compatible',
     label: 'Custom OpenAI-compatible provider',
     probeModels: true,
     value: 'custom',
@@ -70,6 +88,7 @@ export const providerSetupSources: ProviderSetupSource[] = [
     benchmarkConcurrency: 20,
     defaultEndpoint: 'https://openrouter.ai/api/v1',
     defaultProviderId: 'openrouter',
+    kind: 'openai-compatible',
     label: 'OpenRouter',
     probeModels: true,
     value: 'openrouter',
@@ -78,6 +97,7 @@ export const providerSetupSources: ProviderSetupSource[] = [
     benchmarkConcurrency: 2,
     defaultEndpoint: 'https://api.cerebras.ai/v1',
     defaultProviderId: 'cerebras',
+    kind: 'openai-compatible',
     label: 'Cerebras',
     probeModels: true,
     value: 'cerebras',
@@ -86,6 +106,7 @@ export const providerSetupSources: ProviderSetupSource[] = [
     benchmarkConcurrency: 2,
     defaultEndpoint: 'https://api.groq.com/openai/v1',
     defaultProviderId: 'groq',
+    kind: 'openai-compatible',
     label: 'Groq',
     probeModels: true,
     value: 'groq',
@@ -93,15 +114,67 @@ export const providerSetupSources: ProviderSetupSource[] = [
   {
     benchmarkConcurrency: 2,
     defaultEndpoint: 'http://localhost:11434/v1',
+    kind: 'openai-compatible',
     label: 'Ollama',
     probeModels: true,
     value: 'ollama',
   },
   {
     benchmarkConcurrency: 2,
+    kind: 'openai-compatible',
     label: 'Manual model entry',
     probeModels: false,
     value: 'manual',
+  },
+  // NOTICE: Launch command adapted from `https://github.com/agentclientprotocol/registry/blob/1b16fc11f382572ad88d5b19a96f040a71383846/claude-acp/agent.json#L13-L16`.
+  {
+    args: ['-y', '@agentclientprotocol/claude-agent-acp'],
+    command: 'npx',
+    defaultProviderId: 'claude-code',
+    kind: 'acp',
+    label: 'Claude Code (ACP)',
+    model: { id: 'claude-code', name: 'Claude Code' },
+    value: 'claudeCodeAcp',
+  },
+  // NOTICE: Launch command adapted from `https://github.com/agentclientprotocol/codex-acp/blob/0d45a13c2618e8175a24d0bb080a482c7920f291/README.md#L20-L26`.
+  {
+    args: ['-y', '@agentclientprotocol/codex-acp'],
+    command: 'npx',
+    defaultProviderId: 'codex',
+    kind: 'acp',
+    label: 'Codex (ACP)',
+    model: { id: 'codex', name: 'Codex' },
+    value: 'codexAcp',
+  },
+  // NOTICE: Launch command adapted from `https://github.com/agentclientprotocol/registry/blob/1b16fc11f382572ad88d5b19a96f040a71383846/gemini/agent.json#L12-L18`.
+  {
+    args: ['-y', '@google/gemini-cli', '--acp'],
+    command: 'npx',
+    defaultProviderId: 'gemini-cli',
+    kind: 'acp',
+    label: 'Gemini CLI (ACP)',
+    model: { id: 'gemini-cli', name: 'Gemini CLI' },
+    value: 'geminiCliAcp',
+  },
+  // NOTICE: Launch command adapted from `https://github.com/MoonshotAI/kimi-code/blob/0b2e803d5e71afaab45212bb2ee6117ecbf8bbc9/docs/en/reference/kimi-acp.md#L1-L12`.
+  {
+    args: ['acp'],
+    command: 'kimi',
+    defaultProviderId: 'kimi-code',
+    kind: 'acp',
+    label: 'Kimi Code CLI (ACP)',
+    model: { id: 'kimi-code', name: 'Kimi Code CLI' },
+    value: 'kimiCliAcp',
+  },
+  // NOTICE: Launch command adapted from `https://github.com/anomalyco/opencode/blob/284214c78d32a09fd9c729bdefc07be50f74eb40/packages/web/src/content/docs/acp.mdx#L28-L39`.
+  {
+    args: ['acp'],
+    command: 'opencode',
+    defaultProviderId: 'opencode',
+    kind: 'acp',
+    label: 'OpenCode (ACP)',
+    model: { id: 'opencode', name: 'OpenCode' },
+    value: 'openCodeAcp',
   },
 ]
 
@@ -160,11 +233,13 @@ export function findProviderSetupSource(value: ProviderSetupSource['value']): Pr
   return providerSetupSources.find(source => source.value === value)
 }
 
-export function findProviderSetupSourceByEndpoint(endpoint: string | URL): ProviderSetupSource | undefined {
+export function findProviderSetupSourceByEndpoint(endpoint: string | URL): OpenAICompatibleProviderSetupSource | undefined {
   const normalizedEndpoint = endpoint instanceof URL ? endpoint.toString() : new URL(endpoint).toString()
 
-  return providerSetupSources.find(source =>
-    source.defaultEndpoint !== undefined && new URL(source.defaultEndpoint).toString() === normalizedEndpoint,
+  return providerSetupSources.find((source): source is OpenAICompatibleProviderSetupSource =>
+    source.kind === 'openai-compatible'
+    && source.defaultEndpoint !== undefined
+    && new URL(source.defaultEndpoint).toString() === normalizedEndpoint,
   )
 }
 

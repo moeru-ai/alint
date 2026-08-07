@@ -57,6 +57,11 @@ export async function runProviderEditor(
   promptPort?: ProviderEditorPromptPort,
 ): Promise<ProviderEditorResult> {
   const prompts = promptPort ?? createProviderEditorPrompts(await import('@clack/prompts'))
+
+  if (input.source.kind === 'acp') {
+    return runAcpProviderEditor(input, input.source, prompts)
+  }
+
   const existingProvider = input.mode === 'update' ? input.existingProvider : undefined
   const configuredHeaders = { ...existingProvider?.headers }
   const initialHeaders = applyHeaderSelection(
@@ -261,6 +266,40 @@ export async function runProviderEditor(
   }
 }
 
+function createAcpProvider(
+  source: Extract<ProviderEditorInput['source'], { kind: 'acp' }>,
+  providerId: string,
+): ProviderDefinition {
+  return {
+    id: providerId,
+    models: [{
+      ...(source.args === undefined ? {} : { args: [...source.args] }),
+      capabilities: ['tool-call'],
+      command: source.command,
+      driver: 'acp',
+      ...source.model,
+    }],
+  }
+}
+
+function createAcpSummary(
+  input: ProviderEditorInput,
+  provider: ProviderDefinition,
+  defaultAliasTarget: DefaultAliasTarget | undefined,
+): string {
+  const model = provider.models[0]!
+
+  return [
+    `${input.mode === 'create' ? 'Create' : 'Update'} provider?`,
+    `Provider: ${escapeLineValue(provider.id)}`,
+    'Driver: ACP',
+    `Command: ${escapeLineValue('command' in model ? model.command : '-')}`,
+    `Arguments: ${'args' in model ? formatSummaryValues(model.args ?? []) : '(none)'}`,
+    `Model: ${escapeLineValue(model.id)}`,
+    `Default: ${defaultAliasTarget === undefined ? 'unchanged' : escapeLineValue(`${defaultAliasTarget.providerId}/${defaultAliasTarget.modelId}`)}`,
+  ].join('\n')
+}
+
 function createProvider(
   input: ProviderEditorInput,
   draft: EditorDraft,
@@ -305,6 +344,112 @@ function effectiveHeaders(draft: EditorDraft): Record<string, string> | undefine
 
 function formatSummaryValues(values: readonly string[]): string {
   return values.length > 0 ? values.map(escapeLineValue).join(', ') : '(none)'
+}
+
+/**
+ * Runs the preset-backed ACP branch of the provider editor.
+ *
+ * Triggering workflow:
+ *
+ * {@link runInteractiveSetup}
+ *   -> {@link runProviderEditor}
+ *     -> `provider-editor.acp-preset`
+ *       -> {@link runAcpProviderEditor}
+ *
+ * Upstream:
+ * - {@link runProviderEditor}
+ *
+ * Downstream:
+ * - {@link ProviderEditorResult} and the caller-owned setup-config write
+ */
+async function runAcpProviderEditor(
+  input: ProviderEditorInput,
+  source: Extract<ProviderEditorInput['source'], { kind: 'acp' }>,
+  prompts: ProviderEditorPromptPort,
+): Promise<ProviderEditorResult> {
+  let defaultAliasTarget: DefaultAliasTarget | undefined
+  let providerId = input.existingProvider?.id ?? source.defaultProviderId
+  let step: 'confirm' | 'defaultAction' | 'defaultModel' | 'providerId' = 'providerId'
+
+  while (true) {
+    if (step === 'providerId') {
+      const result = await prompts.providerId(providerId, input.mode === 'create')
+      if (result.status === 'cancelled') {
+        return { status: 'cancelled' }
+      }
+      if (result.status === 'back') {
+        return { status: 'back' }
+      }
+
+      providerId = result.value.trim()
+      step = 'defaultAction'
+      continue
+    }
+
+    const provider = createAcpProvider(source, providerId)
+
+    if (step === 'defaultAction') {
+      const result = await prompts.defaultAction(source.model.id)
+      if (result.status === 'cancelled') {
+        return { status: 'cancelled' }
+      }
+      if (result.status === 'back') {
+        step = 'providerId'
+        continue
+      }
+
+      defaultAliasTarget = result.value === 'yes'
+        ? { modelId: source.model.id, providerId }
+        : undefined
+      step = result.value === 'selectAnother' ? 'defaultModel' : 'confirm'
+      continue
+    }
+
+    if (step === 'defaultModel') {
+      const provisionalConfig = mergeSetupConfigs(input.config, { providers: [provider], version: 1 })
+      const candidates = createDefaultModelCandidates(
+        provisionalConfig,
+        provider.id,
+        [source.model.id],
+      )
+      const selectedDefault = await prompts.defaultModel(candidates.map(candidate => ({
+        hint: candidate.isCurrentDefault ? 'current default' : candidate.isNew ? 'new' : undefined,
+        label: candidate.label,
+        value: candidate.value,
+      })))
+      if (selectedDefault.status === 'cancelled') {
+        return { status: 'cancelled' }
+      }
+      if (selectedDefault.status === 'back') {
+        step = 'defaultAction'
+        continue
+      }
+
+      const candidate = candidates.find(item => item.value === selectedDefault.value)
+      if (candidate === undefined) {
+        return { status: 'cancelled' }
+      }
+
+      defaultAliasTarget = { modelId: candidate.modelId, providerId: candidate.providerId }
+      step = 'confirm'
+      continue
+    }
+
+    const confirmed = await prompts.confirm(createAcpSummary(input, provider, defaultAliasTarget))
+    if (confirmed.status === 'cancelled' || (confirmed.status === 'submitted' && confirmed.value === 'no')) {
+      return { status: 'cancelled' }
+    }
+    if (confirmed.status === 'back') {
+      step = 'defaultAction'
+      continue
+    }
+
+    return {
+      ...(defaultAliasTarget === undefined ? {} : { defaultAliasTarget }),
+      provider,
+      status: 'confirmed',
+    }
+  }
 }
 
 function splitInput(value: string): string[] {

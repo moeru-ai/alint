@@ -80,7 +80,7 @@ Other OpenAI-compatible consumers can use the resulting ordinary provider endpoi
 
 ```toml
 [[providers]]
-id = "local-acp"
+id = "acp"
 type = "openai-compatible"
 endpoint = "http://127.0.0.1:7419/v1"
 ```

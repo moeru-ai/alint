@@ -131,7 +131,7 @@ acp.agent({ name: 'alint-e2e-agent' })
 
     await writeSetupConfig(setupPath, {
       providers: [{
-        id: 'local-acp',
+        id: 'acp',
         models: [{
           aliases: ['default'],
           args: runtime === 'fake' ? [agentPath] : parseIntegrationArgs(process.env.ALINT_ACP_E2E_ARGS_JSON),
@@ -149,7 +149,7 @@ acp.agent({ name: 'alint-e2e-agent' })
       '--format',
       'json',
       '--model',
-      'local-acp/reviewer',
+      'acp/reviewer',
       '--timeout-ms',
       '180000',
       'demo.ts',
@@ -163,7 +163,7 @@ acp.agent({ name: 'alint-e2e-agent' })
     expect(exitCode, stderr.join('')).toBe(0)
     expect(JSON.parse(stdout.join('')).diagnostics).toMatchObject([{
       message: 'Use a named constant.',
-      model: { providerId: 'local-acp', resolvedId: 'reviewer' },
+      model: { providerId: 'acp', resolvedId: 'reviewer' },
       ruleId: 'e2e/review',
     }])
     expect(stderr.join('')).toBe('')
