@@ -50,7 +50,7 @@ You also need at least one OpenAI-compatible model provider. Local providers suc
 
 ### Install the CLI
 
-Download a standalone binary from the GitHub release assets when you want to use `alint` without a Node.js toolchain.
+Download a standalone binary from the GitHub release assets if you want to use `alint` without a Node.js toolchain.
 
 Install globally if you want an `alint` command available everywhere:
 
@@ -70,29 +70,6 @@ npx alint src
 pnpm add -D @alint-js/cli
 pnpm exec alint src
 ```
-
-### Install the Codex plugin (optional)
-
-Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
-
-```bash
-codex plugin marketplace add moeru-ai/alint \
-  --sparse .agents/plugins \
-  --sparse plugins/alint
-codex plugin add alint@alint
-```
-
-To install a release, use its Git tag:
-
-```bash
-codex plugin marketplace add moeru-ai/alint \
-  --ref vX.Y.Z \
-  --sparse .agents/plugins \
-  --sparse plugins/alint
-codex plugin add alint@alint
-```
-
-Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
 
 ### Configure a Model Provider
 
@@ -184,6 +161,8 @@ alint demo.ts
 alint --format json demo.ts
 ```
 
+#### --dirty
+
 Use `--dirty` without file arguments to lint only existing files that differ from `HEAD`:
 
 ```bash
@@ -192,11 +171,17 @@ alint --dirty
 
 This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. A clean repository exits successfully without producing lint output.
 
+This will excludes any of submodule folder.
+
+#### --model
+
 Override the matched model for a one-off run:
 
 ```bash
 alint --model qwen:8b demo.ts
 ```
+
+#### --lang
 
 When the project-local setup does not configure any models, model calls without a rule-level or call-level selector use the `default` alias from the global setup. Rule selectors continue to use normal model matching. Configuring at least one model in `.alint/config.toml` restores project-first matching for unselected calls. An explicit `--model` override always takes precedence.
 
@@ -271,6 +256,54 @@ It resolves the alint executable from the `alint.path` setting, then `node_modul
 the workspace folder, then `PATH`. The workspace install wins so that the server and the alint you
 run in a terminal share one cache.
 
+### Codex stop-gate plugin (optional)
+
+#### Install
+Codex plugin introduce a stop-gate hook to run `alint --dirty` every time your agent end its turn.
+
+Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --sparse .agents/plugins \
+  --sparse plugins/alint
+codex plugin add alint@alint
+```
+
+To install from a release, use its Git tag:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --ref vX.Y.Z \
+  --sparse .agents/plugins \
+  --sparse plugins/alint
+codex plugin add alint@alint
+```
+
+Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
+
+#### Configure
+
+The codex plugin explicitly requires per-repo enable. Use this command to enable for current repository:
+
+- .toml: run `alint config integrations stop-gate enable`
+- .js/.ts:
+```typescript
+export default defineConfig([
+    //...
+    {
+        integrations: {
+            stopGate: {
+                enabled: true,
+                // target: 'dirty-files' | 'all'
+                // timeoutMs: 900000
+            },
+        },
+    },
+    //...
+])
+```
+
 ## Concepts
 
 `alint` keeps the familiar lint shape: select targets, apply named rules, report diagnostics, and return an exit code that CI can understand. The difference is that a rule can reach its judgment through model calls or a tool-using agent when syntax-only checks are not enough.
@@ -308,7 +341,7 @@ thinking = { type = "disabled" }
 
 `default_params` is merged into every chat request for that model. Use it for provider-specific request fields that are not covered by the rest of the model entry.
 
-The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode. Put a custom machine-specific command in the global setup config, or in `.alint/config.toml` when the repository standardizes the same command for every contributor:
+The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode:
 
 ```toml
 version = 1
@@ -327,15 +360,7 @@ args = []
 cwd = "."
 ```
 
-Then select it like any other model:
-
-```bash
-alint --model acp/codex src
-```
-
-`alint.config.ts` remains the shareable lint policy: it selects models, plugins, and rules but does not launch processes. The CLI merges global setup with `.alint/config.toml`, starts a loopback OpenAI-compatible adapter for the run, and shuts it down afterward. Each concurrent model request gets its own ACP process, so `--rule-concurrency` also bounds how many coding-agent processes a run can require.
-
-The command inherits the environment that launched `alint`. Optional `[providers.models.env]` entries override individual variables, but setup TOML does not interpolate variables. Do not commit credentials into the table. Request tools require the ACP agent to support MCP over HTTP.
+Then run `alint --model acp/codex src`. The checked-in `alint.config.ts` remains lint policy; process commands come only from global setup or `.alint/config.toml`. The command inherits the environment that launched `alint`; optional model `env` entries are literal overrides and should not contain committed credentials. Each concurrent request starts one ACP process, and request tools require MCP-over-HTTP support from the agent.
 
 `alint` structured output forces a tool call (`tool_choice`). Some models, such as DeepSeek V4, reject that combination while thinking/reasoning is enabled. For those models, set `thinking = { type = "disabled" }` as above so structured output can run.
 
