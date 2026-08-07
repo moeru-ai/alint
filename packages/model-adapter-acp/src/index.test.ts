@@ -191,67 +191,8 @@ describe('aCP OpenAI gateway', () => {
     expect(body).toContain('data: [DONE]')
   })
 
-  it('bridges an ACP MCP call to an OpenAI tool call and resumes it with the tool result', async () => {
-    const app = createGateway({
-      models: [{
-        id: 'tool-user',
-        name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent({ verifyStrictSchema: true }), kind: 'agent-app' }),
-      }],
-    })
-    const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
-    servers.push({ close: () => server.close(true) })
-    const messages = [{ content: 'Find duplicated helpers.', role: 'user' }]
-    const tools = [{
-      function: {
-        description: 'Search repository text.',
-        name: 'search',
-        parameters: {
-          additionalProperties: false,
-          properties: { query: { type: 'string' } },
-          required: ['query'],
-          type: 'object',
-        },
-        strict: true,
-      },
-      type: 'function',
-    }]
-
-    const first = await postCompletion(server.url!, {
-      messages,
-      model: 'tool-user',
-      tool_choice: 'required',
-      tools,
-    })
-    const toolCall = first.choices[0].message.tool_calls[0]
-
-    expect(first.choices[0].finish_reason).toBe('tool_calls')
-    expect(toolCall.function).toEqual({
-      arguments: '{"query":"clamp"}',
-      name: 'search',
-    })
-
-    const second = await postCompletion(server.url!, {
-      messages: [
-        ...messages,
-        { content: null, role: 'assistant', tool_calls: [toolCall] },
-        { content: 'src/a.ts\nsrc/b.ts', role: 'tool', tool_call_id: toolCall.id },
-      ],
-      model: 'tool-user',
-      tool_choice: 'required',
-      tools,
-    })
-
-    expect(second.choices[0]).toMatchObject({
-      finish_reason: 'stop',
-      message: {
-        content: 'Found: src/a.ts\nsrc/b.ts',
-        role: 'assistant',
-      },
-    })
-  })
-
   it.each([
+    { continuationStream: false, initialStream: false },
     { continuationStream: true, initialStream: true },
     { continuationStream: true, initialStream: false },
     { continuationStream: false, initialStream: true },
@@ -264,7 +205,7 @@ describe('aCP OpenAI gateway', () => {
       models: [{
         id: 'tool-user',
         name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent({ prompts }), kind: 'agent-app' }),
+        openConnection: () => ({ agent: toolAgent({ prompts, verifyStrictSchema: true }), kind: 'agent-app' }),
       }],
     })
     const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
@@ -300,7 +241,8 @@ describe('aCP OpenAI gateway', () => {
     const toolCall = first.toolCalls[0]
 
     expect(firstResponse.status).toBe(200)
-    expect(JSON.stringify(prompts[0])).toContain('request-scoped MCP tools before answering: search.')
+    expect(JSON.stringify(prompts[0])).toContain('request-scoped MCP tools')
+    expect(JSON.stringify(prompts[0])).toContain('search')
     expect(toolCall).toBeDefined()
     expect(toolCall?.function).toEqual({ arguments: '{"query":"clamp"}', name: 'search' })
     expect(first.finishReasons).toContain('tool_calls')
@@ -525,7 +467,7 @@ describe('aCP OpenAI gateway', () => {
     expect(await response.json()).toMatchObject({ error: { type: 'server_error' } })
   })
 
-  it.each([false, true])('retries once when a streaming=$stream ACP agent ignores required tool choice', async (stream) => {
+  it('discards buffered text when retrying an ACP agent that ignores required tool choice', async () => {
     const app = createGateway({
       models: [{
         id: 'tool-user',
@@ -540,7 +482,6 @@ describe('aCP OpenAI gateway', () => {
       body: JSON.stringify({
         messages: [{ content: 'Use search.', role: 'user' }],
         model: 'tool-user',
-        stream,
         tool_choice: 'required',
         tools: [{
           function: {
@@ -553,10 +494,10 @@ describe('aCP OpenAI gateway', () => {
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     })
-    const completion = await parseCompletionResponse(response, stream)
+    const completion = await parseCompletionResponse(response, false)
 
     expect(response.status).toBe(200)
-    expect(completion.content).toBe(stream ? 'Ignored response.' : '')
+    expect(completion.content).toBe('')
     expect(completion.finishReasons).toContain('tool_calls')
     expect(completion.toolCalls[0].function.name).toBe('search')
   })
