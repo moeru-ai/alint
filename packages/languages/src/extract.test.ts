@@ -237,7 +237,7 @@ function functionsOf(targets: readonly SourceTarget[]): SourceTarget[] {
   return targets.filter(target => target.kind === 'function')
 }
 
-/** `metadata` is `Record<string, unknown>`, so `FunctionInfo` holds by convention and is read as such. */
+/** TypeScript knows `metadata` holds JSON values, not that `function` holds a `FunctionInfo`. */
 function infoOf(target: SourceTarget): FunctionInfo {
   const info = target.metadata?.function
 

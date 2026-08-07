@@ -12,11 +12,12 @@ import { QUERIES } from './queries'
 const queries = new Map<LanguageId, Parser.Query>()
 
 /**
- * One file target carrying every call site, then one function target per function, each with the
- * `FunctionInfo` a consumer would otherwise need its own parser to work out.
+ * One file target holding every call site, then one function target per function. Each function
+ * target carries a `FunctionInfo`, so a consumer can fingerprint or classify it without parsing
+ * anything itself.
  *
- * The language comes from the file rather than a second argument, because every target carries that
- * same file and the two could then disagree. Pass the file through `withLanguage` first.
+ * The language is read off the file rather than passed in as an argument. Every target carries that
+ * same file, so an argument could only ever contradict it. Stamp the file with `withLanguage` first.
  */
 export async function extractTargets(file: SourceFile): Promise<SourceTarget[]> {
   if (!isLanguageId(file.language)) {
@@ -195,7 +196,7 @@ function holdsBlock(node: Parser.SyntaxNode): boolean {
   return false
 }
 
-/** Reachable from outside its file. Go says it with a capital, Python with the absence of a leading underscore, Rust with `pub`. */
+/** Reachable from outside its file: a capital in Go, no leading underscore in Python, `pub` in Rust. */
 function isExported(node: Parser.SyntaxNode, language: LanguageId, name: string): boolean {
   switch (language) {
     case 'go':
@@ -212,7 +213,7 @@ function rangeOf(node: Parser.SyntaxNode): SourceRange {
   return { end: node.endIndex, start: node.startIndex }
 }
 
-/** Rebases the ranges inside `outer` onto the function's own `text`, which is where `FunctionInfo` says they point. */
+/** Turns absolute file offsets into offsets within the function's own `text`, as `FunctionInfo` documents. */
 function rangesInside(ranges: readonly SourceRange[], outer: SourceRange): SourceRange[] {
   return ranges
     .filter(range => range.start >= outer.start && range.end <= outer.end)
@@ -222,10 +223,11 @@ function rangesInside(ranges: readonly SourceRange[], outer: SourceRange): Sourc
 /**
  * Adds the function's own name to its renameable identifiers.
  *
- * This only has anything to add for a Go method, whose name is a `field_identifier` rather than an
- * `identifier`. The Go query leaves `field_identifier` out on purpose, because reading a struct
- * field is not renameable, but a method naming itself is. Every other name the queries capture is
- * already an `@identifier`, so the dedupe by start offset drops the second copy.
+ * In practice this only matters for Go methods, whose name is a `field_identifier`. The Go query
+ * skips `field_identifier` on purpose: a consumer that replaces renameable names would otherwise
+ * make `entry.name` and `entry.size` look identical. A method's own name is safe to replace. Every
+ * other name the queries capture is already an `@identifier`, so the dedupe by start offset drops
+ * the duplicate.
  */
 function withOwnName(
   ranges: SourceRange[],

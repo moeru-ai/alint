@@ -10,7 +10,7 @@ This package provides the core SDK and run engine APIs used by plugins, rules, l
 - `runAlint`
 - rule registry and flat config normalization
 - source runtime helpers
-- built-in JavaScript source extraction
+- built-in JavaScript source extraction, with additional language support for others
 - model resolution by size and capability
 - diagnostics and progress payload types
 - framework-neutral agent contracts under `@alint-js/core/agent`
@@ -104,6 +104,60 @@ description defaults to the schema's valibot `description(...)`. `toolParameters
 `formatSourceWithLineNumbers`, and `formatOutputLanguageInstruction` are exported for callers
 that build their own tools or prompts. Use `ctx.agent` instead when the model needs to
 explore with tools before answering, because a forced tool call is a single shot, not a loop.
+
+### Languages
+
+Core parses JavaScript and TypeScript. Everything else is registered by a plugin, so a rule says
+which languages it can read and core decides what to hand it:
+
+```ts
+defineRule({
+  create: () => ({ onTargetFunction: (target) => { /* ... */ } }),
+  languages: 'any',
+})
+```
+
+| `languages` | the rule receives | a named language nothing registered |
+| --- | --- | --- |
+| omitted | file targets only, never functions or classes | not applicable |
+| `'any'` | every language except `plaintext` | never fails |
+| `['go', 'rust']` | those languages only | run fails, `alint/missing-language` |
+| `{ ids: ['go'], skipMissing: true }` | those languages only | skipped quietly |
+
+`'any'` excludes `plaintext` on purpose. Plain text is what a file falls back to when no language
+claims its extension, so a rule that asked for a language would otherwise be handed unparsed text.
+When that happens the run reports `alint/unregistered-language` once per extension — a warning by
+default, configurable through `linterOptions.reportUnregisteredLanguages`.
+
+Declaring a list is the stricter choice. It fails the run when the user has not installed a pack
+that provides one of them, rather than letting the rule match nothing and look like a pass.
+
+A plugin registers a language by describing how to turn a file into targets:
+
+```ts
+definePlugin({
+  languages: {
+    zig: {
+      extensions: ['.zig'],
+      extract: file => [/* SourceTarget[] */],
+      name: 'zig',
+    },
+  },
+})
+```
+
+Ids are the identifiers editors use — `go`, `python`, `typescript`, `plaintext`. Registering fails
+on a duplicate name or extension, so two plugins can never claim the same language.
+
+Put a `FunctionInfo` under `metadata.function` on each function target, and the file's call sites
+under `metadata.calls` on the file target. Those two keys are what let a rule read any language
+without a parser of its own.
+
+`@alint-js/languages` provides Go, Python and Rust this way.
+
+To parse a file the run was not asked to lint, such as when building a workspace-wide index, use
+`ctx.src.extract(path)`. It resolves that file's own config and language, and returns nothing for a
+file the config ignores rather than throwing.
 
 ## When to use
 

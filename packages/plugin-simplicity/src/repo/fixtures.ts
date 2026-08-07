@@ -53,9 +53,9 @@ export async function createFixtureIndex(): Promise<RepoIndex> {
 /**
  * The runtime a real run hands a rule, assembled the way `runAlint` assembles it.
  *
- * Built rather than stubbed so the tests go through the real config resolution and language lookup.
- * The config below says what a user's config has to say: the fixtures include Go, Python and Rust,
- * and those only resolve once `@alint-js/languages` is registered.
+ * Built rather than stubbed, so these tests exercise the real config resolution and language
+ * lookup. The config below mirrors what a user's own config needs: the fixtures include Go, Python
+ * and Rust, which only resolve once `@alint-js/languages` is registered.
  */
 export function createFixtureRuntime(): SourceRuntime {
   const config = defineConfig([{

@@ -8,11 +8,11 @@ export function targetIdentity(kind: SourceTargetKind, name: string | undefined,
 /**
  * Swaps a target's positional identity for its name, where that name is unique among these targets.
  *
- * Identities key caches, so a function that only moved should keep the identity it had. Two targets
- * sharing a name cannot be told apart that way, so both keep the positional form.
+ * Caches are keyed by identity, so a function that only moved should keep the identity it had. Two
+ * targets sharing a name cannot be told apart by name, so those keep the positional form.
  *
- * Run every function and class target through this. Skip it in one producer and the same function
- * ends up with a different identity depending on which language read it.
+ * Run every function and class target through this. Miss it in one language and the same function
+ * gets a different identity depending on which language read it.
  */
 export function withStableIdentities(targets: readonly SourceTarget[]): SourceTarget[] {
   const nameCounts = new Map<string, number>()

@@ -3,14 +3,14 @@ import { dirname, join } from 'node:path'
 
 import Parser from 'web-tree-sitter'
 
-// `web-tree-sitter` is pinned to 0.24.x, and it moves together with `tree-sitter-wasms`
-// 0.1.x. 0.25 rewrote the WASM loader, and both it and 0.26 reject these prebuilt grammars, which
-// still carry the legacy `dylink` section. Unpin only once a `tree-sitter-wasms` release ships
-// grammars the newer loader accepts.
+// Pinned to `web-tree-sitter` 0.24.x, which has to be upgraded together with `tree-sitter-wasms`.
+// 0.25 rewrote the WASM loader, and both 0.25 and 0.26 reject the prebuilt 0.1.x grammars, because
+// those still carry the legacy `dylink` section. Unpin only once `tree-sitter-wasms` ships grammars
+// the newer loader accepts.
 
-// Grammars are read from `node_modules` at run time rather than bundled, which is why this package
-// has to be installed with a package manager. The plugin store extracts a single tarball and
-// installs no dependencies, so it can never serve this one.
+// Grammars are read from `node_modules` at run time rather than bundled, so this package has to be
+// installed by a package manager. The plugin store extracts a single tarball and installs no
+// dependencies, so it cannot distribute this package.
 const nodeRequire = createRequire(import.meta.url)
 const grammarDir = join(dirname(nodeRequire.resolve('tree-sitter-wasms/package.json')), 'out')
 

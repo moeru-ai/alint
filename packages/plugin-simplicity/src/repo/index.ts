@@ -151,9 +151,9 @@ async function buildRepoIndex(ctx: RuleContext, options: RepoIndexOptions): Prom
 /**
  * Every call in the file, which a language reports on its file target.
  *
- * Checked rather than cast, because `metadata` is `Record<string, unknown>` and any language may
- * write what it likes there. A wrong shape would skew the usage counts instead of failing, so it is
- * better to count nothing than to trust it.
+ * TypeScript knows `metadata` holds JSON values. It does not know `calls` holds call sites, so the
+ * shape is checked here rather than cast. Bad data would quietly skew the usage counts, and
+ * counting nothing is safer than counting the wrong thing.
  */
 function callsOf(target: SourceTarget): CallSite[] {
   const calls = target.metadata?.calls

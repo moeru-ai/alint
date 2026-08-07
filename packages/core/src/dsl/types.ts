@@ -215,8 +215,10 @@ export interface RuleInferenceUsageRecord {
 }
 
 /**
- * - `'any'` — every registered language, and never a failure. A rule that works from `FunctionInfo`
- *   alone wants this: a language pack the user installs later is covered without a new release.
+ * - `'any'` — every language except `plaintext`, and never a failure. Plain text is what a file
+ *   falls back to when no language claims it, so a rule asking for any language is asking for a
+ *   real one. Rules that work from `FunctionInfo` alone want this: install another language pack
+ *   and they cover it too, unchanged.
  * - A list of language ids — `LanguageDefinition.name` values such as `go` or `typescript`, never
  *   file extensions. The rule handles exactly these. Files of other languages are skipped
  *   rather than failed, so one plugin can carry rules for several languages behind one `files:`

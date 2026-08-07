@@ -21,7 +21,7 @@ flowchart TB
   subgraph idx ["Repo index — Once per run, no token cost"]
     direction TB
     files["Every parseable file in the workspace"]
-    files --> parse["Parse and query by tree-sitter"]
+    files --> parse["Function targets from each language"]
     parse --> keep{"Small helper?<br/>within maxLines, at least minTokens"}
     keep -->|no| skip["Not indexed"]
     keep -->|yes| helpers["Indexed with its facts:<br/>exact fingerprint, alpha fingerprint,<br/>usage count, whether exported"]
@@ -191,6 +191,7 @@ judgement needs is already in hand and there is nothing to search for.
 The rules read whole files and parse them internally, so they take plain-text targets:
 
 ```js
+import languagesPlugin from '@alint-js/languages'
 import simplicityPlugin from '@alint-js/plugin-simplicity'
 
 import { createApeiraAdapter } from '@alint-js/agent-apeira'
@@ -202,8 +203,8 @@ export default defineConfig([
     // still runs.
     agent: createApeiraAdapter(),
     files: ['**/*.{js,jsx,ts,tsx,mjs,cjs,mts,cts,rs,go,py}'],
-    language: 'plaintext',
     plugins: {
+      languages: languagesPlugin,
       simplicity: simplicityPlugin,
     },
     rules: {
