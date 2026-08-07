@@ -1432,7 +1432,7 @@ export default [
   {
     name: 'custom config',
     files: ['**/*.go'],
-    language: 'text/markdown',
+    language: 'markdown',
     rules: {
       'custom/file': 'error',
     },
@@ -1452,7 +1452,7 @@ export default [
 
     expect(code).toBe(0)
     expect(io.stdoutText).toContain('  - custom config')
-    expect(io.stdoutText).toContain('language: text/markdown')
+    expect(io.stdoutText).toContain('language: markdown')
     expect(io.stdoutText).toContain('  custom/file: error')
     expect(io.stdoutText).not.toContain('default config')
     expect(io.stdoutText).not.toContain('default/file')
@@ -1466,7 +1466,7 @@ export default [
   {
     name: 'custom config',
     files: ['**/*.go'],
-    language: 'text/markdown',
+    language: 'markdown',
     rules: {
       'custom/file': 'error',
     },
@@ -1486,7 +1486,7 @@ export default [
 
     expect(code).toBe(0)
     expect(io.stdoutText).toContain('  - custom config')
-    expect(io.stdoutText).toContain('language: text/markdown')
+    expect(io.stdoutText).toContain('language: markdown')
     expect(io.stdoutText).toContain('  custom/file: error')
     expect(io.stderrText).toBe('')
   })
