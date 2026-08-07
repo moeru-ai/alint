@@ -28,20 +28,28 @@ export interface SessionState {
   updatedAt: string
 }
 
-export interface StopGateEnvelope {
+export type StopGateEnvelope
+  = | StopGateEnvelopeBase & {
+    findingsHash: string
+    reportPath: string
+    status: 'errors' | 'warnings'
+  }
+  | StopGateEnvelopeBase & {
+    message: string
+    status: 'runtime-error'
+  }
+  | StopGateEnvelopeBase & {
+    status: 'clean'
+  }
+  | StopGateEnvelopeBase & {
+    status: 'inactive'
+  }
+  | StopGateEnvelopeBase & {
+    status: 'no-dirty-files'
+  }
+
+interface StopGateEnvelopeBase {
   errorCount: number
-  findingsHash?: string
-  message?: string
-  reportPath?: string
   schemaVersion: 2
-  status: StopGateStatus
   warningCount: number
 }
-
-export type StopGateStatus
-  = | 'clean'
-    | 'errors'
-    | 'inactive'
-    | 'no-dirty-files'
-    | 'runtime-error'
-    | 'warnings'
