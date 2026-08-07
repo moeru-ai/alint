@@ -98,22 +98,21 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 			lastFindings: void 0,
 			runtimeFailures: state.runtimeFailures + 1
 		});
-		const message = envelope.message ?? "alint Stop Gate failed with an unknown runtime error.";
 		return {
 			decision: next.runtimeFailures === 1 ? {
 				decision: "block",
-				reason: runtimeFailureMessage(message)
-			} : { systemMessage: runtimeFailureMessage(message) },
+				reason: runtimeFailureMessage(envelope.message)
+			} : { systemMessage: runtimeFailureMessage(envelope.message) },
 			state: next
 		};
 	}
 	const lintRounds = state.lintRounds + 1;
-	const repeatedFindings = envelope.status === "errors" || envelope.status === "warnings" ? state.lastFindings?.findingsHash === requiredFindingsHash(envelope) : false;
+	const repeatedFindings = envelope.status === "errors" || envelope.status === "warnings" ? state.lastFindings?.findingsHash === envelope.findingsHash : false;
 	const next = updateState(state, now, {
 		lastFindings: envelope.status === "errors" || envelope.status === "warnings" ? {
 			errorCount: envelope.errorCount,
-			findingsHash: requiredFindingsHash(envelope),
-			reportPath: requiredReportPath(envelope),
+			findingsHash: envelope.findingsHash,
+			reportPath: envelope.reportPath,
 			status: envelope.status,
 			warningCount: envelope.warningCount
 		} : void 0,
@@ -124,12 +123,12 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 		decision: {},
 		state: next
 	};
-	const message = findingMessage(next, requiredReportPath(envelope));
+	const message = findingMessage(next, envelope.reportPath);
 	return {
 		decision: (envelope.status === "errors" ? lintRounds < maximumLintRounds && !repeatedFindings : lintRounds === 1) ? {
 			decision: "block",
 			reason: message
-		} : { systemMessage: repeatedFindings ? repeatedFindingsMessage(next, requiredReportPath(envelope)) : message },
+		} : { systemMessage: repeatedFindings ? repeatedFindingsMessage(next, envelope.reportPath) : message },
 		state: next
 	};
 }
@@ -153,14 +152,6 @@ function repeatedFindingsMessage(state, reportPath) {
 	const findings = state.lastFindings;
 	if (findings === void 0) return "";
 	return `alint-plugin: The same ${findings.errorCount} error(s) and ${findings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${reportPath}".`;
-}
-function requiredFindingsHash(envelope) {
-	if (envelope.findingsHash === void 0 || envelope.findingsHash.length === 0) throw new Error("alint Stop Gate did not return a findings hash for its diagnostics.");
-	return envelope.findingsHash;
-}
-function requiredReportPath(envelope) {
-	if (envelope.reportPath === void 0 || envelope.reportPath.length === 0) throw new Error("alint Stop Gate did not return a report path for its diagnostics.");
-	return envelope.reportPath;
 }
 function updateState(state, now, patch) {
 	return {
@@ -497,12 +488,12 @@ const R = (e, t, n) => {
 };
 const z = R;
 //#endregion
-//#region src/runner.ts
-const startupTimeoutMs = 6e4;
-const stderrExcerptLimitBytes = 4096;
-const stderrTruncationMarker = "\n... stderr truncated ...\n";
+//#region src/repository.ts
+const startupTimeoutMs$1 = 6e4;
+const stderrExcerptLimitBytes$1 = 4096;
+const stderrTruncationMarker$1 = "\n... stderr truncated ...\n";
 async function findGitRoot(cwd) {
-	const execution = R("git", ["rev-parse", "--show-toplevel"], commandOptions(cwd, startupTimeoutMs));
+	const execution = R("git", ["rev-parse", "--show-toplevel"], commandOptions$1(cwd));
 	const result = await execution;
 	if (execution.killed) throw new Error("Git root discovery exceeded the 1 minute startup limit.");
 	if (result.exitCode !== 0) return;
@@ -516,27 +507,135 @@ async function isHeadDetached(gitRoot) {
 		"symbolic-ref",
 		"--quiet",
 		"HEAD"
-	], commandOptions(gitRoot, startupTimeoutMs));
+	], commandOptions$1(gitRoot));
 	const result = await execution;
 	if (execution.killed) throw new Error("Git HEAD inspection exceeded the 1 minute startup limit.");
 	if (result.exitCode === 0) return false;
 	if (result.exitCode === 1) return true;
-	const detail = truncateStderr(result.stderr.trim());
+	const detail = truncateStderr$1(result.stderr.trim());
 	throw new Error(detail.length === 0 ? `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"} and produced no stderr output.` : `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"}: ${detail}`);
 }
-async function resolveAlintStopGate(gitRoot) {
-	const commands = await resolveCommands(gitRoot);
-	const startupDeadline = Date.now() + startupTimeoutMs;
-	for (const command of commands) {
-		const config = await probeStopGateConfig(command, gitRoot, startupDeadline);
-		if (config === void 0) continue;
-		return {
-			enabled: config.enabled,
-			run: (sessionId) => executeStopGate(command, gitRoot, sessionId, config.timeoutMs),
-			target: config.target
-		};
+function commandOptions$1(cwd) {
+	return {
+		nodeOptions: { cwd },
+		nodePath: false,
+		timeout: startupTimeoutMs$1
+	};
+}
+function truncateStderr$1(stderr) {
+	const bytes = Buffer$1.from(stderr, "utf8");
+	if (bytes.length <= stderrExcerptLimitBytes$1) return stderr;
+	const markerBytes = Buffer$1.byteLength(stderrTruncationMarker$1);
+	const excerptBytes = stderrExcerptLimitBytes$1 - markerBytes;
+	const headBytes = Math.ceil(excerptBytes / 2);
+	const tailBytes = Math.floor(excerptBytes / 2);
+	let headEnd = headBytes;
+	let tailStart = bytes.length - tailBytes;
+	while (headEnd > 0 && ((bytes[headEnd] ?? 0) & 192) === 128) headEnd -= 1;
+	while (tailStart < bytes.length && ((bytes[tailStart] ?? 0) & 192) === 128) tailStart += 1;
+	return `${bytes.toString("utf8", 0, headEnd)}${stderrTruncationMarker$1}${bytes.toString("utf8", tailStart)}`;
+}
+//#endregion
+//#region src/protocol.ts
+const startupTimeoutMs = 6e4;
+const maximumStopGateTimeoutMs = 861e5;
+const stderrExcerptLimitBytes = 4096;
+const stderrTruncationMarker = "\n... stderr truncated ...\n";
+async function executeStopGate(command, gitRoot, sessionId, lintTimeoutMs) {
+	const timeout = createLongTimeout(addStartupAllowance(lintTimeoutMs));
+	const execution = R(command.executable, [
+		...command.args,
+		"integrations",
+		"stop-gate",
+		"--session-id",
+		sessionId
+	], {
+		nodeOptions: { cwd: gitRoot },
+		nodePath: false,
+		signal: timeout.signal
+	});
+	let result;
+	try {
+		result = await execution;
+	} finally {
+		timeout.dispose();
 	}
-	throw new Error(["Could not find an alint CLI that supports `integrations stop-gate`.", "Ask the user for approval before installing or updating @alint-js/cli in this repository."].join(" "));
+	if (execution.aborted) throw new Error("alint did not finish within its configured lint timeout plus the 1 minute startup allowance.");
+	const envelope = parseEnvelope(result.stdout);
+	if (envelope === void 0) {
+		if (result.exitCode === 1) throw new Error(abnormalAlintMessage(result.stderr));
+		throw incompatibleAlintError();
+	}
+	if (!isExpectedStopGateExitCode(result.exitCode, envelope.status)) throw new Error(`alint Stop Gate returned status "${envelope.status}" with unexpected exit code ${result.exitCode ?? "unknown"}.`);
+	return envelope;
+}
+function parseConfigOutput(stdout) {
+	const enabled = /^enabled: (true|false)(?: |$)/mu.exec(stdout)?.[1];
+	const target = /^target: (all|dirty-files)(?: |$)/mu.exec(stdout)?.[1];
+	const timeoutMs = Number(/^timeoutMs: (\S+)/mu.exec(stdout)?.[1]);
+	if (enabled === void 0 || target !== "all" && target !== "dirty-files" || !Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > maximumStopGateTimeoutMs) return;
+	return {
+		enabled: enabled === "true",
+		target,
+		timeoutMs
+	};
+}
+function parseEnvelope(stdout) {
+	let value;
+	try {
+		value = JSON.parse(stdout.trim());
+	} catch {
+		return;
+	}
+	if (!isEnvelopeRecord(value)) return;
+	const base = {
+		errorCount: value.errorCount,
+		schemaVersion: 2,
+		warningCount: value.warningCount
+	};
+	if (value.status === "clean" || value.status === "inactive" || value.status === "no-dirty-files") return value.errorCount === 0 && value.warningCount === 0 ? {
+		...base,
+		status: value.status
+	} : void 0;
+	if (value.status === "runtime-error") return value.errorCount === 0 && value.warningCount === 0 && typeof value.message === "string" && value.message.length > 0 ? {
+		...base,
+		message: value.message,
+		status: value.status
+	} : void 0;
+	if (value.status === "errors" || value.status === "warnings") return (value.status === "errors" ? value.errorCount > 0 : value.errorCount === 0 && value.warningCount > 0) && typeof value.findingsHash === "string" && /^[a-f0-9]{64}$/u.test(value.findingsHash) && typeof value.reportPath === "string" && value.reportPath.length > 0 ? {
+		...base,
+		findingsHash: value.findingsHash,
+		reportPath: value.reportPath,
+		status: value.status
+	} : void 0;
+}
+async function probeStopGateConfig(command, gitRoot, deadline) {
+	const remainingMs = deadline - Date.now();
+	if (remainingMs <= 0) throw packageManagerTimeoutError(command);
+	let execution;
+	try {
+		execution = R(command.executable, [
+			...command.args,
+			"config",
+			"integrations",
+			"stop-gate",
+			"show"
+		], commandOptions(gitRoot, remainingMs));
+		const result = await execution;
+		if (execution.killed) throw packageManagerTimeoutError(command);
+		if (result.exitCode !== 0) {
+			if (command.source === "local") throw repositoryConfigError(result);
+			return;
+		}
+		if (result.stdout.trim().length === 0) throw emptyConfigOutputError(result.stderr);
+		const config = parseConfigOutput(result.stdout);
+		if (config === void 0) throw incompatibleAlintError();
+		return config;
+	} catch (error) {
+		if (execution?.killed) throw packageManagerTimeoutError(command);
+		if (isNodeError$2(error) && error.code === "ENOENT") return;
+		throw error;
+	}
 }
 function abnormalAlintMessage(stderr) {
 	const detail = truncateStderr(stderr.trim());
@@ -544,15 +643,6 @@ function abnormalAlintMessage(stderr) {
 }
 function addStartupAllowance(lintTimeoutMs) {
 	return Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER);
-}
-async function canAccess(path, mode) {
-	try {
-		await access(path, mode);
-		return true;
-	} catch (error) {
-		if (isNodeError$1(error) && (error.code === "ENOENT" || error.code === "EACCES")) return false;
-		throw error;
-	}
 }
 function commandOptions(cwd, timeout) {
 	return {
@@ -582,6 +672,76 @@ function createLongTimeout(timeoutMs) {
 		signal: controller.signal
 	};
 }
+function emptyConfigOutputError(stderr) {
+	const detail = truncateStderr(stderr.trim());
+	const stderrContext = detail.length === 0 ? "" : ` alint wrote to stderr: ${detail}`;
+	return /* @__PURE__ */ new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`);
+}
+function incompatibleAlintError() {
+	return /* @__PURE__ */ new Error("The resolved alint CLI does not support the Stop Gate protocol. Update @alint-js/cli before using this plugin.");
+}
+function isEnvelopeRecord(value) {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const record = value;
+	return record.schemaVersion === 2 && typeof record.errorCount === "number" && Number.isInteger(record.errorCount) && record.errorCount >= 0 && typeof record.warningCount === "number" && Number.isInteger(record.warningCount) && record.warningCount >= 0;
+}
+function isExpectedStopGateExitCode(exitCode, status) {
+	return exitCode === (status === "runtime-error" ? 1 : 0);
+}
+function isNodeError$2(error) {
+	return error instanceof Error && "code" in error;
+}
+function packageManagerTimeoutError(command) {
+	const subject = command.source === "package-manager" ? `${command.executable} package-manager exec` : `${command.executable} startup`;
+	return /* @__PURE__ */ new Error(`${subject} exceeded the 1 minute startup limit. Run the Stop Gate config command manually and fix the local installation before retrying.`);
+}
+function repositoryConfigError(result) {
+	const detail = truncateStderr(result.stderr.trim());
+	const exitCode = result.exitCode ?? "unknown";
+	const reason = detail.length === 0 ? `exit code ${exitCode} with no stderr output` : `exit code ${exitCode}: ${detail}`;
+	return /* @__PURE__ */ new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`);
+}
+function truncateStderr(stderr) {
+	const bytes = Buffer$1.from(stderr, "utf8");
+	if (bytes.length <= stderrExcerptLimitBytes) return stderr;
+	const markerBytes = Buffer$1.byteLength(stderrTruncationMarker);
+	const excerptBytes = stderrExcerptLimitBytes - markerBytes;
+	const headBytes = Math.ceil(excerptBytes / 2);
+	const tailBytes = Math.floor(excerptBytes / 2);
+	let headEnd = headBytes;
+	let tailStart = bytes.length - tailBytes;
+	while (headEnd > 0 && ((bytes[headEnd] ?? 0) & 192) === 128) headEnd -= 1;
+	while (tailStart < bytes.length && ((bytes[tailStart] ?? 0) & 192) === 128) tailStart += 1;
+	return `${bytes.toString("utf8", 0, headEnd)}${stderrTruncationMarker}${bytes.toString("utf8", tailStart)}`;
+}
+//#endregion
+//#region src/resolve-command.ts
+async function resolveCommands(gitRoot) {
+	const commands = [];
+	const local = join(gitRoot, "node_modules", ".bin", process$1.platform === "win32" ? "alint.cmd" : "alint");
+	if (await canAccess(local, process$1.platform === "win32" ? constants.F_OK : constants.X_OK)) commands.push({
+		args: [],
+		executable: local,
+		source: "local"
+	});
+	const packageManager = await detectPackageManager(gitRoot);
+	if (packageManager !== void 0) commands.push(packageManagerCommand(packageManager));
+	commands.push({
+		args: [],
+		executable: "alint",
+		source: "path"
+	});
+	return commands;
+}
+async function canAccess(path, mode) {
+	try {
+		await access(path, mode);
+		return true;
+	} catch (error) {
+		if (isNodeError$1(error) && (error.code === "ENOENT" || error.code === "EACCES")) return false;
+		throw error;
+	}
+}
 async function detectPackageManager(gitRoot) {
 	const packageManager = await readPackageManagerField(gitRoot);
 	if (packageManager !== void 0) return packageManager;
@@ -592,55 +752,10 @@ async function detectPackageManager(gitRoot) {
 		["bun.lockb", "bun"],
 		["package-lock.json", "npm"],
 		["npm-shrinkwrap.json", "npm"]
-	]) if (await pathExists(join(gitRoot, lockfile))) return manager;
-}
-function emptyConfigOutputError(stderr) {
-	const detail = truncateStderr(stderr.trim());
-	const stderrContext = detail.length === 0 ? "" : ` alint wrote to stderr: ${detail}`;
-	return /* @__PURE__ */ new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`);
-}
-async function executeStopGate(command, gitRoot, sessionId, lintTimeoutMs) {
-	const timeout = createLongTimeout(addStartupAllowance(lintTimeoutMs));
-	const execution = R(command.executable, [
-		...command.args,
-		"integrations",
-		"stop-gate",
-		"--session-id",
-		sessionId
-	], {
-		nodeOptions: { cwd: gitRoot },
-		nodePath: false,
-		signal: timeout.signal
-	});
-	let result;
-	try {
-		result = await execution;
-	} finally {
-		timeout.dispose();
-	}
-	if (execution.aborted) throw new Error("alint did not finish within its configured lint timeout plus the 1 minute startup allowance.");
-	const envelope = parseEnvelope(result.stdout);
-	if (envelope === void 0) {
-		if (result.exitCode === 1) throw new Error(abnormalAlintMessage(result.stderr));
-		throw incompatibleAlintError();
-	}
-	if (!isExpectedStopGateExitCode(result.exitCode, envelope.status)) throw new Error(`alint Stop Gate returned status "${envelope.status}" with unexpected exit code ${result.exitCode ?? "unknown"}.`);
-	return envelope;
-}
-function incompatibleAlintError() {
-	return /* @__PURE__ */ new Error("The resolved alint CLI does not support the Stop Gate protocol. Update @alint-js/cli before using this plugin.");
-}
-async function isExecutable(path) {
-	return canAccess(path, process$1.platform === "win32" ? constants.F_OK : constants.X_OK);
-}
-function isExpectedStopGateExitCode(exitCode, status) {
-	return exitCode === (status === "runtime-error" ? 1 : 0);
+	]) if (await canAccess(join(gitRoot, lockfile), constants.F_OK)) return manager;
 }
 function isNodeError$1(error) {
 	return error instanceof Error && "code" in error;
-}
-function isStopGateStatus(value) {
-	return value === "clean" || value === "errors" || value === "inactive" || value === "no-dirty-files" || value === "runtime-error" || value === "warnings";
 }
 function packageManagerCommand(manager) {
 	if (manager === "npm") return {
@@ -669,61 +784,6 @@ function packageManagerCommand(manager) {
 		source: "package-manager"
 	};
 }
-function packageManagerTimeoutError(command) {
-	const subject = command.source === "package-manager" ? `${command.executable} package-manager exec` : `${command.executable} startup`;
-	return /* @__PURE__ */ new Error(`${subject} exceeded the 1 minute startup limit. Run the Stop Gate config command manually and fix the local installation before retrying.`);
-}
-function parseEnvelope(stdout) {
-	try {
-		const value = JSON.parse(stdout.trim());
-		if (value.schemaVersion !== 2 || !isStopGateStatus(value.status) || typeof value.errorCount !== "number" || typeof value.warningCount !== "number" || (value.status === "errors" || value.status === "warnings") && (typeof value.findingsHash !== "string" || !/^[a-f0-9]{64}$/u.test(value.findingsHash))) return;
-		return value;
-	} catch {
-		return;
-	}
-}
-function parseStopGateConfig(stdout) {
-	const enabled = /^enabled: (true|false)(?: |$)/mu.exec(stdout)?.[1];
-	const target = /^target: (all|dirty-files)(?: |$)/mu.exec(stdout)?.[1];
-	const timeoutMs = Number(/^timeoutMs: (\S+)/mu.exec(stdout)?.[1]);
-	if (enabled === void 0 || target !== "all" && target !== "dirty-files" || !Number.isInteger(timeoutMs) || timeoutMs <= 0) return;
-	return {
-		enabled: enabled === "true",
-		target,
-		timeoutMs
-	};
-}
-async function pathExists(path) {
-	return canAccess(path, constants.F_OK);
-}
-async function probeStopGateConfig(command, gitRoot, deadline) {
-	const remainingMs = deadline - Date.now();
-	if (remainingMs <= 0) throw packageManagerTimeoutError(command);
-	let execution;
-	try {
-		execution = R(command.executable, [
-			...command.args,
-			"config",
-			"integrations",
-			"stop-gate",
-			"show"
-		], commandOptions(gitRoot, remainingMs));
-		const result = await execution;
-		if (execution.killed) throw packageManagerTimeoutError(command);
-		if (result.exitCode !== 0) {
-			if (command.source === "local") throw repositoryConfigError(result);
-			return;
-		}
-		if (result.stdout.trim().length === 0) throw emptyConfigOutputError(result.stderr);
-		const config = parseStopGateConfig(result.stdout);
-		if (config === void 0) throw incompatibleAlintError();
-		return config;
-	} catch (error) {
-		if (execution?.killed) throw packageManagerTimeoutError(command);
-		if (isNodeError$1(error) && error.code === "ENOENT") return;
-		throw error;
-	}
-}
 async function readPackageManagerField(gitRoot) {
 	try {
 		const packageJson = JSON.parse(await readFile(join(gitRoot, "package.json"), "utf8"));
@@ -735,41 +795,21 @@ async function readPackageManagerField(gitRoot) {
 		throw error;
 	}
 }
-function repositoryConfigError(result) {
-	const detail = truncateStderr(result.stderr.trim());
-	const exitCode = result.exitCode ?? "unknown";
-	const reason = detail.length === 0 ? `exit code ${exitCode} with no stderr output` : `exit code ${exitCode}: ${detail}`;
-	return /* @__PURE__ */ new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`);
-}
-async function resolveCommands(gitRoot) {
-	const commands = [];
-	const local = join(gitRoot, "node_modules", ".bin", process$1.platform === "win32" ? "alint.cmd" : "alint");
-	if (await isExecutable(local)) commands.push({
-		args: [],
-		executable: local,
-		source: "local"
-	});
-	const packageManager = await detectPackageManager(gitRoot);
-	if (packageManager !== void 0) commands.push(packageManagerCommand(packageManager));
-	commands.push({
-		args: [],
-		executable: "alint",
-		source: "path"
-	});
-	return commands;
-}
-function truncateStderr(stderr) {
-	const bytes = Buffer$1.from(stderr, "utf8");
-	if (bytes.length <= stderrExcerptLimitBytes) return stderr;
-	const markerBytes = Buffer$1.byteLength(stderrTruncationMarker);
-	const excerptBytes = stderrExcerptLimitBytes - markerBytes;
-	const headBytes = Math.ceil(excerptBytes / 2);
-	const tailBytes = Math.floor(excerptBytes / 2);
-	let headEnd = headBytes;
-	let tailStart = bytes.length - tailBytes;
-	while (headEnd > 0 && ((bytes[headEnd] ?? 0) & 192) === 128) headEnd -= 1;
-	while (tailStart < bytes.length && ((bytes[tailStart] ?? 0) & 192) === 128) tailStart += 1;
-	return `${bytes.toString("utf8", 0, headEnd)}${stderrTruncationMarker}${bytes.toString("utf8", tailStart)}`;
+//#endregion
+//#region src/runner.ts
+async function resolveAlintStopGate(gitRoot) {
+	const commands = await resolveCommands(gitRoot);
+	const startupDeadline = Date.now() + startupTimeoutMs;
+	for (const command of commands) {
+		const config = await probeStopGateConfig(command, gitRoot, startupDeadline);
+		if (config === void 0) continue;
+		return {
+			enabled: config.enabled,
+			run: (sessionId) => executeStopGate(command, gitRoot, sessionId, config.timeoutMs),
+			target: config.target
+		};
+	}
+	throw new Error(["Could not find an alint CLI that supports `integrations stop-gate`.", "Ask the user for approval before installing or updating @alint-js/cli in this repository."].join(" "));
 }
 //#endregion
 //#region src/state.ts
@@ -855,11 +895,11 @@ function emergencyDecision(input, error) {
 function emit(decision) {
 	if (Object.keys(decision).length > 0) writeSync(process$1.stdout.fd, `${JSON.stringify(decision)}\n`);
 }
-function emptyEnvelope(status) {
+function inactiveEnvelope() {
 	return {
 		errorCount: 0,
 		schemaVersion: 2,
-		status,
+		status: "inactive",
 		warningCount: 0
 	};
 }
@@ -879,6 +919,15 @@ function reportFatalFailure(context, error) {
 function requiredString(value, message) {
 	if (value === void 0 || value.length === 0) throw new Error(message);
 	return value;
+}
+function runtimeErrorEnvelope(message) {
+	return {
+		errorCount: 0,
+		message,
+		schemaVersion: 2,
+		status: "runtime-error",
+		warningCount: 0
+	};
 }
 let parsedInput;
 try {
@@ -901,24 +950,21 @@ async function run(input) {
 	try {
 		result = await runForInput(input, sessionId, state);
 	} catch (error) {
-		result = { envelope: {
-			...emptyEnvelope("runtime-error"),
-			message: errorMessageFrom(error) ?? "unknown error"
-		} };
+		result = { envelope: runtimeErrorEnvelope(errorMessageFrom(error) ?? "unknown error") };
 	}
 	if (result.decision !== void 0) {
 		emit(result.decision);
 		return;
 	}
-	const applied = applyResult(state, result.envelope ?? emptyEnvelope("runtime-error"));
+	const applied = applyResult(state, result.envelope ?? runtimeErrorEnvelope("unknown error"));
 	await store.save(sessionId, applied.state);
 	emit(applied.decision);
 }
 async function runForInput(input, sessionId, state) {
 	const gitRoot = await findGitRoot(input.cwd ?? process$1.cwd());
-	if (gitRoot === void 0 || !await hasProjectConfig(gitRoot)) return { envelope: emptyEnvelope("inactive") };
+	if (gitRoot === void 0 || !await hasProjectConfig(gitRoot)) return { envelope: inactiveEnvelope() };
 	const stopGate = await resolveAlintStopGate(gitRoot);
-	if (!stopGate.enabled) return { envelope: emptyEnvelope("inactive") };
+	if (!stopGate.enabled) return { envelope: inactiveEnvelope() };
 	if (stopGate.target === "dirty-files" && await isHeadDetached(gitRoot)) return { decision: { systemMessage: "alint-plugin: Stop Gate skipped because Git HEAD is detached. You may need to let the user know that. Run `alint --dirty` manually if this checkout should be reviewed." } };
 	if (hasReachedLintLimit(state)) return { decision: lintLimitDecision(state) };
 	return { envelope: await stopGate.run(sessionId) };

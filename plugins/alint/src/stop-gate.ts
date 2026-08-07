@@ -10,7 +10,8 @@ import { errorMessageFrom } from '@moeru/std'
 
 import { writeFatalDiagnostic } from './fatal-diagnostic'
 import { applyResult, hasReachedLintLimit, lintLimitDecision, runtimeFailureMessage } from './policy'
-import { findGitRoot, hasProjectConfig, isHeadDetached, resolveAlintStopGate } from './runner'
+import { findGitRoot, hasProjectConfig, isHeadDetached } from './repository'
+import { resolveAlintStopGate } from './runner'
 import { createStateStore } from './state'
 
 function emergencyDecision(input: HookInput | undefined, error: unknown): HookDecision {
@@ -29,11 +30,11 @@ function emit(decision: HookDecision): void {
   }
 }
 
-function emptyEnvelope(status: 'inactive' | 'runtime-error'): StopGateEnvelope {
+function inactiveEnvelope(): StopGateEnvelope {
   return {
     errorCount: 0,
     schemaVersion: 2,
-    status,
+    status: 'inactive',
     warningCount: 0,
   }
 }
@@ -71,6 +72,16 @@ function requiredString(value: string | undefined, message: string): string {
   return value
 }
 
+function runtimeErrorEnvelope(message: string): StopGateEnvelope {
+  return {
+    errorCount: 0,
+    message,
+    schemaVersion: 2,
+    status: 'runtime-error',
+    warningCount: 0,
+  }
+}
+
 let parsedInput: HookInput | undefined
 
 try {
@@ -103,10 +114,7 @@ async function run(input: HookInput): Promise<void> {
   }
   catch (error) {
     result = {
-      envelope: {
-        ...emptyEnvelope('runtime-error'),
-        message: errorMessageFrom(error) ?? 'unknown error',
-      },
+      envelope: runtimeErrorEnvelope(errorMessageFrom(error) ?? 'unknown error'),
     }
   }
 
@@ -115,7 +123,7 @@ async function run(input: HookInput): Promise<void> {
     return
   }
 
-  const envelope = result.envelope ?? emptyEnvelope('runtime-error')
+  const envelope = result.envelope ?? runtimeErrorEnvelope('unknown error')
   const applied = applyResult(state, envelope)
   await store.save(sessionId, applied.state)
   emit(applied.decision)
@@ -129,13 +137,13 @@ async function runForInput(
   const gitRoot = await findGitRoot(input.cwd ?? process.cwd())
 
   if (gitRoot === undefined || !await hasProjectConfig(gitRoot)) {
-    return { envelope: emptyEnvelope('inactive') }
+    return { envelope: inactiveEnvelope() }
   }
 
   const stopGate = await resolveAlintStopGate(gitRoot)
 
   if (!stopGate.enabled) {
-    return { envelope: emptyEnvelope('inactive') }
+    return { envelope: inactiveEnvelope() }
   }
 
   if (stopGate.target === 'dirty-files' && await isHeadDetached(gitRoot)) {

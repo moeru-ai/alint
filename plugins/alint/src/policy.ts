@@ -26,26 +26,24 @@ export function applyResult(
       lastFindings: undefined,
       runtimeFailures: state.runtimeFailures + 1,
     })
-    const message = envelope.message ?? 'alint Stop Gate failed with an unknown runtime error.'
-
     return {
       decision: next.runtimeFailures === 1
-        ? { decision: 'block', reason: runtimeFailureMessage(message) }
-        : { systemMessage: runtimeFailureMessage(message) },
+        ? { decision: 'block', reason: runtimeFailureMessage(envelope.message) }
+        : { systemMessage: runtimeFailureMessage(envelope.message) },
       state: next,
     }
   }
 
   const lintRounds = state.lintRounds + 1
   const repeatedFindings = envelope.status === 'errors' || envelope.status === 'warnings'
-    ? state.lastFindings?.findingsHash === requiredFindingsHash(envelope)
+    ? state.lastFindings?.findingsHash === envelope.findingsHash
     : false
   const next = updateState(state, now, {
     lastFindings: envelope.status === 'errors' || envelope.status === 'warnings'
       ? {
           errorCount: envelope.errorCount,
-          findingsHash: requiredFindingsHash(envelope),
-          reportPath: requiredReportPath(envelope),
+          findingsHash: envelope.findingsHash,
+          reportPath: envelope.reportPath,
           status: envelope.status,
           warningCount: envelope.warningCount,
         }
@@ -58,7 +56,7 @@ export function applyResult(
     return { decision: {}, state: next }
   }
 
-  const message = findingMessage(next, requiredReportPath(envelope))
+  const message = findingMessage(next, envelope.reportPath)
   const shouldBlock = envelope.status === 'errors'
     ? lintRounds < maximumLintRounds && !repeatedFindings
     : lintRounds === 1
@@ -68,7 +66,7 @@ export function applyResult(
       ? { decision: 'block', reason: message }
       : {
           systemMessage: repeatedFindings
-            ? repeatedFindingsMessage(next, requiredReportPath(envelope))
+            ? repeatedFindingsMessage(next, envelope.reportPath)
             : message,
         },
     state: next,
@@ -113,22 +111,6 @@ function repeatedFindingsMessage(state: SessionState, reportPath: string): strin
   }
 
   return `alint-plugin: The same ${findings.errorCount} error(s) and ${findings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${reportPath}".`
-}
-
-function requiredFindingsHash(envelope: StopGateEnvelope): string {
-  if (envelope.findingsHash === undefined || envelope.findingsHash.length === 0) {
-    throw new Error('alint Stop Gate did not return a findings hash for its diagnostics.')
-  }
-
-  return envelope.findingsHash
-}
-
-function requiredReportPath(envelope: StopGateEnvelope): string {
-  if (envelope.reportPath === undefined || envelope.reportPath.length === 0) {
-    throw new Error('alint Stop Gate did not return a report path for its diagnostics.')
-  }
-
-  return envelope.reportPath
 }
 
 function updateState(
