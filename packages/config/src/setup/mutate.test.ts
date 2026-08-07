@@ -1,4 +1,4 @@
-import type { ProviderDefinition, SetupConfig } from '@alint-js/core'
+import type { ProviderConfig as ProviderDefinition, SetupConfig } from './types'
 
 import { describe, expect, it } from 'vitest'
 

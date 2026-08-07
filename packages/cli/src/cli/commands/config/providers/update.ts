@@ -82,6 +82,13 @@ async function runNonInteractiveUpdate(
   config: SetupConfig,
   path: string,
 ): Promise<number> {
+  const endpoint = providerEndpoint ?? existingProvider.endpoint
+
+  if (endpoint === undefined) {
+    context.io.stderr.write(`provider "${existingProvider.id}" has no remote endpoint to update.\n`)
+    return 2
+  }
+
   let parsedHeaders: Record<string, string> | undefined
 
   try {
@@ -94,13 +101,13 @@ async function runNonInteractiveUpdate(
 
   const draft: ProviderDefinition = {
     ...existingProvider,
-    endpoint: providerEndpoint ?? existingProvider.endpoint,
+    endpoint,
     headers: mergeProviderHeaders(existingProvider.headers, parsedHeaders),
   }
 
   let remoteModelIds: string[]
   try {
-    remoteModelIds = await probeModels(draft.endpoint, draft.headers)
+    remoteModelIds = await probeModels(endpoint, draft.headers)
   }
   catch (error) {
     context.io.stderr.write(`failed to probe provider: ${errorMessageFrom(error) ?? 'Unknown error.'}\n`)
@@ -161,16 +168,23 @@ async function runUpdateProviderCommand(
     return 2
   }
 
+  const endpoint = providerEndpoint ?? existingProvider.endpoint
+
+  if (endpoint === undefined) {
+    context.io.stderr.write(`provider "${existingProvider.id}" has no remote endpoint to update.\n`)
+    return 2
+  }
+
   if (context.setupNoInteractive) {
     return runNonInteractiveUpdate(context, options, providerEndpoint, existingProvider, config, path)
   }
 
   const result = await runProviderEditor({
     config,
-    existingProvider,
+    existingProvider: { ...existingProvider, endpoint },
     io: context.io,
     mode: 'update',
-    source: providerUpdateSource(existingProvider.endpoint),
+    source: providerUpdateSource(endpoint),
   })
 
   if (result.status !== 'confirmed') {

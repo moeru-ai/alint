@@ -360,8 +360,8 @@ export function formatProviderList(config: SetupConfig): string {
     ['id', 'type', 'endpoint', 'models'],
     ...config.providers.map(provider => [
       provider.id,
-      provider.type,
-      provider.endpoint,
+      provider.type ?? 'model-driven',
+      provider.endpoint ?? '-',
       String(provider.models.length),
     ]),
   ])
@@ -370,8 +370,8 @@ export function formatProviderList(config: SetupConfig): string {
 export function formatProviderShow(provider: ProviderDefinition): string {
   const lines = [
     `id: ${provider.id}`,
-    `type: ${provider.type}`,
-    `endpoint: ${provider.endpoint}`,
+    `type: ${provider.type ?? 'model-driven'}`,
+    `endpoint: ${provider.endpoint ?? '-'}`,
     `models: ${provider.models.map(model => model.id).join(', ')}`,
   ]
   const headerKeys = Object.keys(provider.headers ?? {})
@@ -438,7 +438,9 @@ export function resolveProviderBenchmarkConcurrency(
 ): Record<string, number> {
   const concurrency = Object.fromEntries(config.providers.map(provider => [
     provider.id,
-    findProviderSetupSourceByEndpoint(provider.endpoint)?.benchmarkConcurrency ?? defaultBenchmarkConcurrency,
+    provider.endpoint === undefined
+      ? defaultBenchmarkConcurrency
+      : findProviderSetupSourceByEndpoint(provider.endpoint)?.benchmarkConcurrency ?? defaultBenchmarkConcurrency,
   ]))
 
   for (const override of overrides) {

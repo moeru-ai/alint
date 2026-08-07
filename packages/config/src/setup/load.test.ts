@@ -8,6 +8,80 @@ import { loadSetupConfig, mergeSetupConfigs } from './load'
 import { writeSetupConfig } from './write'
 
 describe('setup config loading and merging', () => {
+  it('merges ACP-driven provider models by id with project models first', () => {
+    const merged = mergeSetupConfigs(
+      {
+        providers: [{
+          id: 'coding-agents',
+          models: [
+            { command: 'global-codex', driver: 'acp', id: 'codex' },
+            { command: 'global-gemini', driver: 'acp', id: 'gemini' },
+          ],
+        }],
+        version: 1,
+      },
+      {
+        providers: [{
+          id: 'coding-agents',
+          models: [
+            { args: ['--project'], command: 'project-codex', driver: 'acp', id: 'codex' },
+          ],
+        }],
+        version: 1,
+      },
+    )
+
+    expect(merged.providers[0]).toEqual({
+      id: 'coding-agents',
+      models: [
+        { args: ['--project'], command: 'project-codex', driver: 'acp', id: 'codex' },
+        { command: 'global-gemini', driver: 'acp', id: 'gemini' },
+      ],
+    })
+  })
+
+  it('allows ACP-driven models under different providers', () => {
+    const merged = mergeSetupConfigs(
+      {
+        providers: [{ id: 'global-acp', models: [{ command: 'global-agent', driver: 'acp', id: 'global' }] }],
+        version: 1,
+      },
+      {
+        providers: [{ id: 'project-acp', models: [{ command: 'project-agent', driver: 'acp', id: 'project' }] }],
+        version: 1,
+      },
+    )
+
+    expect(merged.providers.map(provider => provider.id)).toEqual(['project-acp', 'global-acp'])
+  })
+
+  it('inherits an ACP driver when a later scope overrides only shared model fields', () => {
+    const merged = mergeSetupConfigs(
+      {
+        providers: [{
+          id: 'local',
+          models: [{ command: 'codex-acp', driver: 'acp', id: 'codex', name: 'Global Codex' }],
+        }],
+        version: 1,
+      },
+      {
+        providers: [{
+          id: 'local',
+          models: [{ aliases: ['default'], id: 'codex', name: 'Project Codex' }],
+        }],
+        version: 1,
+      },
+    )
+
+    expect(merged.providers[0]?.models[0]).toEqual({
+      aliases: ['default'],
+      command: 'codex-acp',
+      driver: 'acp',
+      id: 'codex',
+      name: 'Project Codex',
+    })
+  })
+
   it('loads missing config files as an empty versioned config', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-setup-'))
     const config = await loadSetupConfig(join(root, 'missing.toml'))

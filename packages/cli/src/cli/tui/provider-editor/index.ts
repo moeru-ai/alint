@@ -291,7 +291,7 @@ function createSummary(
   return [
     `${input.mode === 'create' ? 'Create' : 'Update'} provider?`,
     `Provider: ${escapeLineValue(provider.id)}`,
-    `Endpoint: ${escapeLineValue(provider.endpoint)}`,
+    `Endpoint: ${escapeLineValue(provider.endpoint ?? '-')}`,
     `Headers: ${formatSummaryValues(Object.keys(provider.headers ?? {}))}`,
     `Added models: ${formatSummaryValues(additions)}`,
     `Removed models: ${formatSummaryValues(removals)}`,
