@@ -59,6 +59,36 @@ plugin_languages = "./node_modules/@alint-js/languages"
 The directory lock records physical identity, so upgrading the package re-locks it. Re-run
 `alint plugin install` when it says the target changed.
 
+## Add a language
+
+This package reads the prebuilt grammars in `tree-sitter-wasms`. That dependency supplies 36
+grammars, and this package uses three of them (by the time this is written). A new language needs a query, not a grammar. The
+query maps the node names of the grammar to the six captures that `extract.ts` reads.
+
+To add a language, do these steps:
+
+1. Add the file name of the grammar to `GRAMMAR` in `src/grammar.ts`.
+2. Add the query to `QUERIES` in `src/queries.ts`.
+3. Add a case to `isExported` in `src/extract.ts`.
+4. Add a `LanguageDefinition` to `src/index.ts`.
+5. Add the new language to `languagesPlugin` in the same file.
+6. Add a test for the new language to `src/extract.test.ts`.
+
+Note: `LanguageId` comes from the keys of `GRAMMAR`. After step 1, the code does not compile until
+you complete step 2 and step 3. The compiler gives no error for step 4, step 5, or step 6.
+
+To find the node names of a grammar, read the `grammar.js` file of that tree-sitter parser.
+
+CAUTION: Make sure that the grammar uses these three node names. If the grammar uses other names,
+the code still compiles and `FunctionInfo` is wrong:
+
+- `block` is the node type of a branch or a loop (`holdsBlock` in `src/extract.ts`).
+- `body` is the field name for the body of a function (`bodyStatements`).
+- `name` is the field name for the name of a function (`withOwnName`).
+
+Go, Python, and Rust use these three names. Other grammars use other names. For example, TypeScript
+calls the block `statement_block`.
+
 ## When to use
 
 - Your project has Go, Python or Rust files and you want rules to see functions in them rather than
