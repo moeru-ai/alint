@@ -13,10 +13,25 @@ import { generateStructured } from '@alint-js/core/structured-output'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { serve } from 'h3/node'
-import { array, description, number, object, picklist, pipe, string } from 'valibot'
+import { array, description, literal, nullable, number, object, optional, parse, picklist, pipe, string } from 'valibot'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createGateway } from './index'
+
+const completionChunkSchema = object({
+  choices: array(object({
+    delta: object({
+      content: optional(string()),
+      tool_calls: optional(array(object({
+        function: object({ arguments: string(), name: string() }),
+        id: string(),
+        index: number(),
+        type: literal('function'),
+      }))),
+    }),
+    finish_reason: optional(nullable(string())),
+  })),
+})
 
 const findingResponseSchema = pipe(
   object({
@@ -176,12 +191,21 @@ describe('aCP OpenAI gateway', () => {
     expect(body).toContain('data: [DONE]')
   })
 
-  it('bridges an ACP MCP call to an OpenAI tool call and resumes it with the tool result', async () => {
+  it.each([
+    { continuationStream: false, initialStream: false },
+    { continuationStream: true, initialStream: true },
+    { continuationStream: true, initialStream: false },
+    { continuationStream: false, initialStream: true },
+  ])('resumes an ACP MCP call from $initialStream streaming to $continuationStream streaming', async ({
+    continuationStream,
+    initialStream,
+  }) => {
+    const prompts: ContentBlock[][] = []
     const app = createGateway({
       models: [{
         id: 'tool-user',
         name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent(() => {}, false, true), kind: 'agent-app' }),
+        openConnection: () => ({ agent: toolAgent({ prompts, verifyStrictSchema: true }), kind: 'agent-app' }),
       }],
     })
     const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
@@ -202,38 +226,50 @@ describe('aCP OpenAI gateway', () => {
       type: 'function',
     }]
 
-    const first = await postCompletion(server.url!, {
-      messages,
-      model: 'tool-user',
-      tool_choice: 'required',
-      tools,
+    const firstResponse = await fetch(new URL('/v1/chat/completions', server.url), {
+      body: JSON.stringify({
+        messages,
+        model: 'tool-user',
+        stream: initialStream,
+        tool_choice: 'required',
+        tools,
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
     })
-    const toolCall = first.choices[0].message.tool_calls[0]
+    const first = await parseCompletionResponse(firstResponse, initialStream)
+    const toolCall = first.toolCalls[0]
 
-    expect(first.choices[0].finish_reason).toBe('tool_calls')
-    expect(toolCall.function).toEqual({
-      arguments: '{"query":"clamp"}',
-      name: 'search',
-    })
+    expect(firstResponse.status).toBe(200)
+    expect(JSON.stringify(prompts[0])).toContain('request-scoped MCP tools')
+    expect(JSON.stringify(prompts[0])).toContain('search')
+    expect(toolCall).toBeDefined()
+    expect(toolCall?.function).toEqual({ arguments: '{"query":"clamp"}', name: 'search' })
+    expect(first.finishReasons).toContain('tool_calls')
+    if (!toolCall) {
+      throw new Error('Expected a tool call.')
+    }
 
-    const second = await postCompletion(server.url!, {
-      messages: [
-        ...messages,
-        { content: null, role: 'assistant', tool_calls: [toolCall] },
-        { content: 'src/a.ts\nsrc/b.ts', role: 'tool', tool_call_id: toolCall.id },
-      ],
-      model: 'tool-user',
-      tool_choice: 'required',
-      tools,
+    const secondResponse = await fetch(new URL('/v1/chat/completions', server.url), {
+      body: JSON.stringify({
+        messages: [
+          ...messages,
+          { content: null, role: 'assistant', tool_calls: [toolCall] },
+          { content: 'src/a.ts\nsrc/b.ts', role: 'tool', tool_call_id: toolCall.id },
+        ],
+        model: 'tool-user',
+        stream: continuationStream,
+        tool_choice: 'required',
+        tools,
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
     })
+    const second = await parseCompletionResponse(secondResponse, continuationStream)
 
-    expect(second.choices[0]).toMatchObject({
-      finish_reason: 'stop',
-      message: {
-        content: 'Found: src/a.ts\nsrc/b.ts',
-        role: 'assistant',
-      },
-    })
+    expect(secondResponse.status).toBe(200)
+    expect(second.content).toBe('Found: src/a.ts\nsrc/b.ts')
+    expect(second.finishReasons).toContain('stop')
   })
 
   it('allows ACP permission requests that identify an OpenAI request tool', async () => {
@@ -281,7 +317,7 @@ describe('aCP OpenAI gateway', () => {
       models: [{
         id: 'tool-user',
         name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent(cancelled), kind: 'agent-app' }),
+        openConnection: () => ({ agent: toolAgent({ cancelled }), kind: 'agent-app' }),
       }],
     })
     const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
@@ -431,32 +467,46 @@ describe('aCP OpenAI gateway', () => {
     expect(await response.json()).toMatchObject({ error: { type: 'server_error' } })
   })
 
-  it('retries once when an ACP agent ignores required tool choice', async () => {
+  it.each([
+    { stream: false },
+    { stream: true },
+  ])('discards text from a rejected required-tool attempt when streaming=$stream', async ({ stream }) => {
     const app = createGateway({
       models: [{
         id: 'tool-user',
         name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent(() => {}, true), kind: 'agent-app' }),
+        openConnection: () => ({
+          agent: toolAgent({ skipFirstToolCall: true, textBeforeToolCall: 'Calling search.' }),
+          kind: 'agent-app',
+        }),
       }],
     })
     const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
     servers.push({ close: () => server.close(true) })
 
-    const completion = await postCompletion(server.url!, {
-      messages: [{ content: 'Use search.', role: 'user' }],
-      model: 'tool-user',
-      tool_choice: 'required',
-      tools: [{
-        function: {
-          name: 'search',
-          parameters: { properties: { query: { type: 'string' } }, type: 'object' },
-        },
-        type: 'function',
-      }],
+    const response = await fetch(new URL('/v1/chat/completions', server.url), {
+      body: JSON.stringify({
+        messages: [{ content: 'Use search.', role: 'user' }],
+        model: 'tool-user',
+        stream,
+        tool_choice: 'required',
+        tools: [{
+          function: {
+            name: 'search',
+            parameters: { properties: { query: { type: 'string' } }, type: 'object' },
+          },
+          type: 'function',
+        }],
+      }),
+      headers: { 'content-type': 'application/json' },
+      method: 'POST',
     })
+    const completion = await parseCompletionResponse(response, stream)
 
-    expect(completion.choices[0].finish_reason).toBe('tool_calls')
-    expect(completion.choices[0].message.tool_calls[0].function.name).toBe('search')
+    expect(response.status).toBe(200)
+    expect(completion.content).toBe('Calling search.')
+    expect(completion.finishReasons).toContain('tool_calls')
+    expect(completion.toolCalls[0].function.name).toBe('search')
   })
 
   it('cancels the ACP prompt when the HTTP request is aborted', async () => {
@@ -597,6 +647,14 @@ interface TestCompletion {
   }>
 }
 
+interface ToolAgentOptions {
+  cancelled?: () => void
+  prompts?: ContentBlock[][]
+  skipFirstToolCall?: boolean
+  textBeforeToolCall?: string
+  verifyStrictSchema?: boolean
+}
+
 function blockingAgent(prompted: () => void, cancelled: () => void): AgentApp {
   let finish: ((response: PromptResponse) => void) | undefined
 
@@ -638,6 +696,33 @@ function forwardingAgent(sessionRequests: Array<Record<string, unknown>>): Agent
       })
       return { stopReason: 'end_turn' }
     })
+}
+
+async function parseCompletionResponse(response: Response, stream: boolean) {
+  if (stream) {
+    const chunks = parseCompletionStream(await response.text())
+
+    return {
+      content: chunks.flatMap(chunk => chunk.choices.map(choice => choice.delta.content ?? '')).join(''),
+      finishReasons: chunks.flatMap(chunk => chunk.choices.map(choice => choice.finish_reason)),
+      toolCalls: chunks.flatMap(chunk => chunk.choices.flatMap(choice => choice.delta.tool_calls ?? [])),
+    }
+  }
+
+  const completion = await response.json() as TestCompletion
+
+  return {
+    content: completion.choices.map(choice => choice.message.content ?? '').join(''),
+    finishReasons: completion.choices.map(choice => choice.finish_reason),
+    toolCalls: completion.choices.flatMap(choice => choice.message.tool_calls ?? []),
+  }
+}
+
+function parseCompletionStream(body: string) {
+  return body
+    .split('\n')
+    .filter(line => line.startsWith('data: ') && line !== 'data: [DONE]')
+    .map(line => parse(completionChunkSchema, JSON.parse(line.slice('data: '.length))))
 }
 
 function permissionAgent(requestTool: boolean): AgentApp {
@@ -767,11 +852,14 @@ function textAgent(
     })
 }
 
-function toolAgent(
-  cancelled = () => {},
-  skipFirstToolCall = false,
-  verifyStrictSchema = false,
-): AgentApp {
+function toolAgent(options: ToolAgentOptions = {}): AgentApp {
+  const {
+    cancelled = () => {},
+    prompts = [],
+    skipFirstToolCall = false,
+    textBeforeToolCall,
+    verifyStrictSchema = false,
+  } = options
   let mcpServer: McpServer | undefined
   let promptCount = 0
 
@@ -787,8 +875,16 @@ function toolAgent(
     .onNotification(methods.agent.session.cancel, () => cancelled())
     .onRequest(methods.agent.session.prompt, async ({ client, params }) => {
       promptCount += 1
+      prompts.push(params.prompt)
 
       if (skipFirstToolCall && promptCount === 1) {
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: {
+            content: { text: 'Ignored response.', type: 'text' },
+            sessionUpdate: 'agent_message_chunk',
+          },
+        })
         return { stopReason: 'end_turn' }
       }
 
@@ -809,6 +905,15 @@ function toolAgent(
         expect(listed.tools[0].inputSchema.properties).toEqual({ query: { type: 'string' } })
         expect(listed.tools[0].inputSchema.required).toEqual(['query'])
         expect(listed.tools[0].inputSchema.additionalProperties).toBe(false)
+      }
+      if (textBeforeToolCall) {
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: {
+            content: { text: textBeforeToolCall, type: 'text' },
+            sessionUpdate: 'agent_message_chunk',
+          },
+        })
       }
       const result = await mcp.callTool({ arguments: { query: 'clamp' }, name: 'search' })
       const content = Array.isArray(result.content) ? result.content[0] : undefined

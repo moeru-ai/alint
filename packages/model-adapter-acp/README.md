@@ -9,7 +9,7 @@ OpenAI-compatible models and implements:
 
 - `GET /v1/models`
 - non-streaming and SSE text chat completions
-- request-scoped OpenAI function tools exposed to ACP through MCP Streamable HTTP
+- streaming and non-streaming OpenAI function tools exposed to ACP through MCP Streamable HTTP
 - deferred `tool_calls` continuation through a later `role: tool` message
 - `tool_choice`, usage, abort, continuation TTL, and permission-denial handling
 
@@ -95,4 +95,5 @@ endpoint = "http://127.0.0.1:7419/v1"
 
 - Use an alint agent adapter when a rule intentionally depends on agent-specific behavior.
 - Do not use this package as an OpenAI Responses, realtime, audio, or image compatibility layer.
-- Streaming tool calls and parallel tool calls are not implemented yet; text streaming is supported.
+- Sequential tool calls work with streaming and non-streaming chat completions.
+- Parallel tool calls are not supported.
