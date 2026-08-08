@@ -467,12 +467,18 @@ describe('aCP OpenAI gateway', () => {
     expect(await response.json()).toMatchObject({ error: { type: 'server_error' } })
   })
 
-  it('discards buffered text when retrying an ACP agent that ignores required tool choice', async () => {
+  it.each([
+    { stream: false },
+    { stream: true },
+  ])('discards text from a rejected required-tool attempt when streaming=$stream', async ({ stream }) => {
     const app = createGateway({
       models: [{
         id: 'tool-user',
         name: 'Tool User',
-        openConnection: () => ({ agent: toolAgent({ skipFirstToolCall: true }), kind: 'agent-app' }),
+        openConnection: () => ({
+          agent: toolAgent({ skipFirstToolCall: true, textBeforeToolCall: 'Calling search.' }),
+          kind: 'agent-app',
+        }),
       }],
     })
     const server = await serve(app, { hostname: '127.0.0.1', port: 0, silent: true }).ready()
@@ -482,6 +488,7 @@ describe('aCP OpenAI gateway', () => {
       body: JSON.stringify({
         messages: [{ content: 'Use search.', role: 'user' }],
         model: 'tool-user',
+        stream,
         tool_choice: 'required',
         tools: [{
           function: {
@@ -494,10 +501,10 @@ describe('aCP OpenAI gateway', () => {
       headers: { 'content-type': 'application/json' },
       method: 'POST',
     })
-    const completion = await parseCompletionResponse(response, false)
+    const completion = await parseCompletionResponse(response, stream)
 
     expect(response.status).toBe(200)
-    expect(completion.content).toBe('')
+    expect(completion.content).toBe('Calling search.')
     expect(completion.finishReasons).toContain('tool_calls')
     expect(completion.toolCalls[0].function.name).toBe('search')
   })
@@ -644,6 +651,7 @@ interface ToolAgentOptions {
   cancelled?: () => void
   prompts?: ContentBlock[][]
   skipFirstToolCall?: boolean
+  textBeforeToolCall?: string
   verifyStrictSchema?: boolean
 }
 
@@ -849,6 +857,7 @@ function toolAgent(options: ToolAgentOptions = {}): AgentApp {
     cancelled = () => {},
     prompts = [],
     skipFirstToolCall = false,
+    textBeforeToolCall,
     verifyStrictSchema = false,
   } = options
   let mcpServer: McpServer | undefined
@@ -896,6 +905,15 @@ function toolAgent(options: ToolAgentOptions = {}): AgentApp {
         expect(listed.tools[0].inputSchema.properties).toEqual({ query: { type: 'string' } })
         expect(listed.tools[0].inputSchema.required).toEqual(['query'])
         expect(listed.tools[0].inputSchema.additionalProperties).toBe(false)
+      }
+      if (textBeforeToolCall) {
+        await client.notify(methods.client.session.update, {
+          sessionId: params.sessionId,
+          update: {
+            content: { text: textBeforeToolCall, type: 'text' },
+            sessionUpdate: 'agent_message_chunk',
+          },
+        })
       }
       const result = await mcp.callTool({ arguments: { query: 'clamp' }, name: 'search' })
       const content = Array.isArray(result.content) ? result.content[0] : undefined

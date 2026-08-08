@@ -51,7 +51,7 @@ export interface GatewayServer {
   shutdown: () => Promise<void>
 }
 
-type BufferedCompletionOutput = Exclude<CompletionOutput, { type: 'text-delta' | 'text-reset' }> & { text: string }
+type BufferedCompletionOutput = Exclude<CompletionOutput, { type: 'text-delta' }> & { text: string }
 
 interface ChatCompletionRequest {
   extensions: Record<string, unknown>
@@ -67,7 +67,6 @@ type CompletionOutput
   = | { call: PendingToolCall, type: 'tool-call' }
     | { stopReason: StopReason, type: 'completion', usage?: null | Usage }
     | { text: string, type: 'text-delta' }
-    | { type: 'text-reset' }
 
 type ToolChoice
   = | 'auto'
@@ -78,6 +77,12 @@ type ToolChoice
 interface ToolResultMessage {
   content: string
   toolCallId: string
+}
+
+const zeroUsage: Usage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
 }
 
 const openAIFunctionToolSchema = object({
@@ -199,6 +204,9 @@ class CompletionTurn {
   #cancelSession: (() => Promise<void>) | undefined
   #connection: GatewayModelConnection | undefined
   #connectionDisposed = false
+  // Required-tool attempts buffer text until a tool call validates the attempt.
+  // A call flushes these chunks before its output; a rejected attempt discards them.
+  #deferredText: string[] | undefined
   #finished = false
   #options: CompletionTurnOptions
   #outputs = new PromiseQueue<CompletionOutput>()
@@ -215,6 +223,7 @@ class CompletionTurn {
         this.#toolCallCount += 1
         this.#pendingCalls.set(call.id, call)
         options.onPending(call, this)
+        this.#flushDeferredText()
         this.#outputs.push({ call, type: 'tool-call' })
       })
       options.bridges.set(this.#bridge.id, this.#bridge)
@@ -305,6 +314,15 @@ class CompletionTurn {
     this.#options.onFinished(this, [...this.#pendingCalls.keys()])
   }
 
+  #flushDeferredText(): void {
+    const chunks = this.#deferredText
+    this.#deferredText = undefined
+
+    for (const text of chunks ?? []) {
+      this.#outputs.push({ text, type: 'text-delta' })
+    }
+  }
+
   #matchesContinuation(request: ChatCompletionRequest, toolCallId: string): boolean {
     const initialMessages = this.#options.request.messages
     const initialPrefix = request.messages.slice(0, initialMessages.length)
@@ -330,6 +348,15 @@ class CompletionTurn {
         && isRecord(call.function)
         && call.function.name === pendingCall.name
         && call.function.arguments === pendingCall.arguments)
+  }
+
+  #pushText(text: string): void {
+    if (this.#deferredText) {
+      this.#deferredText.push(text)
+      return
+    }
+
+    this.#outputs.push({ text, type: 'text-delta' })
   }
 
   async #run(): Promise<void> {
@@ -362,6 +389,7 @@ class CompletionTurn {
           this.#assertActive()
           for (let attempt = 0; attempt < 2; attempt += 1) {
             const callCountBeforePrompt = this.#toolCallCount
+            this.#deferredText = requiresTool(request.toolChoice) ? [] : undefined
             const prompt = session.prompt(attempt === 0
               ? renderMessages(request)
               : [
@@ -380,8 +408,7 @@ class CompletionTurn {
                 }
 
                 if (requiresTool(request.toolChoice) && this.#toolCallCount === callCountBeforePrompt) {
-                  // Buffered responses can discard this rejected attempt. Streams already sent its live deltas.
-                  this.#outputs.push({ type: 'text-reset' })
+                  this.#deferredText = undefined
                   break
                 }
 
@@ -394,7 +421,7 @@ class CompletionTurn {
               }
 
               if (message.update.sessionUpdate === 'agent_message_chunk' && message.update.content.type === 'text') {
-                this.#outputs.push({ text: message.update.content.text, type: 'text-delta' })
+                this.#pushText(message.update.content.text)
               }
             }
           }
@@ -535,12 +562,7 @@ export function createGateway(options: GatewayOptions): GatewayApp {
     }
 
     if (output.type === 'tool-call') {
-      turn.armContinuation(output.call.id)
-      options.onCompatibilityDiagnostic?.({
-        field: 'usage',
-        message: 'ACP usage is unavailable while a deferred tool call is pending; zero usage was reported.',
-        value: null,
-      })
+      deferToolCall(turn, output.call, options.onCompatibilityDiagnostic)
       return chatCompletion(turn.modelId, {
         finishReason: 'tool_calls',
         message: {
@@ -552,11 +574,7 @@ export function createGateway(options: GatewayOptions): GatewayApp {
             type: 'function',
           }],
         },
-      }, {
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-      })
+      }, zeroUsage)
     }
 
     return chatCompletion(turn.modelId, {
@@ -674,11 +692,6 @@ async function bufferCompletion(
   for (;;) {
     const output = await turn.nextOutput(signal)
 
-    if (output.type === 'text-reset') {
-      text = ''
-      continue
-    }
-
     if (output.type === 'text-delta') {
       text += output.text
       continue
@@ -705,11 +718,7 @@ function chatCompletion(
     object: 'chat.completion',
     ...(usage
       ? {
-          usage: {
-            completion_tokens: usage.outputTokens,
-            prompt_tokens: usage.inputTokens,
-            total_tokens: usage.totalTokens,
-          },
+          usage: openAIUsage(usage),
         }
       : {}),
   }
@@ -755,6 +764,19 @@ function connectWith<T>(
   return connection.kind === 'agent-app'
     ? client.connectWith(connection.agent, operation)
     : client.connectWith(connection.stream, operation)
+}
+
+function deferToolCall(
+  turn: CompletionTurn,
+  call: PendingToolCall,
+  onCompatibilityDiagnostic?: GatewayOptions['onCompatibilityDiagnostic'],
+): void {
+  turn.armContinuation(call.id)
+  onCompatibilityDiagnostic?.({
+    field: 'usage',
+    message: 'ACP usage is unavailable while a deferred tool call is pending; zero usage was reported.',
+    value: null,
+  })
 }
 
 function enqueueSse(
@@ -810,6 +832,14 @@ function openAIError(message: string, type: string) {
   return { error: { message, type } }
 }
 
+function openAIUsage(usage: Usage) {
+  return {
+    completion_tokens: usage.outputTokens,
+    prompt_tokens: usage.inputTokens,
+    total_tokens: usage.totalTokens,
+  }
+}
+
 function renderMessages(request: ChatCompletionRequest): string {
   const requiredTool = request.toolChoice && typeof request.toolChoice === 'object'
     ? request.toolChoice.function.name
@@ -858,6 +888,27 @@ function streamCompletion(
   const encoder = new TextEncoder()
   const id = `chatcmpl-${crypto.randomUUID()}`
   const created = Math.floor(Date.now() / 1_000)
+  const finishStream = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    reason: 'tool_calls' | ReturnType<typeof finishReason>,
+    usage?: null | Usage,
+  ) => {
+    enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
+      delta: {},
+      finish_reason: reason,
+      index: 0,
+    }]))
+
+    if (usage) {
+      enqueueSse(controller, encoder, {
+        ...chatCompletionChunk(id, created, model, []),
+        usage: openAIUsage(usage),
+      })
+    }
+
+    controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+    controller.close()
+  }
 
   const body = new ReadableStream<Uint8Array>({
     async cancel() {
@@ -867,10 +918,6 @@ function streamCompletion(
       try {
         for (;;) {
           const output = await turn.nextOutput()
-
-          if (output.type === 'text-reset') {
-            continue
-          }
 
           if (output.type === 'text-delta') {
             enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
@@ -882,12 +929,7 @@ function streamCompletion(
 
           if (output.type === 'tool-call') {
             // The ACP call stays blocked until the next OpenAI request returns its tool result.
-            turn.armContinuation(output.call.id)
-            onCompatibilityDiagnostic?.({
-              field: 'usage',
-              message: 'ACP usage is unavailable while a deferred tool call is pending; zero usage was reported.',
-              value: null,
-            })
+            deferToolCall(turn, output.call, onCompatibilityDiagnostic)
             enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
               delta: {
                 role: 'assistant',
@@ -900,43 +942,11 @@ function streamCompletion(
               },
               index: 0,
             }]))
-            enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
-              delta: {},
-              finish_reason: 'tool_calls',
-              index: 0,
-            }]))
-            enqueueSse(controller, encoder, {
-              ...chatCompletionChunk(id, created, model, []),
-              usage: {
-                completion_tokens: 0,
-                prompt_tokens: 0,
-                total_tokens: 0,
-              },
-            })
-            controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-            controller.close()
+            finishStream(controller, 'tool_calls', zeroUsage)
             return
           }
 
-          enqueueSse(controller, encoder, chatCompletionChunk(id, created, model, [{
-            delta: {},
-            finish_reason: finishReason(output.stopReason),
-            index: 0,
-          }]))
-
-          if (output.usage) {
-            enqueueSse(controller, encoder, {
-              ...chatCompletionChunk(id, created, model, []),
-              usage: {
-                completion_tokens: output.usage.outputTokens,
-                prompt_tokens: output.usage.inputTokens,
-                total_tokens: output.usage.totalTokens,
-              },
-            })
-          }
-
-          controller.enqueue(encoder.encode('data: [DONE]\n\n'))
-          controller.close()
+          finishStream(controller, finishReason(output.stopReason), output.usage)
           return
         }
       }
