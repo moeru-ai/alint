@@ -8,7 +8,7 @@
       "name": "alint",
       "source": {
         "source": "local",
-        "path": "./plugins/alint"
+        "path": "./plugins/codex-plugin-alint"
       },
       "policy": {
         "installation": "AVAILABLE",

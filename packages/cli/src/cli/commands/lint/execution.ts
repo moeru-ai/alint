@@ -4,7 +4,7 @@ import type { RunSession, SessionTargetSelection } from '../../runtime/session'
 import type { CliIo } from '../../types'
 import type { LintCommandOptions } from './options'
 
-import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { AlintCachePersistenceError, AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 
 import { resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
@@ -47,7 +47,7 @@ export async function executeLint(options: LintExecutionOptions): Promise<RunRes
     })
   }
   catch (error) {
-    if (error instanceof AlintRunError || error instanceof AlintRunCancelledError) {
+    if (error instanceof AlintRunError || error instanceof AlintRunCancelledError || error instanceof AlintCachePersistenceError) {
       await persistStats(error.result)
     }
 

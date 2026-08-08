@@ -9,7 +9,7 @@ import { readFileSync, writeSync } from 'node:fs'
 import { errorMessageFrom } from '@moeru/std'
 
 import { writeFatalDiagnostic } from './fatal-diagnostic'
-import { applyResult, hasReachedLintLimit, lintLimitDecision, runtimeFailureMessage } from './policy'
+import { applyResult, lintLimitDecision, maximumLintRounds, runtimeFailureMessage } from './policy'
 import { findGitRoot, hasProjectConfig, isHeadDetached } from './repository'
 import { resolveAlintStopGate } from './runner'
 import { createStateStore } from './state'
@@ -154,7 +154,7 @@ async function runForInput(
     }
   }
 
-  if (hasReachedLintLimit(state)) {
+  if (state.lintRounds >= maximumLintRounds) {
     return { decision: lintLimitDecision(state) }
   }
 

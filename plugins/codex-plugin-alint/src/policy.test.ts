@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { applyResult, hasReachedLintLimit, lintLimitDecision } from './policy'
+import { applyResult, lintLimitDecision } from './policy'
 import { emptyState } from './state'
 
 describe('stop Gate policy', () => {
@@ -10,7 +10,7 @@ describe('stop Gate policy', () => {
 
     expect(first.state.lintRounds).toBe(1)
     expect(first.decision.decision).toBe('block')
-    expect(first.decision.reason).toBe('alint-plugin: 0 error(s), 1 warning(s). Review the report at "/tmp/report.json" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of the reported warnings are valid or valuable, tell the user that the alint configuration may need to be revised, but do not change it yourself.')
+    expect(first.decision.reason).toBe('alint-plugin: 0 error(s), 1 warning(s). Review the report at "/tmp/report.json" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.')
     expect(second.state.lintRounds).toBe(2)
     expect(second.decision.decision).toBeUndefined()
     expect(second.decision.systemMessage).toBe('alint-plugin: The same 0 error(s) and 1 warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "/tmp/report.json".')
@@ -49,8 +49,7 @@ describe('stop Gate policy', () => {
 
     expect(state.lintRounds).toBe(9)
     expect(decision?.decision).toBeUndefined()
-    expect(decision?.systemMessage).toBe('alint-plugin: 1 error(s), 0 warning(s). Review the report at "/tmp/report.json" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of the reported errors are valid or valuable, tell the user that the alint configuration may need to be revised, but do not change it yourself.')
-    expect(hasReachedLintLimit(state)).toBe(true)
+    expect(decision?.systemMessage).toBe('alint-plugin: 1 error(s), 0 warning(s). Review the report at "/tmp/report.json" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.')
     expect(lintLimitDecision(state).systemMessage).toContain('/tmp/report.json')
   })
 

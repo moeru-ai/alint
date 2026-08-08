@@ -1,4 +1,4 @@
-import type { FileHandle } from 'node:fs/promises'
+import type { LockOptions } from 'proper-lockfile'
 
 import type { RunnerConfig } from '../../config/types'
 import type { ProgressTargetKind } from '../types'
@@ -19,9 +19,12 @@ import process from 'node:process'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
-import { access, mkdir, open, readFile, rename, rm, writeFile as writeFileToDisk } from 'node:fs/promises'
+import { access, appendFile, mkdir, open, readFile, rename, rm, writeFile as writeFileToDisk } from 'node:fs/promises'
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 
+import lockfile from 'proper-lockfile'
+
+import { isError } from '@moeru/std/error'
 import {
   array,
   boolean,
@@ -43,16 +46,21 @@ import {
 import packageJson from '../../../package.json'
 
 import { stableHash } from '../hash'
-import { CACHE_HEADER_LIMIT, CACHE_MAGIC, CACHE_SCHEMA_VERSION } from './types'
+import { CACHE_MAGIC, CACHE_SCHEMA_VERSION } from './types'
 
 const DEFAULT_CACHE_FILE_NAME = '.alintcache'
+const LOCK_STALE_MS = 20_000
+const LOCK_UPDATE_MS = 3_000
+const METADATA_READ_LIMIT = 4_096
 
 export interface CacheStoreOptions {
   alintVersion?: string
+  appendFile?: typeof appendFile
   cwd: string
   enabled: boolean
   fileExists?: (path: string) => Promise<boolean>
   location?: string
+  lock?: CacheLockDependencies
   readOnly?: boolean
   writeFile?: typeof writeFileToDisk
 }
@@ -73,43 +81,66 @@ export interface TargetIdentityInput {
   }
 }
 
+type CacheEvent = PutEvent | RemoveOwnerEvent | ReplaceOwnerEvent
+
+interface CacheLockDependencies {
+  acquire: (path: string, options: LockOptions) => Promise<() => Promise<void>>
+}
+
+interface CacheMetadata {
+  alintVersion: string
+  createdAt: string
+  magic: typeof CACHE_MAGIC
+  schemaVersion: typeof CACHE_SCHEMA_VERSION
+  type: 'metadata'
+}
+
+type JsonValue = boolean | JsonValue[] | null | number | string | { [key: string]: JsonValue }
+
+interface PutEvent {
+  at: string
+  entry: CacheEntry
+  owner: CachedOwner
+  ownerKey: string
+  slotKey: string
+  type: 'put'
+}
+
+interface RemoveOwnerEvent {
+  at: string
+  ownerKey: string
+  type: 'remove-owner'
+}
+
+interface ReplaceOwnerEntry {
+  entry: CacheEntry
+  slotKey: string
+}
+
+interface ReplaceOwnerEvent {
+  at: string
+  entries: ReplaceOwnerEntry[]
+  mode: 'merge' | 'replace'
+  owner: CachedOwner
+  ownerKey: string
+  type: 'replace-owner'
+}
+
 const FiniteNumberSchema = pipe(number(), finite())
-
-const PositionSchema = object({
-  column: FiniteNumberSchema,
-  line: FiniteNumberSchema,
-})
-
-const SourceLocationSchema = object({
-  end: PositionSchema,
-  start: PositionSchema,
-})
-
-const DiagnosticLocationSchema = object({
-  end: optional(PositionSchema),
-  start: PositionSchema,
-})
-
-const SourceRangeSchema = object({
-  end: FiniteNumberSchema,
-  start: FiniteNumberSchema,
-})
-
+const PositionSchema = object({ column: FiniteNumberSchema, line: FiniteNumberSchema })
+const SourceLocationSchema = object({ end: PositionSchema, start: PositionSchema })
+const DiagnosticLocationSchema = object({ end: optional(PositionSchema), start: PositionSchema })
+const SourceRangeSchema = object({ end: FiniteNumberSchema, start: FiniteNumberSchema })
 const DiagnosticSchema = object({
   cached: optional(boolean()),
   evidence: optional(custom<JsonValue>(isJsonValue)),
   filePath: string(),
   loc: optional(DiagnosticLocationSchema),
   message: string(),
-  model: optional(object({
-    providerId: string(),
-    requested: optional(string()),
-    resolvedId: string(),
-  })),
+  model: optional(object({ providerId: string(), requested: optional(string()), resolvedId: string() })),
   ruleId: string(),
   severity: union([literal('error'), literal('warn')]),
 })
-
 const UsageSchema = object({
   filePath: optional(string()),
   inputTokens: optional(FiniteNumberSchema),
@@ -120,15 +151,9 @@ const UsageSchema = object({
   ruleId: string(),
   totalTokens: optional(FiniteNumberSchema),
 })
-
 const CacheEntrySchema = object({
   diagnostics: array(DiagnosticSchema),
-  fingerprint: object({
-    configHash: string(),
-    modelHash: string(),
-    ruleHash: string(),
-    targetHash: string(),
-  }),
+  fingerprint: object({ configHash: string(), modelHash: string(), ruleHash: string(), targetHash: string() }),
   target: object({
     hash: string(),
     identity: string(),
@@ -138,6 +163,12 @@ const CacheEntrySchema = object({
     range: optional(SourceRangeSchema),
   }),
   usage: array(UsageSchema),
+})
+const CachedOwnerSchema = object({
+  contentHash: optional(string()),
+  kind: union([literal('file'), literal('project')]),
+  path: string(),
+  slots: array(string()),
 })
 
 function objectRecord<ValueSchema extends Parameters<typeof record>[1]>(value: ValueSchema) {
@@ -152,12 +183,7 @@ const CacheFileBodySchema = pipe(
   object({
     createdAt: string(),
     entries: objectRecord(CacheEntrySchema),
-    owners: objectRecord(object({
-      contentHash: optional(string()),
-      kind: union([literal('file'), literal('project')]),
-      path: string(),
-      slots: array(string()),
-    })),
+    owners: objectRecord(CachedOwnerSchema),
     updatedAt: string(),
   }),
   check((body) => {
@@ -169,8 +195,41 @@ const CacheFileBodySchema = pipe(
       && entryKeys.every(key => uniqueSlots.has(key))
   }),
 )
+const CacheMetadataSchema = object({
+  alintVersion: string(),
+  createdAt: string(),
+  magic: literal(CACHE_MAGIC),
+  schemaVersion: literal(CACHE_SCHEMA_VERSION),
+  type: literal('metadata'),
+})
+const PutEventSchema = object({
+  at: string(),
+  entry: CacheEntrySchema,
+  owner: CachedOwnerSchema,
+  ownerKey: string(),
+  slotKey: string(),
+  type: literal('put'),
+})
+const ReplaceOwnerEventSchema = object({
+  at: string(),
+  entries: array(object({ entry: CacheEntrySchema, slotKey: string() })),
+  mode: union([literal('merge'), literal('replace')]),
+  owner: CachedOwnerSchema,
+  ownerKey: string(),
+  type: literal('replace-owner'),
+})
+const RemoveOwnerEventSchema = object({ at: string(), ownerKey: string(), type: literal('remove-owner') })
+const CacheEventSchema = union([PutEventSchema, ReplaceOwnerEventSchema, RemoveOwnerEventSchema])
 
-type JsonValue = boolean | JsonValue[] | null | number | string | { [key: string]: JsonValue }
+interface EventWriter {
+  enqueue: (event: CacheEvent) => void
+  flush: (finalAttempt: boolean) => Promise<void>
+}
+
+interface LoadedCacheLog {
+  body: CacheFileBody
+  metadata: CacheMetadata
+}
 
 export async function createCacheStore(options: CacheStoreOptions): Promise<CacheStore> {
   const location = resolveCacheLocation(options.cwd, options.location)
@@ -178,26 +237,30 @@ export async function createCacheStore(options: CacheStoreOptions): Promise<Cach
     return createNoopCacheStore(location)
 
   const alintVersion = options.alintVersion ?? packageJson.version
-  const header = `${CACHE_MAGIC} ${CACHE_SCHEMA_VERSION} ${alintVersion}`
-  const body = await loadCacheBody(location, header, options.readOnly === true)
+  const initial = await loadCacheLog(location, alintVersion)
   if (options.readOnly)
-    return createReadOnlyCacheStore(location, body, options.cwd)
-  const fileExists = options.fileExists ?? defaultFileExists
-  const writeFile = options.writeFile ?? writeFileToDisk
-  const persist = createCacheWriter(location, header, writeFile)
+    return createReadOnlyCacheStore(location, initial.body, options.cwd)
 
-  const flush = async (): Promise<void> => {
-    body.updatedAt = new Date().toISOString()
-    await persist(body)
+  const dependencies = {
+    append: options.appendFile ?? appendFile,
+    lock: options.lock ?? { acquire: lockfile.lock },
+    write: options.writeFile ?? writeFileToDisk,
   }
+  const trimmed = await trimOnce(location, alintVersion, initial, dependencies)
+  const writer = createEventWriter(location, trimmed.metadata, dependencies)
+  const fileExists = options.fileExists ?? defaultFileExists
+
+  const flush = async (): Promise<void> => writer.flush(false)
 
   return {
-    beginOwner: (owner, metadata) => beginOwner(body, owner, options.cwd, flush, metadata),
+    beginOwner: (owner, metadata) => beginOwner(trimmed.body, owner, options.cwd, writer, metadata),
     flush,
     location,
     reconcile: async () => {
-      await collectMissingFileOwners(body, options.cwd, fileExists)
-      await flush()
+      const removedOwners = await collectMissingFileOwners(trimmed.body, options.cwd, fileExists)
+      for (const ownerKey of removedOwners)
+        writer.enqueue({ at: new Date().toISOString(), ownerKey, type: 'remove-owner' })
+      await writer.flush(true)
     },
   }
 }
@@ -233,35 +296,28 @@ export function normalizeCachePath(cwd: string, filePath: string): string {
   return relative(cwd, resolvedPath).split(sep).join('/') || '.'
 }
 
-export function normalizeRunnerCacheConfig(
-  cache: RunnerConfig['cache'],
-  cwd: string,
-): NormalizedRunnerCacheConfig {
-  if (cache === false) {
+export function normalizeRunnerCacheConfig(cache: RunnerConfig['cache'], cwd: string): NormalizedRunnerCacheConfig {
+  if (cache === false)
     return { enabled: false, location: resolveCacheLocation(cwd) }
-  }
-  if (cache === true || cache === undefined) {
+  if (cache === true || cache === undefined)
     return { enabled: true, location: resolveCacheLocation(cwd) }
-  }
-  return {
-    enabled: cache.enabled ?? true,
-    location: resolveCacheLocation(cwd, cache.location),
-  }
+  return { enabled: cache.enabled ?? true, location: resolveCacheLocation(cwd, cache.location) }
 }
 
 export async function readCacheBody(location: string): Promise<CacheFileBody> {
   const text = await readFile(location, 'utf8')
-  return parseCacheBody(text.slice(text.indexOf('\n') + 1))
+  const metadata = parseMetadataLine(text.split(/\r?\n/, 1)[0], undefined)
+  if (!metadata)
+    throw new Error('Invalid alint cache metadata.')
+  return replayLog(text, metadata).body
 }
 
 export function resolveCacheLocation(cwd: string, location?: string): string {
   if (!location)
     return join(cwd, DEFAULT_CACHE_FILE_NAME)
-
   const resolved = isAbsolute(location) ? resolve(location) : resolve(cwd, location)
   if (location.endsWith('/') || location.endsWith('\\'))
     return join(resolved, DEFAULT_CACHE_FILE_NAME)
-
   try {
     if (statSync(resolved).isDirectory())
       return join(resolved, DEFAULT_CACHE_FILE_NAME)
@@ -272,17 +328,71 @@ export function resolveCacheLocation(cwd: string, location?: string): string {
   return resolved
 }
 
+async function appendBatch(location: string, payload: string, append: typeof appendFile): Promise<void> {
+  const handle = await open(location, 'a+')
+  try {
+    const { size } = await handle.stat()
+    let separator = ''
+    if (size > 0) {
+      const finalByte = Buffer.alloc(1)
+      await handle.read(finalByte, 0, 1, size - 1)
+      separator = finalByte[0] === 10 ? '' : '\n'
+    }
+    await append(location, `${separator}${payload}`, 'utf8')
+  }
+  finally {
+    await handle.close()
+  }
+}
+
+function appendLockOptions(): LockOptions {
+  return {
+    realpath: false,
+    retries: { factor: 2, maxTimeout: 16_000, minTimeout: 2_000, retries: 4 },
+    stale: LOCK_STALE_MS,
+    update: LOCK_UPDATE_MS,
+  }
+}
+
+function applyEvent(body: CacheFileBody, event: CacheEvent): void {
+  if (event.type === 'remove-owner') {
+    removeOwner(body, event.ownerKey)
+    body.updatedAt = event.at
+    return
+  }
+  if (event.type === 'put') {
+    const current = body.owners[event.ownerKey]
+    const slots = new Set(current?.slots ?? [])
+    slots.add(event.slotKey)
+    body.entries[event.slotKey] = event.entry
+    body.owners[event.ownerKey] = { ...event.owner, slots: [...slots].sort() }
+    body.updatedAt = event.at
+    return
+  }
+
+  const entries = event.mode === 'merge' ? ownerEntries(body, body.owners[event.ownerKey]) : new Map<string, CacheEntry>()
+  for (const item of event.entries)
+    entries.set(item.slotKey, item.entry)
+  for (const slot of body.owners[event.ownerKey]?.slots ?? [])
+    delete body.entries[slot]
+  for (const [slotKey, entry] of entries)
+    body.entries[slotKey] = entry
+  body.owners[event.ownerKey] = { ...event.owner, slots: [...entries.keys()].sort() }
+  body.updatedAt = event.at
+}
+
 function beginOwner(
   body: CacheFileBody,
   owner: CacheOwnerIdentity,
   cwd: string,
-  flush: CacheStore['flush'],
+  writer: EventWriter,
   ownerMetadata: CacheOwnerMetadata = {},
 ): CacheOwnerTransaction {
   const normalizedOwner = { kind: owner.kind, path: normalizeCachePath(cwd, owner.path) }
   const key = ownerKey(normalizedOwner, cwd)
   const previousOwner = body.owners[key]
   const nextEntries = new Map<string, CacheEntry>()
+  const checkpointEntries = new Map<string, CacheEntry>()
 
   const commit: CacheOwnerTransaction['commit'] = (metadata = {}) => {
     const contentHash = metadata.contentHash ?? ownerMetadata.contentHash
@@ -292,35 +402,53 @@ function beginOwner(
     for (const [entryKey, cacheEntry] of nextEntries)
       committedEntries.set(entryKey, cacheEntry)
 
-    // Replace owns the final snapshot; merge rebases on the current snapshot. Clear every
-    // slot visible to either boundary before publishing the computed owner atomically.
-    const replacedSlots = new Set([
-      ...(previousOwner?.slots ?? []),
-      ...(body.owners[key]?.slots ?? []),
-    ])
+    const replacedSlots = new Set([...(previousOwner?.slots ?? []), ...(body.owners[key]?.slots ?? [])])
     for (const replacedSlot of replacedSlots)
       delete body.entries[replacedSlot]
     for (const [entryKey, cacheEntry] of committedEntries)
       body.entries[entryKey] = cacheEntry
 
-    body.owners[key] = {
+    const cachedOwner: CachedOwner = {
       contentHash,
       kind: normalizedOwner.kind,
       path: normalizedOwner.path,
       slots: [...committedEntries.keys()].sort(),
     }
+    body.owners[key] = cachedOwner
     body.updatedAt = new Date().toISOString()
+    writer.enqueue({
+      at: body.updatedAt,
+      entries: [...committedEntries].map(([slotKey, entry]) => ({ entry, slotKey })),
+      mode: metadata.mode ?? 'replace',
+      owner: cachedOwner,
+      ownerKey: key,
+      type: 'replace-owner',
+    })
+    checkpointEntries.clear()
   }
 
   return {
     checkpoint: async () => {
-      // A completed inference must become durable before its scheduler permit is released. Merge
-      // keeps old slots until the owner reaches its final replace boundary after the full run.
-      commit({ mode: 'merge' })
-      await flush()
+      const cachedOwner: CachedOwner = {
+        contentHash: ownerMetadata.contentHash,
+        kind: normalizedOwner.kind,
+        path: normalizedOwner.path,
+        slots: [],
+      }
+      for (const [entryKey, cacheEntry] of checkpointEntries) {
+        const event: PutEvent = { at: new Date().toISOString(), entry: cacheEntry, owner: cachedOwner, ownerKey: key, slotKey: entryKey, type: 'put' }
+        applyEvent(body, event)
+        writer.enqueue(event)
+      }
+      checkpointEntries.clear()
+      await writer.flush(false)
     },
     commit,
-    discard: cacheSlot => nextEntries.delete(slotKey(normalizedOwner, cacheSlot, cwd)),
+    discard: (cacheSlot) => {
+      const entryKey = slotKey(normalizedOwner, cacheSlot, cwd)
+      nextEntries.delete(entryKey)
+      checkpointEntries.delete(entryKey)
+    },
     lookup: (cacheSlot, fingerprint) => {
       const entryKey = slotKey(normalizedOwner, cacheSlot, cwd)
       const cached = body.entries[entryKey]
@@ -329,7 +457,11 @@ function beginOwner(
       nextEntries.set(entryKey, cached)
       return cached
     },
-    put: (cacheSlot, cacheEntry) => nextEntries.set(slotKey(normalizedOwner, cacheSlot, cwd), cacheEntry),
+    put: (cacheSlot, cacheEntry) => {
+      const entryKey = slotKey(normalizedOwner, cacheSlot, cwd)
+      nextEntries.set(entryKey, cacheEntry)
+      checkpointEntries.set(entryKey, cacheEntry)
+    },
   }
 }
 
@@ -337,21 +469,31 @@ async function collectMissingFileOwners(
   body: CacheFileBody,
   cwd: string,
   fileExists: (path: string) => Promise<boolean>,
-): Promise<void> {
+): Promise<string[]> {
+  const removed: string[] = []
   for (const [key, owner] of Object.entries(body.owners)) {
     if (owner.kind !== 'file' || await fileExists(resolve(cwd, owner.path)))
       continue
-    for (const entryKey of owner.slots)
-      delete body.entries[entryKey]
-    delete body.owners[key]
+    removeOwner(body, key)
+    removed.push(key)
   }
+  return removed
+}
+
+function compactEvents(body: CacheFileBody): CacheEvent[] {
+  return Object.entries(body.owners).map(([ownerKey, owner]) => ({
+    at: body.updatedAt,
+    entries: [...ownerEntries(body, owner)].map(([slotKey, entry]) => ({ entry, slotKey })),
+    mode: 'replace',
+    owner,
+    ownerKey,
+    type: 'replace-owner',
+  }))
 }
 
 function createBaseTargetIdentity(target: TargetIdentityInput): string {
   if (target.identity && (target.kind !== 'file' || target.identity !== 'file')) {
-    return target.filePath
-      ? `${target.kind}:${target.filePath}:${target.identity}`
-      : `${target.kind}:${target.identity}`
+    return target.filePath ? `${target.kind}:${target.filePath}:${target.identity}` : `${target.kind}:${target.identity}`
   }
   if (target.kind === 'file')
     return target.filePath ? `file:${target.filePath}` : 'file'
@@ -362,28 +504,59 @@ function createBaseTargetIdentity(target: TargetIdentityInput): string {
   return target.kind
 }
 
-function createCacheWriter(
+function createEmptyCacheBody(createdAt = new Date().toISOString()): CacheFileBody {
+  return { createdAt, entries: {}, owners: {}, updatedAt: createdAt }
+}
+
+function createEventWriter(
   location: string,
-  header: string,
-  writeFile: typeof writeFileToDisk,
-): (body: CacheFileBody) => Promise<void> {
+  metadata: CacheMetadata,
+  dependencies: {
+    append: typeof appendFile
+    lock: CacheLockDependencies
+    write: typeof writeFileToDisk
+  },
+): EventWriter {
+  const backlog: CacheEvent[] = []
+  let validationError: unknown
   let previousWrite = Promise.resolve()
 
-  return (body) => {
-    // Snapshot before entering the queue so this flush represents exactly the owner commits that
-    // were visible when it was requested. Serial writes prevent an older snapshot from winning.
-    const snapshot = parse(CacheFileBodySchema, body)
-    const currentWrite = previousWrite
-      .catch(() => {})
-      .then(() => persistCacheBody(location, header, snapshot, writeFile))
-    previousWrite = currentWrite
-    return currentWrite
+  const persistBacklog = async (): Promise<void> => {
+    if (validationError)
+      throw validationError
+    if (backlog.length === 0)
+      return
+    await mkdir(dirname(location), { recursive: true })
+    await withCacheLock(location, dependencies.lock, appendLockOptions(), async () => {
+      await ensureCompatibleMetadata(location, metadata, dependencies.write)
+      const batchSize = backlog.length
+      const payload = backlog.slice(0, batchSize).map(event => `${JSON.stringify(event)}\n`).join('')
+      // Prefixing the batch with a newline isolates it from a torn final record.
+      await appendBatch(location, payload, dependencies.append)
+      backlog.splice(0, batchSize)
+    })
+    validationError = undefined
+  }
+
+  return {
+    enqueue: (event) => {
+      try {
+        backlog.push(parse(CacheEventSchema, event))
+      }
+      catch (error) {
+        validationError ??= error
+      }
+    },
+    flush: (finalAttempt) => {
+      const write = previousWrite.then(persistBacklog)
+      previousWrite = write.catch(() => {})
+      return finalAttempt ? write : write.catch(() => {})
+    },
   }
 }
 
-function createEmptyCacheBody(): CacheFileBody {
-  const now = new Date().toISOString()
-  return { createdAt: now, entries: {}, owners: {}, updatedAt: now }
+function createMetadata(alintVersion: string, createdAt = new Date().toISOString()): CacheMetadata {
+  return { alintVersion, createdAt, magic: CACHE_MAGIC, schemaVersion: CACHE_SCHEMA_VERSION, type: 'metadata' }
 }
 
 function createNoopCacheStore(location: string): CacheStore {
@@ -394,12 +567,7 @@ function createNoopCacheStore(location: string): CacheStore {
     lookup: () => undefined,
     put: () => {},
   }
-  return {
-    beginOwner: () => transaction,
-    flush: async () => {},
-    location,
-    reconcile: async () => {},
-  }
+  return { beginOwner: () => transaction, flush: async () => {}, location, reconcile: async () => {} }
 }
 
 function createReadOnlyCacheStore(location: string, body: CacheFileBody, cwd: string): CacheStore {
@@ -413,12 +581,7 @@ function createReadOnlyCacheStore(location: string, body: CacheFileBody, cwd: st
     },
     put: () => {},
   })
-  return {
-    beginOwner: transaction,
-    flush: async () => {},
-    location,
-    reconcile: async () => {},
-  }
+  return { beginOwner: transaction, flush: async () => {}, location, reconcile: async () => {} }
 }
 
 async function defaultFileExists(path: string): Promise<boolean> {
@@ -431,6 +594,27 @@ async function defaultFileExists(path: string): Promise<boolean> {
       return false
     throw error
   }
+}
+
+function emptyLoadedLog(alintVersion: string): LoadedCacheLog {
+  const metadata = createMetadata(alintVersion)
+  return { body: createEmptyCacheBody(metadata.createdAt), metadata }
+}
+
+async function ensureCompatibleMetadata(location: string, metadata: CacheMetadata, write: typeof writeFileToDisk): Promise<void> {
+  try {
+    const line = await readMetadataLine(location)
+    if (parseMetadataLine(line, metadata.alintVersion))
+      return
+  }
+  catch (error) {
+    if (!isMissingFileError(error))
+      throw error
+  }
+
+  // Startup trim is opportunistic. A later writer that owns the lease must establish the current
+  // protocol before appending if trim skipped a missing, damaged, or incompatible cache.
+  await write(location, `${JSON.stringify(metadata)}\n`)
 }
 
 function fingerprintsEqual(left: CacheFingerprint, right: CacheFingerprint): boolean {
@@ -477,10 +661,7 @@ function hasJsonObjectProperties(input: object, ancestors: WeakSet<object>): boo
 
 function isCanonicalArrayIndex(key: string): boolean {
   const index = Number(key)
-  return Number.isInteger(index)
-    && index >= 0
-    && index < 2 ** 32 - 1
-    && String(index) === key
+  return Number.isInteger(index) && index >= 0 && index < 2 ** 32 - 1 && String(index) === key
 }
 
 function isJsonValue(input: unknown): input is JsonValue {
@@ -520,32 +701,21 @@ function isMissingFileError(error: unknown): boolean {
 }
 
 function isNodeErrorCode(error: unknown, code: string): boolean {
-  return error instanceof Error && 'code' in error && error.code === code
+  return isError(error) && 'code' in error && error.code === code
 }
 
-async function loadCacheBody(location: string, expectedHeader: string, readOnly: boolean): Promise<CacheFileBody> {
-  let handle: FileHandle | undefined
+async function loadCacheLog(location: string, alintVersion: string): Promise<LoadedCacheLog> {
   try {
-    handle = await open(location, 'r')
-    const header = await readHeader(handle)
-    await handle.close()
-    handle = undefined
-    if (header !== expectedHeader) {
-      if (!readOnly)
-        await rm(location, { force: true })
-      return createEmptyCacheBody()
-    }
-
+    const metadata = parseMetadataLine(await readMetadataLine(location), alintVersion)
+    if (!metadata)
+      return emptyLoadedLog(alintVersion)
     const text = await readFile(location, 'utf8')
-    return parseCacheBody(text.slice(text.indexOf('\n') + 1))
+    return replayLog(text, metadata)
   }
   catch (error) {
-    await handle?.close().catch(() => {})
     if (isMissingFileError(error))
-      return createEmptyCacheBody()
-    if (!readOnly)
-      await rm(location, { force: true }).catch(() => {})
-    return createEmptyCacheBody()
+      return emptyLoadedLog(alintVersion)
+    throw error
   }
 }
 
@@ -563,22 +733,28 @@ function ownerKey(owner: CacheOwnerIdentity, cwd: string): string {
   return stableHash({ kind: owner.kind, path: normalizeCachePath(cwd, owner.path) })
 }
 
-function parseCacheBody(text: string): CacheFileBody {
-  const value: unknown = JSON.parse(text)
-  return parse(CacheFileBodySchema, value)
+function parseMetadataLine(line: string | undefined, expectedAlintVersion: string | undefined): CacheMetadata | undefined {
+  if (!line)
+    return undefined
+  try {
+    const value: unknown = JSON.parse(line)
+    const metadata = parse(CacheMetadataSchema, value)
+    if (expectedAlintVersion !== undefined && metadata.alintVersion !== expectedAlintVersion)
+      return undefined
+    return metadata
+  }
+  catch {
+    return undefined
+  }
 }
 
-async function persistCacheBody(
-  location: string,
-  header: string,
-  body: CacheFileBody,
-  writeFile: typeof writeFileToDisk,
-): Promise<void> {
-  const validatedBody = parse(CacheFileBodySchema, body)
-  await mkdir(dirname(location), { recursive: true })
+async function persistCompactedLog(location: string, loaded: LoadedCacheLog, write: typeof writeFileToDisk): Promise<void> {
+  const metadata = parse(CacheMetadataSchema, loaded.metadata)
+  const events = compactEvents(parse(CacheFileBodySchema, loaded.body)).map(event => parse(CacheEventSchema, event))
+  const contents = [`${JSON.stringify(metadata)}\n`, ...events.map(event => `${JSON.stringify(event)}\n`)].join('')
   const tempPath = join(dirname(location), `.${basename(location)}.${process.pid}.${randomUUID()}.tmp`)
   try {
-    await writeFile(tempPath, `${header}\n${JSON.stringify(validatedBody)}\n`)
+    await write(tempPath, contents)
     await rename(tempPath, location)
   }
   catch (error) {
@@ -587,13 +763,111 @@ async function persistCacheBody(
   }
 }
 
-async function readHeader(handle: FileHandle): Promise<string | undefined> {
-  const buffer = Buffer.alloc(CACHE_HEADER_LIMIT)
-  const { bytesRead } = await handle.read(buffer, 0, CACHE_HEADER_LIMIT, 0)
-  const newline = buffer.subarray(0, bytesRead).indexOf(10)
-  return newline < 0 ? undefined : buffer.subarray(0, newline).toString('utf8')
+async function readMetadataLine(location: string): Promise<string | undefined> {
+  const handle = await open(location, 'r')
+  try {
+    const buffer = Buffer.alloc(METADATA_READ_LIMIT)
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0)
+    const newlineIndex = buffer.subarray(0, bytesRead).indexOf(10)
+    if (newlineIndex < 0)
+      return undefined
+    const lineEnd = newlineIndex > 0 && buffer[newlineIndex - 1] === 13 ? newlineIndex - 1 : newlineIndex
+    return buffer.toString('utf8', 0, lineEnd)
+  }
+  finally {
+    await handle.close()
+  }
+}
+
+function removeOwner(body: CacheFileBody, key: string): void {
+  for (const slot of body.owners[key]?.slots ?? [])
+    delete body.entries[slot]
+  delete body.owners[key]
+}
+
+function replayLog(text: string, metadata: CacheMetadata): LoadedCacheLog {
+  const body = createEmptyCacheBody(metadata.createdAt)
+  const lines = text.split(/\r?\n/)
+  for (let index = 1; index < lines.length; index += 1) {
+    const line = lines[index]
+    if (!line)
+      continue
+    try {
+      const value: unknown = JSON.parse(line)
+      applyEvent(body, parse(CacheEventSchema, value))
+    }
+    catch {
+      // Ordinary events are independent recovery units; a torn or corrupt line cannot hide later valid events.
+    }
+  }
+  return { body: parse(CacheFileBodySchema, body), metadata }
 }
 
 function slotKey(owner: CacheOwnerIdentity, slot: CacheSlotIdentity, cwd: string): string {
   return stableHash({ owner: ownerKey(owner, cwd), ...slot })
+}
+
+function trimLockOptions(): LockOptions {
+  return { realpath: false, retries: 0, stale: LOCK_STALE_MS, update: LOCK_UPDATE_MS }
+}
+
+async function trimOnce(
+  location: string,
+  alintVersion: string,
+  fallback: LoadedCacheLog,
+  dependencies: {
+    append: typeof appendFile
+    lock: CacheLockDependencies
+    write: typeof writeFileToDisk
+  },
+): Promise<LoadedCacheLog> {
+  await mkdir(dirname(location), { recursive: true })
+  try {
+    return await withCacheLock(location, dependencies.lock, trimLockOptions(), async () => {
+      // The lease closes the read/compact race: trim must rebuild from bytes read after acquisition.
+      const latest = await loadCacheLog(location, alintVersion)
+      await persistCompactedLog(location, latest, dependencies.write)
+      return latest
+    })
+  }
+  catch (error) {
+    if (isNodeErrorCode(error, 'ELOCKED'))
+      return fallback
+    throw error
+  }
+}
+
+async function withCacheLock<Result>(
+  location: string,
+  lock: CacheLockDependencies,
+  options: LockOptions,
+  operation: () => Promise<Result>,
+): Promise<Result> {
+  let compromised: Error | undefined
+  const release = await lock.acquire(location, {
+    ...options,
+    onCompromised: (error) => {
+      compromised = error
+    },
+  })
+  let operationError: unknown
+  try {
+    const result = await operation()
+    if (compromised)
+      throw compromised
+    return result
+  }
+  catch (error) {
+    operationError = error
+    throw error
+  }
+  finally {
+    try {
+      await release()
+    }
+    catch (error) {
+      if (operationError === undefined)
+        throw error
+    }
+  }
 }

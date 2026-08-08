@@ -101,7 +101,7 @@ bench('garbage collects missing owners', async () => {
   warmupTime: 0,
 })
 
-bench('serializes live cache body', async () => {
+bench('flushes an empty event backlog', async () => {
   await serializeFixture.store.reconcile()
 })
 

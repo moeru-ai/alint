@@ -1,6 +1,6 @@
 import type { HookDecision, SessionState, StopGateEnvelope } from './types'
 
-const maximumLintRounds = 9
+export const maximumLintRounds = 9
 
 export interface AppliedResult {
   decision: HookDecision
@@ -73,10 +73,6 @@ export function applyResult(
   }
 }
 
-export function hasReachedLintLimit(state: SessionState): boolean {
-  return state.lintRounds >= maximumLintRounds
-}
-
 export function lintLimitDecision(state: SessionState): HookDecision {
   if (state.lastFindings === undefined) {
     return {}
@@ -98,9 +94,7 @@ function findingMessage(state: SessionState, reportPath: string): string {
     return ''
   }
 
-  const findingKind = findings.status === 'warnings' ? 'warnings' : 'errors'
-
-  return `alint-plugin: ${findings.errorCount} error(s), ${findings.warningCount} warning(s). Review the report at "${reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of the reported ${findingKind} are valid or valuable, tell the user that the alint configuration may need to be revised, but do not change it yourself.`
+  return `alint-plugin: ${findings.errorCount} error(s), ${findings.warningCount} warning(s). Review the report at "${reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`
 }
 
 function repeatedFindingsMessage(state: SessionState, reportPath: string): string {

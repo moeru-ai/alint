@@ -49,6 +49,7 @@ catalog:
   '@pnpm/find-workspace-dir': ^1000.1.5
   '@smithy/node-http-handler': ^4.9.13
   '@types/node': ^26.1.2
+  '@types/proper-lockfile': 4.1.4
   '@types/tar-stream': ^3.1.4
   # Pinned, not caret-ranged: this is the VS Code API surface the extension is allowed to use, and
   # it has to stay equal to `engines.vscode` in apps/vscode. A caret would let the type checker
@@ -88,6 +89,7 @@ catalog:
   oxc-parser: ^0.142.0
   oxlint: ^1.77.0
   pathe: ^2.0.3
+  proper-lockfile: 4.1.2
   publint: ^0.3.22
   resolve.exports: 2.0.3
   rollup: ^4.62.4

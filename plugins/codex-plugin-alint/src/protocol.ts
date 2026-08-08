@@ -160,7 +160,11 @@ export async function probeStopGateConfig(
       'integrations',
       'stop-gate',
       'show',
-    ], commandOptions(gitRoot, remainingMs))
+    ], {
+      nodeOptions: { cwd: gitRoot },
+      nodePath: false,
+      timeout: remainingMs,
+    })
     const result = await execution
 
     if (execution.killed) {
@@ -213,14 +217,6 @@ function addStartupAllowance(lintTimeoutMs: number): number {
   // One of those minutes belongs here so CLI startup does not consume the configured lint budget;
   // the remaining reserve covers Git discovery, CLI probing, state I/O, and scheduling overhead.
   return Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER)
-}
-
-function commandOptions(cwd: string, timeout: number) {
-  return {
-    nodeOptions: { cwd },
-    nodePath: false,
-    timeout,
-  } as const
 }
 
 function createLongTimeout(timeoutMs: number): { dispose: () => void, signal: AbortSignal } {

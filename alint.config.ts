@@ -13,7 +13,7 @@ export default defineConfig([
       'packages/plugin-simplicity/fixtures/**',
 
       // Review the Codex plugin source instead of its committed distribution bundle.
-      'plugins/alint/scripts/**',
+      'plugins/codex-plugin-alint/scripts/**',
     ],
   },
   {
@@ -25,6 +25,13 @@ export default defineConfig([
   {
     ignore: {
       gitignore: true,
+    },
+  },
+  {
+    integrations: {
+      stopGate: {
+        enabled: true,
+      },
     },
   },
   {

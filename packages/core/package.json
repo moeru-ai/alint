@@ -45,9 +45,11 @@
     "minimatch": "catalog:",
     "oxc-parser": "catalog:",
     "pathe": "catalog:",
+    "proper-lockfile": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "catalog:",
     "effect": "catalog:",
     "sury": "catalog:"
   }

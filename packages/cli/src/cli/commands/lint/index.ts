@@ -1,16 +1,17 @@
 import type { AlintConfig, RunResult } from '@alint-js/core'
 
+import type { ChangedLineRange } from '../../git'
 import type { ReporterName } from '../../reporters'
 import type { SessionTargetSelection } from '../../runtime/session'
 import type { CliIo, CliWritable } from '../../types'
-import type { ChangedLineRange } from '../../git'
 import type { LintTargets } from './discovery'
 import type { LintCommandOptions } from './options'
 
 import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { AlintCachePersistenceError, AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { errorMessageFrom } from '@moeru/std'
 import { resolve } from 'pathe'
 
 import { findGitRoot } from '../../git'
@@ -149,6 +150,13 @@ async function runLintCommand(
       if (error instanceof NoFilesFoundError) {
         runIo.stderr.write(`${error.message}\n`)
         return 2
+      }
+
+      if (error instanceof AlintCachePersistenceError) {
+        writeResult(error.result)
+        const message = errorMessageFrom(error.cause) ?? error.message
+        runIo.stderr.write(`Cache persistence failed: ${message}\n`)
+        return 1
       }
 
       if (error instanceof AlintRunError) {

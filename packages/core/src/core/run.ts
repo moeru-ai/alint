@@ -36,6 +36,16 @@ export class AlintAbortError extends AlintRunCancelledError {
   }
 }
 
+export class AlintCachePersistenceError extends Error {
+  readonly result: RunResult
+
+  constructor(result: RunResult, cause: unknown) {
+    super('Failed to persist the alint cache.', { cause })
+    this.name = 'AlintCachePersistenceError'
+    this.result = result
+  }
+}
+
 export class AlintRunError extends Error {
   readonly failures: AlintRunFailure[]
   readonly result: RunResult
@@ -108,6 +118,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const outcomes: RuleJobOutcome[] = []
   const fileFailures: AlintFileFailure[] = []
   let infrastructureError: unknown
+  let cachePersistenceError: unknown
   let infrastructureFailed = false
   let admissionFailed = false
 
@@ -192,8 +203,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
         await cacheStore.reconcile()
       }
       catch (error) {
-        infrastructureError ??= error
-        infrastructureFailed = true
+        cachePersistenceError = error
       }
     }
   }
@@ -232,6 +242,8 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
 
   if (infrastructureFailed)
     throw infrastructureError
+  if (cachePersistenceError !== undefined)
+    throw new AlintCachePersistenceError(result, cachePersistenceError)
   if (options.signal?.aborted)
     throw new AlintAbortError(result, { cause: options.signal.reason })
   if (failures.length > 0) {

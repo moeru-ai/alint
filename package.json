@@ -7,10 +7,10 @@
   "scripts": {
     "alint": "pnpm -F @alint-js/cli run alint",
     "build": "pnpm -r run build",
-    "build:codex-plugin": "tsdown --config plugins/alint/tsdown.config.ts",
+    "build:codex-plugin": "tsdown --config plugins/codex-plugin-alint/tsdown.config.ts",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:codex-plugin": "vitest run --config plugins/alint/vitest.config.ts",
+    "test:codex-plugin": "vitest run --config plugins/codex-plugin-alint/vitest.config.ts",
     "docs:sync-readme": "tsx scripts/sync-cli-readme.ts",
     "docs:toc": "doctoc --github --title \"## Table of Contents\" --maxlevel=2 README.md",
     "docs:update": "pnpm docs:toc && pnpm docs:sync-readme",

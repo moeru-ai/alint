@@ -19,7 +19,7 @@ export default defineConfig({
       'packages/agent-pi',
       'packages/agent-codex-cli',
       'packages/model-adapter-acp',
-      'plugins/alint',
+      'plugins/codex-plugin-alint',
     ],
   },
 })
