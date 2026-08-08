@@ -9,7 +9,7 @@ OpenAI-compatible models and implements:
 
 - `GET /v1/models`
 - non-streaming and SSE text chat completions
-- streaming and non-streaming OpenAI function tools exposed to ACP through MCP Streamable HTTP
+- request-scoped OpenAI function tools exposed to ACP through MCP Streamable HTTP
 - deferred `tool_calls` continuation through a later `role: tool` message
 - `tool_choice`, usage, abort, continuation TTL, and permission-denial handling
 
