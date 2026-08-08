@@ -7,7 +7,8 @@ import type { LintCommandOptions } from './options'
 import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { AlintCachePersistenceError, AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { errorMessageFrom } from '@moeru/std'
 import { resolve } from 'pathe'
 
 import { findGitRoot } from '../../git'
@@ -153,6 +154,13 @@ async function runLintCommand(
     })
   }
   catch (error) {
+    if (error instanceof AlintCachePersistenceError) {
+      writeResult(error.result)
+      const message = errorMessageFrom(error.cause) ?? error.message
+      runIo.stderr.write(`Cache persistence failed: ${message}\n`)
+      return 1
+    }
+
     if (error instanceof AlintRunError) {
       writeResult(error.result)
       runIo.stderr.write(formatRunError(error, runIo.stderr.isTTY === true))

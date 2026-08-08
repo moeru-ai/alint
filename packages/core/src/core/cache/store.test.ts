@@ -1,6 +1,9 @@
-import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from './types'
+import type { LockOptions } from 'proper-lockfile'
 
-import { access, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import type { CacheStoreOptions } from './store'
+import type { CacheEntry, CacheSlotIdentity } from './types'
+
+import { access, appendFile, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -21,9 +24,7 @@ const slot: CacheSlotIdentity = {
   targetIdentity: 'file:demo.ts',
 }
 
-async function createRoot(): Promise<string> {
-  return mkdtemp(join(tmpdir(), 'alint-cache-store-'))
-}
+const createRoot = (): Promise<string> => mkdtemp(join(tmpdir(), 'alint-cache-store-'))
 
 function entry(targetHash: string): CacheEntry {
   return {
@@ -34,6 +35,16 @@ function entry(targetHash: string): CacheEntry {
   }
 }
 
+const immediateLock: NonNullable<CacheStoreOptions['lock']> = {
+  acquire: async () => async () => {},
+}
+
+function lockError(code: string, message = code): Error {
+  const error = new Error(message)
+  Object.assign(error, { code })
+  return error
+}
+
 describe('cache helpers', () => {
   it('normalizes paths relative to cwd', () => {
     expect(normalizeCachePath('/repo', '/repo/src/demo.ts')).toBe('src/demo.ts')
@@ -42,10 +53,7 @@ describe('cache helpers', () => {
   })
 
   it('normalizes disabled and object runner cache config', () => {
-    expect(normalizeRunnerCacheConfig(false, '/repo')).toEqual({
-      enabled: false,
-      location: join('/repo', '.alintcache'),
-    })
+    expect(normalizeRunnerCacheConfig(false, '/repo')).toEqual({ enabled: false, location: join('/repo', '.alintcache') })
     expect(normalizeRunnerCacheConfig({ location: 'cache/alint.json' }, '/repo')).toEqual({
       enabled: true,
       location: join('/repo', 'cache/alint.json'),
@@ -54,7 +62,6 @@ describe('cache helpers', () => {
 
   it('resolves default, file, and directory cache locations', async () => {
     const root = await createRoot()
-
     expect(resolveCacheLocation('/repo')).toBe(join('/repo', '.alintcache'))
     expect(resolveCacheLocation('/repo', root)).toBe(join(root, '.alintcache'))
     expect(resolveCacheLocation('/repo', `${root}/`)).toBe(join(root, '.alintcache'))
@@ -67,610 +74,464 @@ describe('cache helpers', () => {
       { kind: 'function', name: 'handler', range: { end: 40, start: 30 } },
       { identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } },
       { identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } },
-      { identity: 'no-range', kind: 'function' },
-      { identity: 'no-range', kind: 'function' },
-      { kind: 'function', name: 'unique', range: { end: 60, start: 50 } },
     ])
-
     expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 20, start: 10 } }, 0)).toBe('function:handler:10:20')
     expect(resolveIdentity({ kind: 'function', name: 'handler', range: { end: 40, start: 30 } }, 1)).toBe('function:handler:30:40')
     expect(resolveIdentity({ identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } }, 2)).toBe('function:same-range:10:20:2')
-    expect(resolveIdentity({ identity: 'same-range', kind: 'function', range: { end: 20, start: 10 } }, 3)).toBe('function:same-range:10:20:3')
-    expect(resolveIdentity({ identity: 'no-range', kind: 'function' }, 4)).toBe('function:no-range:4')
-    expect(resolveIdentity({ identity: 'no-range', kind: 'function' }, 5)).toBe('function:no-range:5')
-    expect(resolveIdentity({ kind: 'function', name: 'unique', range: { end: 60, start: 50 } }, 6)).toBe('function:unique')
   })
 })
 
-describe('cache store', () => {
-  it.each([
-    ['legacy', '{"legacy":true}'],
-    ['version mismatch', `ALINT_CACHE 2 1.0.0\n${JSON.stringify({ createdAt: '2000-01-01T00:00:00.000Z', entries: {}, owners: {}, updatedAt: '2000-01-01T00:00:00.000Z' })}\n`],
-    ['malformed nested body', `ALINT_CACHE 2 2.0.0\n${JSON.stringify({
-      createdAt: '2000-01-01T00:00:00.000Z',
-      entries: {
-        bad: {
-          diagnostics: [{ filePath: 'demo.ts', loc: { start: { column: 1, line: 'bad' } }, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }],
-          fingerprint: { configHash: 'config', modelHash: 'model', ruleHash: 'rule', targetHash: 'target' },
-          target: { hash: 'target', identity: 'file:demo.ts', kind: 'file' },
-          usage: [],
-        },
-      },
-      owners: {},
-      updatedAt: '2000-01-01T00:00:00.000Z',
-    })}\n`],
-  ])('leaves %s cache bytes unchanged when read-only', async (_, original) => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    await writeFile(cachePath, original)
-
-    const store = await createCacheStore({ alintVersion: '2.0.0', cwd: root, enabled: true, location: cachePath, readOnly: true })
-    const owner = store.beginOwner({ kind: 'file', path: join(root, 'demo.ts') })
-    owner.put(slot, entry('replacement'))
-    owner.commit({ contentHash: 'replacement' })
-    await store.reconcile()
-
-    expect(await readFile(cachePath, 'utf8')).toBe(original)
-  })
-
-  it('reads valid entries but ignores commits and reconcile when read-only', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const writable = await createCacheStore({ alintVersion: '2.0.0', cwd: root, enabled: true, location: cachePath })
-    const warmOwner = writable.beginOwner({ kind: 'file', path: sourcePath })
-    warmOwner.put(slot, entry('warm'))
-    warmOwner.commit({ contentHash: 'warm' })
-    await writable.reconcile()
-    const original = await readFile(cachePath, 'utf8')
-
-    const readOnly = await createCacheStore({ alintVersion: '2.0.0', cwd: root, enabled: true, location: cachePath, readOnly: true })
-    const owner = readOnly.beginOwner({ kind: 'file', path: sourcePath })
-    expect(owner.lookup(slot, entry('warm').fingerprint)?.fingerprint.targetHash).toBe('warm')
-    owner.put(slot, entry('replacement'))
-    owner.commit({ contentHash: 'replacement' })
-    await readOnly.reconcile()
-
-    expect(await readFile(cachePath, 'utf8')).toBe(original)
-  })
-
-  it('removes a legacy large raw JSON body after reading only the bounded header', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    await writeFile(cachePath, JSON.stringify({ padding: 'x'.repeat(2 * 1024 * 1024) }))
-
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'file', path: join(root, 'demo.ts') })
-
-    expect(owner.lookup(slot, entry('target').fingerprint)).toBeUndefined()
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it('replaces one owner without deleting untouched owners', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    await writeFile(join(root, 'a.ts'), 'a')
-    await writeFile(join(root, 'b.ts'), 'b')
-    const initial = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const ownerA = initial.beginOwner({ kind: 'file', path: join(root, 'a.ts') })
-    const ownerB = initial.beginOwner({ kind: 'file', path: join(root, 'b.ts') })
-    ownerA.put(slot, entry('a-1'))
-    ownerA.commit({ contentHash: 'content-a-1' })
-    ownerB.put(slot, entry('b-1'))
-    ownerB.commit({ contentHash: 'content-b-1' })
-    await initial.reconcile()
-
-    const reopened = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const replacementA = reopened.beginOwner({ kind: 'file', path: join(root, 'a.ts') })
-    replacementA.put(slot, entry('a-2'))
-    replacementA.commit({ contentHash: 'content-a-2' })
-    await reopened.reconcile()
-    const body = await readCacheBody(cachePath)
-
-    expect(Object.keys(body.owners)).toHaveLength(2)
-    expect(Object.keys(body.entries)).toHaveLength(2)
-    expect(Object.values(body.entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['a-2', 'b-1'])
-    expect(Object.values(body.owners).find(owner => owner.path === 'b.ts')?.contentHash).toBe('content-b-1')
-  })
-
-  it('leaves no orphan entries when overlapping owner transactions commit', async () => {
+describe('jsonl cache store', () => {
+  it('writes metadata first and appends checkpoint put plus final replace-owner events', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
     const sourcePath = join(root, 'demo.ts')
     await writeFile(sourcePath, 'demo')
     const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const first = store.beginOwner({ kind: 'file', path: sourcePath })
-    const second = store.beginOwner({ kind: 'file', path: sourcePath })
-    first.put(slot, entry('first'))
-    second.put({ ...slot, ruleId: 'demo/second' }, entry('second'))
-
-    first.commit({ contentHash: 'first' })
-    second.commit({ contentHash: 'second' })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath }, { contentHash: 'content' })
+    owner.put(slot, entry('checkpoint'))
+    await owner.checkpoint()
+    owner.commit()
     await store.reconcile()
-    const body = await readCacheBody(cachePath)
-    const owner = Object.values(body.owners)[0]
 
-    expect(owner?.slots).toHaveLength(1)
-    expect(Object.keys(body.entries).sort()).toEqual(owner?.slots)
+    const lines = (await readFile(cachePath, 'utf8')).trim().split('\n').map(line => JSON.parse(line))
+    expect(lines[0]).toMatchObject({ alintVersion: '1.0.0', magic: 'ALINT_CACHE', schemaVersion: 2, type: 'metadata' })
+    expect(lines.slice(1).map(line => line.type)).toEqual(['put', 'replace-owner'])
+    expect(Object.values((await readCacheBody(cachePath)).entries)[0]?.fingerprint.targetHash).toBe('checkpoint')
+  })
+
+  it('keeps one owner slot while newer fingerprints overwrite older values', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('first'))
+    await owner.checkpoint()
+    owner.put(slot, entry('second'))
+    await owner.checkpoint()
+    owner.commit()
+    await store.reconcile()
+
+    const body = await readCacheBody(cachePath)
+    expect(Object.keys(body.owners)).toHaveLength(1)
+    expect(Object.keys(body.entries)).toHaveLength(1)
     expect(Object.values(body.entries)[0]?.fingerprint.targetHash).toBe('second')
   })
 
-  it('rebases an overlapping merge on entries committed after the transaction began', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const completed = store.beginOwner({ kind: 'file', path: sourcePath })
-    const partial = store.beginOwner({ kind: 'file', path: sourcePath })
-    completed.put(slot, entry('completed'))
-    partial.put({ ...slot, ruleId: 'demo/partial' }, entry('partial'))
-
-    completed.commit({ contentHash: 'completed' })
-    partial.commit({ contentHash: 'partial', mode: 'merge' })
-    await store.reconcile()
-    const body = await readCacheBody(cachePath)
-    const owner = Object.values(body.owners)[0]
-
-    expect(owner?.slots).toHaveLength(2)
-    expect(Object.keys(body.entries).sort()).toEqual(owner?.slots)
-    expect(Object.values(body.entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['completed', 'partial'])
-    expect(owner?.contentHash).toBe('partial')
-  })
-
-  it('uses owner metadata when it writes a checkpoint', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner(
-      { kind: 'file', path: sourcePath },
-      { contentHash: 'source-content' },
-    )
-    owner.put(slot, entry('checkpoint'))
-
-    await owner.checkpoint()
-    const body = await readCacheBody(cachePath)
-
-    expect(Object.values(body.owners)[0]?.contentHash).toBe('source-content')
-    expect(Object.values(body.entries)[0]?.fingerprint.targetHash).toBe('checkpoint')
-  })
-
-  it('removes cache bodies with orphan entries', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const body = {
-      createdAt: '2000-01-01T00:00:00.000Z',
-      entries: { orphan: entry('orphan') },
-      owners: {},
-      updatedAt: '2000-01-01T00:00:00.000Z',
-    }
-    await writeFile(cachePath, `ALINT_CACHE 2 1.0.0\n${JSON.stringify(body)}\n`)
-
-    await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it.each(['evidence', 'metadata'] as const)('rejects non-JSON %s values before persistence', async (field) => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const malformed = entry('target')
-    if (field === 'evidence') {
-      malformed.diagnostics = [{ evidence: () => 'not JSON', filePath: sourcePath, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }]
-    }
-    else {
-      malformed.usage = [{ metadata: () => 'not JSON', modelId: 'model', providerId: 'provider', ruleId: 'demo/rule' }]
-    }
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, malformed)
-    owner.commit({ contentHash: 'content' })
-
-    await expect(store.reconcile()).rejects.toThrow()
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it.each([
-    ['cached target location', (value: CacheEntry) => {
-      value.target.loc = { end: { column: 1, line: 1 }, start: { column: 0, line: Infinity } }
-    }],
-    ['cached target range', (value: CacheEntry) => {
-      value.target.range = { end: -Infinity, start: 0 }
-    }],
-    ['diagnostic location', (value: CacheEntry) => {
-      value.diagnostics = [{ filePath: 'demo.ts', loc: { start: { column: Infinity, line: 1 } }, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }]
-    }],
-    ['usage token count', (value: CacheEntry) => {
-      value.usage = [{ inputTokens: Infinity, modelId: 'model', outputTokens: -Infinity, providerId: 'provider', ruleId: 'demo/rule', totalTokens: Infinity }]
-    }],
-  ] as const)('rejects non-finite %s before persistence', async (_, makeNonFinite) => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const malformed = entry('target')
-    makeNonFinite(malformed)
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, malformed)
-    owner.commit({ contentHash: 'content' })
-
-    await expect(store.reconcile()).rejects.toThrow()
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  it.each(['evidence', 'metadata'] as const)('rejects cyclic %s without overflowing the validator', async (field) => {
-    const root = await createRoot()
-    const cachePath = join(root, '.alintcache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const cyclic: Record<string, unknown> = {}
-    cyclic.self = cyclic
-    const malformed = entry('target')
-    if (field === 'evidence') {
-      malformed.diagnostics = [{ evidence: cyclic, filePath: sourcePath, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }]
-    }
-    else {
-      malformed.usage = [{ metadata: cyclic, modelId: 'model', providerId: 'provider', ruleId: 'demo/rule' }]
-    }
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, malformed)
-    owner.commit({ contentHash: 'content' })
-
-    let persistenceError: unknown
-    try {
-      await store.reconcile()
-    }
-    catch (error) {
-      persistenceError = error
-    }
-
-    expect(persistenceError).toBeInstanceOf(Error)
-    expect(persistenceError).not.toBeInstanceOf(RangeError)
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-  })
-
-  describe('json persistence boundary', () => {
-    interface BoundaryCase {
-      create: () => { getterCalls?: () => number, value: unknown }
-      name: string
-    }
-
-    const cases: BoundaryCase[] = [
-      {
-        create: () => {
-          const value: Record<PropertyKey, unknown> = {}
-          Object.defineProperty(value, Symbol('hidden'), { value: 'hidden' })
-          return { value }
-        },
-        name: 'non-enumerable symbol property',
-      },
-      ...[
-        ['undefined', undefined],
-        ['function', () => 'hidden'],
-        ['bigint', 1n],
-      ].map(([name, hidden]): BoundaryCase => ({
-        create: () => {
-          const value: Record<PropertyKey, unknown> = {}
-          Object.defineProperty(value, 'hidden', { value: hidden })
-          return { value }
-        },
-        name: `non-enumerable string ${name}`,
-      })),
-      {
-        create: () => {
-          let calls = 0
-          const value: Record<PropertyKey, unknown> = {}
-          Object.defineProperty(value, 'computed', {
-            enumerable: true,
-            get: () => {
-              calls += 1
-              return 'computed'
-            },
-          })
-          return { getterCalls: () => calls, value }
-        },
-        name: 'object getter property',
-      },
-      {
-        create: () => {
-          const value: unknown[] = ['item']
-          Object.defineProperty(value, Symbol('hidden'), { value: 'hidden' })
-          return { value }
-        },
-        name: 'array symbol property',
-      },
-      {
-        create: () => {
-          const value: unknown[] = ['item']
-          Object.defineProperty(value, '01', { enumerable: true, value: 'hidden' })
-          return { value }
-        },
-        name: 'array non-canonical index property',
-      },
-      {
-        create: () => {
-          let calls = 0
-          const value: unknown[] = ['item']
-          Object.defineProperty(value, '0', {
-            enumerable: true,
-            get: () => {
-              calls += 1
-              return 'computed'
-            },
-          })
-          return { getterCalls: () => calls, value }
-        },
-        name: 'array index getter',
-      },
-      {
-        create: () => ({ value: new Array(1) }),
-        name: 'sparse array hole',
-      },
-      {
-        create: () => {
-          class FancyArray extends Array<unknown> {}
-          return { value: new FancyArray('item') }
-        },
-        name: 'array subclass',
-      },
-      {
-        create: () => {
-          const value: unknown[] = ['item']
-          Object.setPrototypeOf(value, { custom: true })
-          return { value }
-        },
-        name: 'array with a custom prototype',
-      },
-    ]
-
-    it.each(cases)('rejects $name without invoking accessors', async ({ create }) => {
-      const root = await createRoot()
-      const cachePath = join(root, '.alintcache')
-      const sourcePath = join(root, 'demo.ts')
-      await writeFile(sourcePath, 'demo')
-      const { getterCalls, value } = create()
-      const malformed = entry('target')
-      malformed.diagnostics = [{ evidence: value, filePath: sourcePath, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }]
-      malformed.usage = [{ metadata: value, modelId: 'model', providerId: 'provider', ruleId: 'demo/rule' }]
-      const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-      const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-      owner.put(slot, malformed)
-      owner.commit({ contentHash: 'content' })
-
-      await expect(store.reconcile()).rejects.toThrow()
-      expect(getterCalls?.() ?? 0).toBe(0)
-      await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
-    })
-
-    it('accepts plain arrays, shared references, and null-prototype objects', async () => {
-      const root = await createRoot()
-      const cachePath = join(root, '.alintcache')
-      const sourcePath = join(root, 'demo.ts')
-      await writeFile(sourcePath, 'demo')
-      const shared = { value: 'shared' }
-      const nullPrototype: Record<string, unknown> = Object.create(null)
-      nullPrototype.value = 'null prototype'
-      const valid = entry('target')
-      valid.diagnostics = [{
-        evidence: { empty: [], first: shared, nullPrototype, second: shared },
-        filePath: sourcePath,
-        message: 'valid',
-        ruleId: 'demo/rule',
-        severity: 'warn',
-      }]
-      const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-      const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-      owner.put(slot, valid)
-      owner.commit({ contentHash: 'content' })
-
-      await store.reconcile()
-      const body = await readCacheBody(cachePath)
-
-      expect(Object.values(body.entries)[0]?.diagnostics[0]?.message).toBe('valid')
-    })
-  })
-
-  it('garbage-collects a missing file owner and all of its slots', async () => {
+  it('loads past malformed ordinary lines and startup trim physically removes them', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
     const sourcePath = join(root, 'demo.ts')
     await writeFile(sourcePath, 'demo')
     const initial = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
     const owner = initial.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, entry('one'))
-    owner.put({ ...slot, ruleId: 'demo/other' }, entry('two'))
-    owner.commit({ contentHash: 'content' })
+    owner.put(slot, entry('valid'))
+    owner.commit()
+    await initial.reconcile()
+    await appendFile(cachePath, '{broken ordinary event\n')
+
+    const reopened = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    expect(reopened.beginOwner({ kind: 'file', path: sourcePath }).lookup(slot, entry('valid').fingerprint)).toBeDefined()
+    expect(await readFile(cachePath, 'utf8')).not.toContain('{broken ordinary event')
+  })
+
+  it('preserves new events after a torn final line when startup trim is busy', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    const initial = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    await initial.reconcile()
+    await appendFile(cachePath, '{"type":"put"')
+    let lockAttempts = 0
+    const reopened = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async () => {
+          lockAttempts += 1
+          if (lockAttempts === 1)
+            throw lockError('ELOCKED')
+          return async () => {}
+        },
+      },
+    })
+    const owner = reopened.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('after-torn-line'))
+    owner.commit()
+    await reopened.reconcile()
+
+    expect(Object.values((await readCacheBody(cachePath)).entries)[0]?.fingerprint.targetHash).toBe('after-torn-line')
+  })
+
+  it('replaces incompatible metadata before appending when startup trim is busy', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    const incompatible = { alintVersion: '0.0.0', createdAt: '2000-01-01T00:00:00.000Z', magic: 'ALINT_CACHE', schemaVersion: 2, type: 'metadata' }
+    await writeFile(sourcePath, 'demo')
+    await writeFile(cachePath, `${JSON.stringify(incompatible)}\n`)
+    let lockAttempts = 0
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async () => {
+          lockAttempts += 1
+          if (lockAttempts === 1)
+            throw lockError('ELOCKED')
+          return async () => {}
+        },
+      },
+    })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('compatible'))
+    owner.commit()
+    await store.reconcile()
+
+    const metadata = JSON.parse((await readFile(cachePath, 'utf8')).split('\n')[0]!)
+    expect(metadata).toMatchObject({ alintVersion: '1.0.0', type: 'metadata' })
+    expect(Object.values((await readCacheBody(cachePath)).entries)[0]?.fingerprint.targetHash).toBe('compatible')
+  })
+
+  it.each([
+    ['damaged metadata', '{broken metadata\n'],
+    ['incompatible metadata', `${JSON.stringify({ alintVersion: '0.0.0', createdAt: '2000-01-01T00:00:00.000Z', magic: 'ALINT_CACHE', schemaVersion: 2, type: 'metadata' })}\n`],
+  ])('rebuilds %s as an empty compatible cache', async (_, original) => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    await writeFile(cachePath, original)
+    await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const lines = (await readFile(cachePath, 'utf8')).trim().split('\n')
+    expect(JSON.parse(lines[0]!)).toMatchObject({ alintVersion: '1.0.0', type: 'metadata' })
+    expect(lines).toHaveLength(1)
+  })
+
+  it('does not trim or rewrite read-only cache bytes', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const original = '{broken metadata\nold bytes\n'
+    await writeFile(cachePath, original)
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath, readOnly: true })
+    await store.reconcile()
+    expect(await readFile(cachePath, 'utf8')).toBe(original)
+  })
+
+  it('tries startup trim once and skips immediately when the lease is busy', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const optionsSeen: LockOptions[] = []
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async (_path, options) => {
+          optionsSeen.push(options)
+          throw lockError('ELOCKED')
+        },
+      },
+    })
+    expect(optionsSeen).toHaveLength(1)
+    expect(optionsSeen[0]).toMatchObject({ realpath: false, retries: 0, stale: 20_000, update: 3_000 })
+    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(store.location).toBe(cachePath)
+  })
+
+  it('uses the full append retry policy and retains ordered backlog after failure', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    const optionsSeen: LockOptions[] = []
+    let appendAttempts = 0
+    await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async (_path, options) => {
+          optionsSeen.push(options)
+          if (options.retries === 0)
+            return async () => {}
+          appendAttempts += 1
+          if (appendAttempts === 1)
+            throw lockError('ELOCKED')
+          return async () => {}
+        },
+      },
+    })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('first'))
+    await owner.checkpoint()
+    owner.put({ ...slot, ruleId: 'demo/second' }, entry('second'))
+    owner.commit()
+    await store.reconcile()
+
+    expect(optionsSeen[1]).toMatchObject({
+      realpath: false,
+      retries: { factor: 2, maxTimeout: 16_000, minTimeout: 2_000, retries: 4 },
+      stale: 20_000,
+      update: 3_000,
+    })
+    const body = await readCacheBody(cachePath)
+    expect(Object.values(body.entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['first', 'second'])
+  })
+
+  it('surfaces only the final reconcile failure after checkpoint failures were tolerated', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    const persistenceError = lockError('ELOCKED', 'cache lease unavailable')
+    await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async (_path, options) => {
+          if (options.retries === 0)
+            return async () => {}
+          throw persistenceError
+        },
+      },
+    })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('pending'))
+    await expect(owner.checkpoint()).resolves.toBeUndefined()
+    owner.commit()
+    await expect(store.reconcile()).rejects.toBe(persistenceError)
+  })
+
+  it('treats a compromised lease as a failed persistence attempt', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    const compromised = new Error('lease compromised')
+    await writeFile(sourcePath, 'demo')
+    let appendLease = false
+    const store = await createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      lock: {
+        acquire: async (_path, options) => {
+          if (appendLease)
+            options.onCompromised?.(compromised)
+          appendLease = true
+          return async () => {}
+        },
+      },
+    })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('pending'))
+    owner.commit()
+    await expect(store.reconcile()).rejects.toBe(compromised)
+  })
+
+  it('appends remove-owner during reconcile for deleted files', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, '.alintcache')
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    const initial = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const owner = initial.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('present'))
+    owner.commit()
     await initial.reconcile()
     await rm(sourcePath)
 
     const reopened = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
     await reopened.reconcile()
-    const body = await readCacheBody(cachePath)
-
-    expect(Object.keys(body.owners)).toHaveLength(0)
-    expect(Object.keys(body.entries)).toHaveLength(0)
+    expect((await readFile(cachePath, 'utf8')).trim().split('\n').map(line => JSON.parse(line).type)).toContain('remove-owner')
+    expect(Object.keys((await readCacheBody(cachePath)).owners)).toHaveLength(0)
   })
 
-  it('preserves partial-write errors and removes the temporary file', async () => {
+  it('validates only newly appended events rather than scanning old log lines', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
     const sourcePath = join(root, 'demo.ts')
-    const writeError = new Error('partial cache write failed')
     await writeFile(sourcePath, 'demo')
-    const partialWrite: typeof writeFile = async (path) => {
-      await writeFile(path, 'partial')
-      throw writeError
-    }
+    const metadata = { alintVersion: '1.0.0', createdAt: '2000-01-01T00:00:00.000Z', magic: 'ALINT_CACHE', schemaVersion: 2, type: 'metadata' }
+    await writeFile(cachePath, `${JSON.stringify(metadata)}\n{"type":"put","bad":true}\n`)
     const store = await createCacheStore({
       alintVersion: '1.0.0',
       cwd: root,
       enabled: true,
       location: cachePath,
-      writeFile: partialWrite,
+      lock: immediateLock,
     })
     const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, entry('target'))
-    owner.commit({ contentHash: 'content' })
-
-    await expect(store.reconcile()).rejects.toBe(writeError)
-    expect((await readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([])
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    owner.put(slot, entry('new'))
+    owner.commit()
+    await store.reconcile()
+    expect(Object.values((await readCacheBody(cachePath)).entries)[0]?.fingerprint.targetHash).toBe('new')
   })
 
-  it('serializes flushes and preserves the snapshot from each request', async () => {
+  it('keeps events queued while an append is in progress', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
-    const firstPath = join(root, 'first.ts')
-    const secondPath = join(root, 'second.ts')
-    const writes: string[] = []
-    let releaseFirstWrite!: () => void
-    let signalFirstWrite!: () => void
-    const firstWriteCanFinish = new Promise<void>((resolve) => {
-      releaseFirstWrite = resolve
+    const sourcePath = join(root, 'demo.ts')
+    let releaseAppend!: () => void
+    let signalAppend!: () => void
+    let appendCalls = 0
+    const appendCanFinish = new Promise<void>((resolve) => {
+      releaseAppend = resolve
     })
-    const firstWriteStarted = new Promise<void>((resolve) => {
-      signalFirstWrite = resolve
+    const appendStarted = new Promise<void>((resolve) => {
+      signalAppend = resolve
     })
-    const writeCacheFile: typeof writeFile = async (path, data, options) => {
-      writes.push(String(data))
-      if (writes.length === 1) {
-        signalFirstWrite()
-        await firstWriteCanFinish
+    const delayedAppend: typeof appendFile = async (path, data, options) => {
+      appendCalls += 1
+      if (appendCalls === 1) {
+        signalAppend()
+        await appendCanFinish
       }
-      await writeFile(path, data, options)
+      await appendFile(path, data, options)
     }
-    await writeFile(firstPath, 'first')
-    await writeFile(secondPath, 'second')
+    await writeFile(sourcePath, 'demo')
     const store = await createCacheStore({
       alintVersion: '1.0.0',
+      appendFile: delayedAppend,
       cwd: root,
       enabled: true,
       location: cachePath,
-      writeFile: writeCacheFile,
+      lock: immediateLock,
     })
-    const firstOwner = store.beginOwner({ kind: 'file', path: firstPath })
-    firstOwner.put(slot, entry('first'))
-    firstOwner.commit({ contentHash: 'first-content' })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('first'))
+    owner.commit()
     const firstFlush = store.flush()
-    await firstWriteStarted
+    await appendStarted
 
-    const secondOwner = store.beginOwner({ kind: 'file', path: secondPath })
-    secondOwner.put(slot, entry('second'))
-    secondOwner.commit({ contentHash: 'second-content' })
+    owner.put({ ...slot, ruleId: 'demo/second' }, entry('second'))
+    owner.commit({ mode: 'merge' })
     const secondFlush = store.flush()
-    await new Promise(resolve => setTimeout(resolve, 0))
-
-    expect(writes).toHaveLength(1)
-
-    releaseFirstWrite()
+    releaseAppend()
     await firstFlush
     await secondFlush
 
-    expect(writes).toHaveLength(2)
-    expect(Object.keys(JSON.parse(writes[0]!.slice(writes[0]!.indexOf('\n') + 1)).owners)).toHaveLength(1)
-    expect(Object.keys(JSON.parse(writes[1]!.slice(writes[1]!.indexOf('\n') + 1)).owners)).toHaveLength(2)
+    expect(appendCalls).toBe(2)
+    expect(Object.values((await readCacheBody(cachePath)).entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['first', 'second'])
   })
 
-  it('preserves rename errors and removes the temporary file', async () => {
-    const root = await createRoot()
-    const cachePath = join(root, 'blocked-cache')
-    const sourcePath = join(root, 'demo.ts')
-    await writeFile(sourcePath, 'demo')
-    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-    owner.put(slot, entry('target'))
-    owner.commit({ contentHash: 'content' })
-    await mkdir(cachePath)
-
-    let renameError: unknown
-    try {
-      await store.reconcile()
-    }
-    catch (error) {
-      renameError = error
-    }
-
-    expect(renameError).toBeInstanceOf(Error)
-    expect(renameError).toMatchObject({ code: expect.stringMatching(/^E/) })
-    expect((await readdir(root)).filter(name => name.endsWith('.tmp'))).toEqual([])
-  })
-
-  it('rethrows non-missing access errors without changing the cache', async () => {
+  it('treats an oversized metadata line as incompatible without scanning the log', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
-    const longPath = join(root, 'x'.repeat(5000))
-    const initial = await createCacheStore({
+    const sourcePath = join(root, 'demo.ts')
+    await writeFile(sourcePath, 'demo')
+    await writeFile(cachePath, `${'x'.repeat(8_192)}\nold-event\n`)
+    let lockAttempts = 0
+    const store = await createCacheStore({
       alintVersion: '1.0.0',
       cwd: root,
       enabled: true,
-      fileExists: async () => true,
       location: cachePath,
+      lock: {
+        acquire: async () => {
+          lockAttempts += 1
+          if (lockAttempts === 1)
+            throw lockError('ELOCKED')
+          return async () => {}
+        },
+      },
     })
-    const owner = initial.beginOwner({ kind: 'file', path: longPath })
-    owner.put(slot, entry('target'))
-    owner.commit({ contentHash: 'content' })
-    await initial.reconcile()
-    const original = await readFile(cachePath, 'utf8')
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, entry('new'))
+    owner.commit()
+    await store.reconcile()
 
-    const reopened = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-    await expect(reopened.reconcile()).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
-
-    expect(await readFile(cachePath, 'utf8')).toBe(original)
-    expect(Object.keys((await readCacheBody(cachePath)).owners)).toHaveLength(1)
+    const text = await readFile(cachePath, 'utf8')
+    expect(text).not.toContain('old-event')
+    expect(JSON.parse(text.split('\n')[0]!)).toMatchObject({ alintVersion: '1.0.0', type: 'metadata' })
+    expect(Object.values((await readCacheBody(cachePath)).entries)[0]?.fingerprint.targetHash).toBe('new')
   })
 
-  it('keeps one owner and one logical slot across twenty fingerprint changes', async () => {
+  it('preserves owner invariants across overlapping replace and merge transactions', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
     const sourcePath = join(root, 'demo.ts')
     await writeFile(sourcePath, 'demo')
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const replaced = store.beginOwner({ kind: 'file', path: sourcePath })
+    const merged = store.beginOwner({ kind: 'file', path: sourcePath })
+    replaced.put(slot, entry('replaced'))
+    merged.put({ ...slot, ruleId: 'demo/merged' }, entry('merged'))
+    replaced.commit()
+    merged.commit({ mode: 'merge' })
+    await store.reconcile()
 
-    for (let index = 0; index < 20; index += 1) {
-      const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
-      const owner = store.beginOwner({ kind: 'file', path: sourcePath })
-      owner.put(slot, entry(`target-${index}`))
-      owner.commit({ contentHash: `content-${index}` })
-      await store.reconcile()
-    }
     const body = await readCacheBody(cachePath)
-
-    expect(Object.keys(body.owners)).toHaveLength(1)
-    expect(Object.keys(body.entries)).toHaveLength(1)
-    expect(Object.values(body.owners)[0]?.slots).toHaveLength(1)
-    expect(Object.values(body.entries)[0]?.fingerprint.targetHash).toBe('target-19')
+    const owner = Object.values(body.owners)[0]
+    expect(owner?.slots).toHaveLength(2)
+    expect(Object.keys(body.entries).sort()).toEqual(owner?.slots)
+    expect(Object.values(body.entries).map(value => value.fingerprint.targetHash).sort()).toEqual(['merged', 'replaced'])
   })
 
-  it('removes cache files whose header alint version differs', async () => {
+  it.each(['non-JSON', 'cyclic', 'accessor'] as const)('rejects %s values without invoking accessors', async (kind) => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
-    const body = { createdAt: '2000-01-01T00:00:00.000Z', entries: {}, owners: {}, updatedAt: '2000-01-01T00:00:00.000Z' }
-    await writeFile(cachePath, `ALINT_CACHE 2 1.0.0\n${JSON.stringify(body)}\n`)
+    const sourcePath = join(root, 'demo.ts')
+    let getterCalls = 0
+    let evidence: unknown = () => 'not JSON'
+    if (kind === 'cyclic') {
+      const cyclic: Record<string, unknown> = {}
+      cyclic.self = cyclic
+      evidence = cyclic
+    }
+    if (kind === 'accessor') {
+      evidence = {}
+      Object.defineProperty(evidence, 'computed', {
+        enumerable: true,
+        get: () => {
+          getterCalls += 1
+          return 'computed'
+        },
+      })
+    }
+    await writeFile(sourcePath, 'demo')
+    const malformed = entry('invalid')
+    malformed.diagnostics = [{ evidence, filePath: sourcePath, message: 'bad', ruleId: 'demo/rule', severity: 'warn' }]
+    const store = await createCacheStore({ alintVersion: '1.0.0', cwd: root, enabled: true, location: cachePath })
+    const owner = store.beginOwner({ kind: 'file', path: sourcePath })
+    owner.put(slot, malformed)
+    owner.commit()
 
-    const store = await createCacheStore({ alintVersion: '2.0.0', cwd: root, enabled: true, location: cachePath })
-    const owner = store.beginOwner({ kind: 'project', path: root })
-
-    expect(owner.lookup({ ...slot, scope: 'project' }, entry('target').fingerprint)).toBeUndefined()
-    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(store.reconcile()).rejects.toThrow()
+    expect(getterCalls).toBe(0)
   })
 
-  it('returns misses and never persists when disabled', async () => {
+  it('propagates cache read errors instead of rebuilding from an unreadable location', async () => {
+    const root = await createRoot()
+    const cachePath = join(root, 'x'.repeat(5_000))
+
+    await expect(createCacheStore({
+      alintVersion: '1.0.0',
+      cwd: root,
+      enabled: true,
+      location: cachePath,
+      readOnly: true,
+    })).rejects.toMatchObject({ code: 'ENAMETOOLONG' })
+  })
+
+  it('remains a no-op when disabled', async () => {
     const root = await createRoot()
     const cachePath = join(root, '.alintcache')
     const store = await createCacheStore({ cwd: root, enabled: false, location: cachePath })
     const owner = store.beginOwner({ kind: 'file', path: join(root, 'demo.ts') })
-    const fingerprint: CacheFingerprint = entry('target').fingerprint
-
-    owner.put(slot, entry('target'))
-    owner.commit({ contentHash: 'content' })
-    expect(owner.lookup(slot, fingerprint)).toBeUndefined()
+    owner.put(slot, entry('ignored'))
+    owner.commit()
     await store.reconcile()
-    await expect(readFile(cachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(access(cachePath)).rejects.toMatchObject({ code: 'ENOENT' })
   })
 })

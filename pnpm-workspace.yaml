@@ -48,6 +48,7 @@ catalog:
   '@pnpm/find-workspace-dir': ^1000.1.5
   '@smithy/node-http-handler': ^4.9.13
   '@types/node': ^26.1.2
+  '@types/proper-lockfile': 4.1.4
   '@types/tar-stream': ^3.1.4
   '@valibot/to-json-schema': ^1.7.1
   '@xsai/generate-text': ^0.5.0-beta.7
@@ -83,6 +84,7 @@ catalog:
   oxc-parser: ^0.142.0
   oxlint: ^1.77.0
   pathe: ^2.0.3
+  proper-lockfile: 4.1.2
   publint: ^0.3.22
   resolve.exports: 2.0.3
   rollup: ^4.62.4

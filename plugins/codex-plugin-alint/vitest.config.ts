@@ -5,6 +5,6 @@ import { defineConfig } from 'vitest/config'
 export default defineConfig({
   root: fileURLToPath(new URL('../..', import.meta.url)),
   test: {
-    include: ['plugins/alint/src/**/*.test.ts'],
+    include: ['plugins/codex-plugin-alint/src/**/*.test.ts'],
   },
 })

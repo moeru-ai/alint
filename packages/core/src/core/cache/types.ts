@@ -2,7 +2,6 @@ import type { SourceLocation, SourceRange } from '../source/types'
 import type { Diagnostic, InferenceUsageRecord, ProgressTargetKind } from '../types'
 
 export const CACHE_SCHEMA_VERSION = 2
-export const CACHE_HEADER_LIMIT = 256
 export const CACHE_MAGIC = 'ALINT_CACHE'
 
 export interface CachedOwner {

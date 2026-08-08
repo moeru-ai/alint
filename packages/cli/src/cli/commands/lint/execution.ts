@@ -3,7 +3,7 @@ import type { AlintConfig, ProgressReporter, RunResult } from '@alint-js/core'
 import type { CliIo } from '../../types'
 import type { LintCommandOptions } from './options'
 
-import { AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
+import { AlintCachePersistenceError, AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
 
 import { loadRunSetupConfig } from '../config/setup-config'
 import { resolveConfigRunner, resolveRunnerConfig } from './runner'
@@ -57,7 +57,7 @@ export async function executeLint(options: LintExecutionOptions): Promise<RunRes
     })
   }
   catch (error) {
-    if (error instanceof AlintRunError || error instanceof AlintRunCancelledError) {
+    if (error instanceof AlintRunError || error instanceof AlintRunCancelledError || error instanceof AlintCachePersistenceError) {
       await persistStats(error.result)
     }
 

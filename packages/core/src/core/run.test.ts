@@ -5,7 +5,7 @@ import type { ProgressJobRef, ProgressReporter } from '../index'
 import type { SourceTargetMetadata } from './source/types'
 
 import { getEventListeners } from 'node:events'
-import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -25,10 +25,15 @@ function metadataWithUnsupportedValue(key: string, value: unknown): SourceTarget
   return metadata
 }
 
-async function waitForCacheBody(path: string): Promise<Awaited<ReturnType<typeof readCacheBody>>> {
+async function waitForCacheBody(
+  path: string,
+  ready: (body: Awaited<ReturnType<typeof readCacheBody>>) => boolean,
+): Promise<Awaited<ReturnType<typeof readCacheBody>>> {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     try {
-      return await readCacheBody(path)
+      const body = await readCacheBody(path)
+      if (ready(body))
+        return body
     }
     catch (error) {
       if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT')
@@ -4393,7 +4398,10 @@ describe('runAlint', () => {
 
     await secondIsRunning
     try {
-      const checkpoint = await waitForCacheBody(cachePath)
+      const checkpoint = await waitForCacheBody(
+        cachePath,
+        body => Object.values(body.owners).some(owner => owner.path === 'first.txt'),
+      )
 
       expect(Object.values(checkpoint.owners).map(owner => owner.path)).toContain('first.txt')
       expect(Object.values(checkpoint.owners).map(owner => owner.path)).not.toContain('second.txt')
@@ -4404,7 +4412,7 @@ describe('runAlint', () => {
     }
   })
 
-  it('rejects the run when a source-file cache flush fails', async () => {
+  it('returns a cache persistence error with the completed run result when final persistence fails', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-file-cache-failure-'))
     const filePath = join(root, 'demo.txt')
     const cachePath = join(root, '.alintcache')
@@ -4412,6 +4420,7 @@ describe('runAlint', () => {
     const rule = defineRule({
       create: () => ({
         onTargetFile: async () => {
+          await rm(cachePath, { force: true, recursive: true })
           await mkdir(cachePath)
         },
       }),
@@ -4428,7 +4437,10 @@ describe('runAlint', () => {
       files: [filePath],
       runner: { cache: { location: cachePath } },
       setupConfig: createSetupConfig(),
-    })).rejects.toMatchObject({ code: expect.stringMatching(/^E/) })
+    })).rejects.toMatchObject({
+      name: 'AlintCachePersistenceError',
+      result: { execution: { completed: 1 } },
+    })
   })
 
   it('detaches the final reporter payload from a successful cached result', async () => {

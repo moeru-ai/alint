@@ -9,7 +9,7 @@ The following command installs the marketplace from the repository's **default b
 ```bash
 codex plugin marketplace add moeru-ai/alint \
   --sparse .agents/plugins \
-  --sparse plugins/alint
+  --sparse plugins/codex-plugin-alint
 codex plugin add alint@alint
 ```
 
@@ -19,7 +19,7 @@ To install a specific release instead, add its Git tag explicitly:
 codex plugin marketplace add moeru-ai/alint \
   --ref vX.Y.Z \
   --sparse .agents/plugins \
-  --sparse plugins/alint
+  --sparse plugins/codex-plugin-alint
 codex plugin add alint@alint
 ```
 

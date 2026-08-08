@@ -229,7 +229,7 @@ Run these commands to install the plugin from the repository's default branch. T
 ```bash
 codex plugin marketplace add moeru-ai/alint \
   --sparse .agents/plugins \
-  --sparse plugins/alint
+  --sparse plugins/codex-plugin-alint
 codex plugin add alint@alint
 ```
 
@@ -239,7 +239,7 @@ To install from a release, use its Git tag:
 codex plugin marketplace add moeru-ai/alint \
   --ref vX.Y.Z \
   --sparse .agents/plugins \
-  --sparse plugins/alint
+  --sparse plugins/codex-plugin-alint
 codex plugin add alint@alint
 ```
 
@@ -333,7 +333,7 @@ alint config integrations stop-gate set --target all --timeout-ms 1800000
 alint config integrations stop-gate disable
 ```
 
-Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. Read the [`plugins/alint`](https://github.com/moeru-ai/alint/tree/main/plugins/alint) documentation for complete runtime behavior.
+Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. Read the [`plugins/codex-plugin-alint`](https://github.com/moeru-ai/alint/tree/main/plugins/codex-plugin-alint) documentation for complete runtime behavior.
 
 #### Using Rules & Plugins
 
