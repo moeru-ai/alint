@@ -5,10 +5,11 @@
   "private": true,
   "scripts": {
     "build": "tsdown",
-    "test": "vitest run --config vitest.config.ts",
+    "test": "pnpm build && vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@alint-js/utils": "workspace:*",
     "@moeru/std": "catalog:",
     "tinyexec": "catalog:"
   }

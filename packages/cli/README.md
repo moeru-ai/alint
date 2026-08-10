@@ -169,9 +169,7 @@ Use `--dirty` without file arguments to lint only existing files that differ fro
 alint --dirty
 ```
 
-This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. A clean repository exits successfully without producing lint output.
-
-This will excludes any of submodule folder.
+This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. Registered submodule worktrees are excluded. A clean repository exits successfully without producing lint output.
 
 #### --model
 
@@ -259,7 +257,7 @@ run in a terminal share one cache.
 ### Codex stop-gate plugin (optional)
 
 #### Install
-Codex plugin introduce a stop-gate hook to run `alint --dirty` every time your agent end its turn.
+The Codex plugin adds a Stop hook that runs `alint --dirty` before the agent ends a turn.
 
 Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
 
@@ -701,10 +699,10 @@ pnpm lint
 
 MIT
 
-[npmx-version-src]: https://npmx.dev/api/registry/badge/version/@alint-js/core
+[npmx-version-src]: https://npmx.dev/api/registry/badge/version/@alint-js/cli
 [npmx-version-href]: https://npmx.dev/@alint-js/cli
-[npmx-downloads-src]: https://npmx.dev/api/registry/badge/downloads-month/@alint-js/core
-[npmx-downloads-href]: https://npmx.dev/@alint-js/core
+[npmx-downloads-src]: https://npmx.dev/api/registry/badge/downloads-month/@alint-js/cli
+[npmx-downloads-href]: https://npmx.dev/@alint-js/cli
 [bundle-src]: https://npmx.dev/api/registry/badge/size/@alint-js/cli
 [bundle-href]: https://bundlephobia.com/result?p=@alint-js/cli
 [license-src]: https://npmx.dev/api/registry/badge/license/@alint-js/cli

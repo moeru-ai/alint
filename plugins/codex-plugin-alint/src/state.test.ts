@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 
 import { createStateStore, emptyState } from './state'
 
-describe('stop Gate plugin state', () => {
+describe('stop gate plugin state', () => {
   it('stores one state document per session in the plugin data directory', async () => {
     const directory = join(tmpdir(), `alint-plugin-state-${randomUUID()}`)
     const store = createStateStore(directory)

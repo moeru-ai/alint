@@ -22,10 +22,34 @@ export interface DirtyChanges {
  * Deleted files and Git-controlled submodule worktrees stay outside the lint boundary.
  */
 export async function findDirtyChanges(cwd: string): Promise<DirtyChanges> {
+  // Keep only readable source paths: deleted paths cannot be linted, and rename detection returns the new path.
+  const changedFileArgs = [
+    'diff',
+    '--name-only',
+    '-z',
+    '--diff-filter=ACMRTUXB',
+    '--find-renames',
+    '--ignore-submodules=none',
+    'HEAD',
+    '--',
+  ]
+  // Parse only added-line hunks. Disable color and external diff so `parsePatch` always receives standard unified diff.
+  const changedLinePatchArgs = [
+    'diff',
+    '--no-color',
+    '--no-ext-diff',
+    '--unified=0',
+    '--diff-filter=ACMRTUXB',
+    '--find-renames',
+    '--ignore-submodules=none',
+    '--submodule=short',
+    'HEAD',
+    '--',
+  ]
   const [tracked, untracked, patch, stagedEntries] = await Promise.all([
-    diffFiles(cwd),
+    runGit(cwd, changedFileArgs),
     runGit(cwd, ['ls-files', '--others', '--exclude-standard', '-z']),
-    diffPatch(cwd),
+    runGit(cwd, changedLinePatchArgs),
     runGit(cwd, ['ls-files', '--stage', '-z']),
   ])
   const gitlinks = parseGitlinks(stagedEntries)
@@ -62,7 +86,10 @@ function changedLinesFromPatch(patch: string, gitlinks: ReadonlySet<string>): Ma
   const changedLines = new Map<string, ChangedLineRange[]>()
 
   for (const file of parsePatch(patch)) {
-    const path = newPatchPath(file.newFileName)
+    const path = file.newFileName === undefined || file.newFileName === '/dev/null'
+      ? undefined
+      // Git names the new side of a patch `b/<path>`.
+      : file.newFileName.startsWith('b/') ? file.newFileName.slice(2) : file.newFileName
 
     if (path === undefined || isWithinGitlink(path, gitlinks)) {
       continue
@@ -94,35 +121,6 @@ function changedLinesFromPatch(patch: string, gitlinks: ReadonlySet<string>): Ma
   return changedLines
 }
 
-function diffFiles(cwd: string): Promise<string> {
-  return runGit(cwd, [
-    'diff',
-    '--name-only',
-    '-z',
-    // Deleted paths have no source left for alint to read. Rename detection keeps only the new path.
-    '--diff-filter=ACMRTUXB',
-    '--find-renames',
-    '--ignore-submodules=none',
-    'HEAD',
-    '--',
-  ])
-}
-
-function diffPatch(cwd: string): Promise<string> {
-  return runGit(cwd, [
-    'diff',
-    '--no-color',
-    '--no-ext-diff',
-    '--unified=0',
-    '--diff-filter=ACMRTUXB',
-    '--find-renames',
-    '--ignore-submodules=none',
-    '--submodule=short',
-    'HEAD',
-    '--',
-  ])
-}
-
 function isWithinGitlink(path: string, gitlinks: ReadonlySet<string>): boolean {
   for (const gitlink of gitlinks) {
     if (path === gitlink || path.startsWith(`${gitlink}/`)) {
@@ -148,14 +146,6 @@ function lineRanges(lines: readonly number[]): ChangedLineRange[] {
   }
 
   return ranges
-}
-
-function newPatchPath(fileName: string | undefined): string | undefined {
-  if (fileName === undefined || fileName === '/dev/null') {
-    return undefined
-  }
-
-  return fileName.startsWith('b/') ? fileName.slice(2) : fileName
 }
 
 function parseGitlinks(output: string): Set<string> {

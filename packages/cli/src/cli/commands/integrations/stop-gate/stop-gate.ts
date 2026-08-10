@@ -1,5 +1,4 @@
 import type { CliIo } from '../../../types'
-import type { StopGateEnvelope } from './envelope'
 
 import { loadAlintConfigWithMetadata } from '@alint-js/config'
 import { AlintRunCancelledError, resolveStopGateConfig } from '@alint-js/core'
@@ -109,34 +108,18 @@ async function runStopGateCommand(
     return 0
   }
   catch (error) {
-    const message = runtimeErrorMessage(error)
-    writeEnvelope(chunk => io.stdout.write(chunk), runtimeErrorEnvelope(message))
+    const detail = error instanceof StopGateReportTooLargeError
+      ? error.message
+      : error instanceof AlintRunCancelledError
+        ? 'Stop Gate timed out before lint completed.'
+        : errorMessageFrom(error) ?? 'unknown error'
+    writeEnvelope(chunk => io.stdout.write(chunk), {
+      errorCount: 0,
+      message: `Stop Gate runtime error: ${detail}`,
+      schemaVersion: 2,
+      status: 'runtime-error',
+      warningCount: 0,
+    })
     return 1
   }
-}
-
-function runtimeErrorEnvelope(message: string): StopGateEnvelope {
-  return {
-    errorCount: 0,
-    message,
-    schemaVersion: 2,
-    status: 'runtime-error',
-    warningCount: 0,
-  }
-}
-
-function runtimeErrorMessage(error: unknown): string {
-  let detail: string
-
-  if (error instanceof StopGateReportTooLargeError) {
-    detail = error.message
-  }
-  else if (error instanceof AlintRunCancelledError) {
-    detail = 'Stop Gate timed out before lint completed.'
-  }
-  else {
-    detail = errorMessageFrom(error) ?? 'unknown error'
-  }
-
-  return `Stop Gate runtime error: ${detail}`
 }

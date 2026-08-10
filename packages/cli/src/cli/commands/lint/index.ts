@@ -11,6 +11,7 @@ import { stat } from 'node:fs/promises'
 
 import { loadAlintConfig } from '@alint-js/config'
 import { AlintCachePersistenceError, AlintRunCancelledError, AlintRunError } from '@alint-js/core'
+import { isNodeErrorCode } from '@alint-js/utils/node'
 import { errorMessageFrom } from '@moeru/std'
 import { resolve } from 'pathe'
 
@@ -56,16 +57,12 @@ async function assertConfigExists(cwd: string, configPath: string): Promise<void
     }
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeErrorCode(error, 'ENOENT')) {
       throw new Error(`Config file "${configPath}" does not exist.`)
     }
 
     throw error
   }
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 async function runLintCommand(

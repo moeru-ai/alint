@@ -4,6 +4,8 @@ import { constants } from 'node:fs'
 import { access, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { isNodeErrorCode } from '@alint-js/utils/node'
+
 export interface Command {
   args: string[]
   executable: string
@@ -21,7 +23,11 @@ export async function resolveCommands(gitRoot: string): Promise<Command[]> {
   const packageManager = await detectPackageManager(gitRoot)
 
   if (packageManager !== undefined) {
-    commands.push(packageManagerCommand(packageManager))
+    commands.push(packageManager === 'npm'
+      ? { args: ['exec', '--offline', '--yes=false', '--', 'alint'], executable: 'npm', source: 'package-manager' }
+      : packageManager === 'bun'
+        ? { args: ['x', '--no-install', 'alint'], executable: 'bun', source: 'package-manager' }
+        : { args: ['exec', 'alint'], executable: packageManager, source: 'package-manager' })
   }
 
   commands.push({ args: [], executable: 'alint', source: 'path' })
@@ -34,7 +40,7 @@ async function canAccess(path: string, mode: number): Promise<boolean> {
     return true
   }
   catch (error) {
-    if (isNodeError(error) && (error.code === 'ENOENT' || error.code === 'EACCES')) {
+    if (isNodeErrorCode(error, 'ENOENT') || isNodeErrorCode(error, 'EACCES')) {
       return false
     }
 
@@ -67,22 +73,6 @@ async function detectPackageManager(gitRoot: string): Promise<'bun' | 'npm' | 'p
   return undefined
 }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
-function packageManagerCommand(manager: 'bun' | 'npm' | 'pnpm' | 'yarn'): Command {
-  if (manager === 'npm') {
-    return { args: ['exec', '--offline', '--yes=false', '--', 'alint'], executable: 'npm', source: 'package-manager' }
-  }
-
-  if (manager === 'bun') {
-    return { args: ['x', '--no-install', 'alint'], executable: 'bun', source: 'package-manager' }
-  }
-
-  return { args: ['exec', 'alint'], executable: manager, source: 'package-manager' }
-}
-
 async function readPackageManagerField(gitRoot: string): Promise<'bun' | 'npm' | 'pnpm' | 'yarn' | undefined> {
   try {
     const packageJson = JSON.parse(await readFile(join(gitRoot, 'package.json'), 'utf8')) as { packageManager?: unknown }
@@ -97,7 +87,7 @@ async function readPackageManagerField(gitRoot: string): Promise<'bun' | 'npm' |
       : undefined
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeErrorCode(error, 'ENOENT')) {
       return undefined
     }
 

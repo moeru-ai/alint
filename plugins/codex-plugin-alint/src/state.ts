@@ -4,6 +4,8 @@ import { randomUUID } from 'node:crypto'
 import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
+import { isNodeErrorCode } from '@alint-js/utils/node'
+
 const retentionMs = 365 * 24 * 60 * 60 * 1000
 const stateSchemaVersion = 2
 
@@ -27,7 +29,7 @@ export function createStateStore(
         return parseState(JSON.parse(await readFile(statePath, 'utf8')))
       }
       catch (error) {
-        if (isNodeError(error) && error.code === 'ENOENT') {
+        if (isNodeErrorCode(error, 'ENOENT')) {
           return emptyState()
         }
 
@@ -54,7 +56,7 @@ export function emptyState(): SessionState {
   }
 }
 
-function assertSafeSessionId(sessionId: string): void {
+function getStatePath(directory: string, sessionId: string): string {
   if (
     sessionId === '.'
     || sessionId === '..'
@@ -62,10 +64,7 @@ function assertSafeSessionId(sessionId: string): void {
   ) {
     throw new Error('Invalid Stop hook session id.')
   }
-}
 
-function getStatePath(directory: string, sessionId: string): string {
-  assertSafeSessionId(sessionId)
   return join(directory, `${sessionId}.json`)
 }
 
@@ -83,10 +82,6 @@ function isFindingSummary(value: unknown): boolean {
     && (finding.status === 'errors' || finding.status === 'warnings')
     && Number.isInteger(finding.warningCount)
     && (finding.warningCount ?? -1) >= 0
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 function parseState(value: unknown): SessionState {

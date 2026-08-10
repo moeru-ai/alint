@@ -2,9 +2,11 @@ import type { RunResult, StopGateTarget } from '@alint-js/core'
 
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+
+import { isNodeErrorCode } from '@alint-js/utils/node'
 
 const reportFileName = 'report.json'
 const reportLimitBytes = 100 * 1024 * 1024
@@ -24,19 +26,6 @@ export class StopGateReportTooLargeError extends Error {
   constructor() {
     super('Stop Gate report exceeds the 100 MB limit.')
     this.name = 'StopGateReportTooLargeError'
-  }
-}
-
-export async function readStopGateReport(sessionId: string): Promise<StopGateReport | undefined> {
-  try {
-    return JSON.parse(await readFile(getReportPath(sessionId), 'utf8')) as StopGateReport
-  }
-  catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
-      return undefined
-    }
-
-    throw error
   }
 }
 
@@ -64,16 +53,6 @@ export async function writeStopGateReport(
   return reportPath
 }
 
-function assertSafeSessionId(sessionId: string): void {
-  if (
-    sessionId === '.'
-    || sessionId === '..'
-    || !/^[\w.-]+$/u.test(sessionId)
-  ) {
-    throw new Error('Invalid Stop hook session id.')
-  }
-}
-
 async function enforceReportBudget(currentReportPath: string): Promise<void> {
   let entries
 
@@ -81,7 +60,7 @@ async function enforceReportBudget(currentReportPath: string): Promise<void> {
     entries = await readdir(stopGateTempRoot, { withFileTypes: true })
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeErrorCode(error, 'ENOENT')) {
       return
     }
 
@@ -102,7 +81,7 @@ async function enforceReportBudget(currentReportPath: string): Promise<void> {
       reports.push({ mtimeMs: stats.mtimeMs, path, size: stats.size })
     }
     catch (error) {
-      if (!isNodeError(error) || error.code !== 'ENOENT') {
+      if (!isNodeErrorCode(error, 'ENOENT')) {
         throw error
       }
     }
@@ -129,10 +108,13 @@ function getReportPath(sessionId: string): string {
 }
 
 function getSessionDirectory(sessionId: string): string {
-  assertSafeSessionId(sessionId)
-  return join(stopGateTempRoot, sessionId)
-}
+  if (
+    sessionId === '.'
+    || sessionId === '..'
+    || !/^[\w.-]+$/u.test(sessionId)
+  ) {
+    throw new Error('Invalid Stop hook session id.')
+  }
 
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
+  return join(stopGateTempRoot, sessionId)
 }

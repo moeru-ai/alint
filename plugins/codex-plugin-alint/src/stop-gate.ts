@@ -9,18 +9,10 @@ import { readFileSync, writeSync } from 'node:fs'
 import { errorMessageFrom } from '@moeru/std'
 
 import { writeFatalDiagnostic } from './fatal-diagnostic'
-import { applyResult, lintLimitDecision, maximumLintRounds, runtimeFailureMessage } from './policy'
+import { applyResult, lintLimitDecision, maximumLintRounds } from './policy'
 import { findGitRoot, hasProjectConfig, isHeadDetached } from './repository'
 import { resolveAlintStopGate } from './runner'
 import { createStateStore } from './state'
-
-function emergencyDecision(input: HookInput | undefined, error: unknown): HookDecision {
-  const message = runtimeFailureMessage(errorMessageFrom(error) ?? 'unknown error')
-
-  return input?.stop_hook_active
-    ? { systemMessage: message }
-    : { decision: 'block', reason: message }
-}
 
 function emit(decision: HookDecision): void {
   if (Object.keys(decision).length > 0) {
@@ -94,10 +86,14 @@ catch (error) {
 if (parsedInput !== undefined) {
   void run(parsedInput).catch((error) => {
     try {
-      emit(emergencyDecision(parsedInput, error))
+      const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${errorMessageFrom(error) ?? 'unknown error'}`
+      const hookFailureDecision: HookDecision = parsedInput?.stop_hook_active
+        ? { systemMessage: message }
+        : { decision: 'block', reason: message }
+      emit(hookFailureDecision)
     }
     catch (emitError) {
-      reportFatalFailure('could not return its emergency decision', emitError)
+      reportFatalFailure('could not return its hook failure decision', emitError)
     }
   })
 }

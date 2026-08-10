@@ -26,10 +26,11 @@ export function applyResult(
       lastFindings: undefined,
       runtimeFailures: state.runtimeFailures + 1,
     })
+    const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${envelope.message}`
     return {
       decision: next.runtimeFailures === 1
-        ? { decision: 'block', reason: runtimeFailureMessage(envelope.message) }
-        : { systemMessage: runtimeFailureMessage(envelope.message) },
+        ? { decision: 'block', reason: message }
+        : { systemMessage: message },
       state: next,
     }
   }
@@ -56,7 +57,11 @@ export function applyResult(
     return { decision: {}, state: next }
   }
 
-  const message = findingMessage(next, envelope.reportPath)
+  const message = next.lastFindings === undefined || envelope.reportPath === undefined
+    ? ''
+    : repeatedFindings
+      ? `alint-plugin: The same ${next.lastFindings.errorCount} error(s) and ${next.lastFindings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${envelope.reportPath}".`
+      : `alint-plugin: ${next.lastFindings.errorCount} error(s), ${next.lastFindings.warningCount} warning(s). Review the report at "${envelope.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`
   const shouldBlock = envelope.status === 'errors'
     ? lintRounds < maximumLintRounds && !repeatedFindings
     : lintRounds === 1
@@ -64,47 +69,17 @@ export function applyResult(
   return {
     decision: shouldBlock
       ? { decision: 'block', reason: message }
-      : {
-          systemMessage: repeatedFindings
-            ? repeatedFindingsMessage(next, envelope.reportPath)
-            : message,
-        },
+      : { systemMessage: message },
     state: next,
   }
 }
 
 export function lintLimitDecision(state: SessionState): HookDecision {
-  if (state.lastFindings === undefined) {
-    return {}
-  }
-
   return {
-    systemMessage: findingMessage(state, state.lastFindings.reportPath),
+    systemMessage: state.lastFindings === undefined
+      ? ''
+      : `alint-plugin: ${state.lastFindings.errorCount} error(s), ${state.lastFindings.warningCount} warning(s). Review the report at "${state.lastFindings.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`,
   }
-}
-
-export function runtimeFailureMessage(message: string): string {
-  return `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${message}`
-}
-
-function findingMessage(state: SessionState, reportPath: string): string {
-  const findings = state.lastFindings
-
-  if (findings === undefined) {
-    return ''
-  }
-
-  return `alint-plugin: ${findings.errorCount} error(s), ${findings.warningCount} warning(s). Review the report at "${reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`
-}
-
-function repeatedFindingsMessage(state: SessionState, reportPath: string): string {
-  const findings = state.lastFindings
-
-  if (findings === undefined) {
-    return ''
-  }
-
-  return `alint-plugin: The same ${findings.errorCount} error(s) and ${findings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${reportPath}".`
 }
 
 function updateState(

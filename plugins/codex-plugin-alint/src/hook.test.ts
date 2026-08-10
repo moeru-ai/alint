@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 import { x } from 'tinyexec'
 import { describe, expect, it, onTestFinished } from 'vitest'
 
-const bundledHook = fileURLToPath(new URL('../scripts/stop-gate.mjs', import.meta.url))
+const bundledHook = fileURLToPath(new URL('../dist/stop-gate.mjs', import.meta.url))
 const hookManifest = fileURLToPath(new URL('../hooks/hooks.json', import.meta.url))
 
 type RepositoryActivation
@@ -30,7 +30,7 @@ describe('bundled Stop hook', () => {
     }
     const handler = manifest.hooks.Stop[0]?.hooks[0]
 
-    expect(handler?.command).toBe(`node "${'$'}{CLAUDE_PLUGIN_ROOT}/scripts/stop-gate.mjs"`)
+    expect(handler?.command).toBe(`node "${'$'}{CLAUDE_PLUGIN_ROOT}/dist/stop-gate.mjs"`)
     expect(handler).not.toHaveProperty('args')
   })
 
@@ -153,6 +153,7 @@ describe('bundled Stop hook', () => {
     const result = await runHook(cwd, pluginData, `package-manager-${randomUUID()}`, false, {
       PATH: `${binDirectory}${delimiter}${process.env.PATH ?? ''}`,
     })
+    expect(result.stdout).not.toBe('')
     const decision = JSON.parse(result.stdout) as { decision?: string }
 
     expect(result.exitCode).toBe(0)
@@ -381,6 +382,7 @@ async function runHook(
     nodeOptions: {
       env: { ...process.env, ...env, CLAUDE_PLUGIN_DATA: pluginData },
     },
+    nodePath: false,
     stdin: JSON.stringify({
       cwd,
       hook_event_name: 'Stop',

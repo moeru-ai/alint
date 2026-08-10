@@ -1,7 +1,7 @@
 import { stat } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 
-import { isError } from '@moeru/std/error'
+import { isNodeErrorCode } from '@alint-js/utils/node'
 
 export async function exists(path: string): Promise<boolean> {
   try {
@@ -19,10 +19,6 @@ export async function exists(path: string): Promise<boolean> {
 
 export function isENOENTError(error: unknown): boolean {
   return isNodeErrorCode(error, 'ENOENT')
-}
-
-export function isNodeErrorCode(error: unknown, code: string): boolean {
-  return isError(error) && 'code' in error && error.code === code
 }
 
 export function isPathInside(path: string, parent: string): boolean {

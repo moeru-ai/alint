@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { parseConfigOutput, parseEnvelope } from './protocol'
 
-describe('stop Gate protocol', () => {
+describe('stop gate protocol', () => {
   it('parses every valid envelope shape', () => {
     const clean = parseEnvelope(JSON.stringify({
       errorCount: 0,

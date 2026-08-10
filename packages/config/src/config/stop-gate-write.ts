@@ -57,10 +57,14 @@ export async function setStopGateConfig(
     throw new Error('Stop Gate config writes require an alint.config.toml file.')
   }
 
-  const document = loaded.configFile === undefined
-    ? createStaticConfigDocument()
+  const document: StaticConfigDocument = loaded.configFile === undefined
+    ? { config: { group: [] } }
     : parseStaticConfigDocument(await readFile(configFile, 'utf8'))
-  const stopGates = findStopGateConfigs(document)
+  const stopGates: Record<string, unknown>[] = []
+  for (const group of document.config.group) {
+    if (isPlainObject(group.integrations) && isPlainObject(group.integrations.stopGate))
+      stopGates.push(group.integrations.stopGate)
+  }
 
   setOverride(document, stopGates, 'enabled', options.enabled, defaultStopGateConfig.enabled)
   setOverride(document, stopGates, 'target', options.target, defaultStopGateConfig.target)
@@ -76,35 +80,6 @@ export async function setStopGateConfig(
     config,
     configFile,
   }
-}
-
-function appendStopGateConfig(document: StaticConfigDocument): Record<string, unknown> {
-  const stopGate: Record<string, unknown> = {}
-  document.config.group.push({
-    integrations: { stopGate },
-    name: 'alint stop gate',
-  })
-  return stopGate
-}
-
-function createStaticConfigDocument(): StaticConfigDocument {
-  return { config: { group: [] } }
-}
-
-function findStopGateConfigs(document: StaticConfigDocument): Record<string, unknown>[] {
-  const stopGates: Record<string, unknown>[] = []
-
-  for (const group of document.config.group) {
-    const integrations = group.integrations
-
-    if (!isPlainObject(integrations) || !isPlainObject(integrations.stopGate)) {
-      continue
-    }
-
-    stopGates.push(integrations.stopGate)
-  }
-
-  return stopGates
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -173,12 +148,16 @@ function setOverride<T>(
     return
   }
 
-  const stopGate = stopGates.at(-1) ?? appendStopGateConfig(document)
-  stopGate[key] = value
-
-  if (!stopGates.includes(stopGate)) {
+  let stopGate = stopGates.at(-1)
+  if (stopGate === undefined) {
+    stopGate = {}
+    document.config.group.push({
+      integrations: { stopGate },
+      name: 'alint stop gate',
+    })
     stopGates.push(stopGate)
   }
+  stopGate[key] = value
 }
 
 async function writeConfigAtomically(configFile: string, content: string): Promise<void> {

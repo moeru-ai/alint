@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createTimeoutSignal } from './timeout'
 
-describe('stop Gate timeout signal', () => {
+describe('stop gate timeout signal', () => {
   afterEach(() => vi.useRealTimers())
 
   it('chunks waits beyond the Node timer limit without aborting early', async () => {

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { applyResult, lintLimitDecision } from './policy'
 import { emptyState } from './state'
 
-describe('stop Gate policy', () => {
+describe('stop gate policy', () => {
   it('blocks only the first warning-only lint round', () => {
     const first = applyResult(emptyState(), warningEnvelope(), new Date('2026-01-01T00:00:00.000Z'))
     const second = applyResult(first.state, warningEnvelope(), new Date('2026-01-01T00:01:00.000Z'))

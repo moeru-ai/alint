@@ -3,6 +3,7 @@ import type { StopGateEnvelope } from './types'
 
 import { Buffer } from 'node:buffer'
 
+import { isNodeErrorCode } from '@alint-js/utils/node'
 import { x } from 'tinyexec'
 
 export const startupTimeoutMs = 60_000
@@ -23,7 +24,10 @@ export async function executeStopGate(
   sessionId: string,
   lintTimeoutMs: number,
 ): Promise<StopGateEnvelope> {
-  const timeout = createLongTimeout(addStartupAllowance(lintTimeoutMs))
+  // NOTICE: The public config limit reserves five minutes beneath Codex's 24-hour hook timeout.
+  // One of those minutes belongs here so CLI startup does not consume the configured lint budget;
+  // the remaining reserve covers Git discovery, CLI probing, state I/O, and scheduling overhead.
+  const timeout = createLongTimeout(Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER))
   const execution = x(command.executable, [
     ...command.args,
     'integrations',
@@ -52,13 +56,16 @@ export async function executeStopGate(
 
   if (envelope === undefined) {
     if (result.exitCode === 1) {
-      throw new Error(abnormalAlintMessage(result.stderr))
+      const detail = truncateStderr(result.stderr.trim())
+      throw new Error(detail.length === 0
+        ? 'alint Stop Gate exited abnormally with exit code 1 and produced no stderr output.'
+        : `alint Stop Gate exited abnormally with exit code 1: ${detail}`)
     }
 
     throw incompatibleAlintError()
   }
 
-  if (!isExpectedStopGateExitCode(result.exitCode, envelope.status)) {
+  if (result.exitCode !== (envelope.status === 'runtime-error' ? 1 : 0)) {
     throw new Error(`alint Stop Gate returned status "${envelope.status}" with unexpected exit code ${result.exitCode ?? 'unknown'}.`)
   }
 
@@ -173,14 +180,23 @@ export async function probeStopGateConfig(
 
     if (result.exitCode !== 0) {
       if (command.source === 'local') {
-        throw repositoryConfigError(result)
+        const detail = truncateStderr(result.stderr.trim())
+        const exitCode = result.exitCode ?? 'unknown'
+        const reason = detail.length === 0
+          ? `exit code ${exitCode} with no stderr output`
+          : `exit code ${exitCode}: ${detail}`
+
+        throw new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`)
       }
 
       return undefined
     }
 
     if (result.stdout.trim().length === 0) {
-      throw emptyConfigOutputError(result.stderr)
+      const detail = truncateStderr(result.stderr.trim())
+      const stderrContext = detail.length === 0 ? '' : ` alint wrote to stderr: ${detail}`
+
+      throw new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`)
     }
 
     const config = parseConfigOutput(result.stdout)
@@ -196,27 +212,12 @@ export async function probeStopGateConfig(
       throw packageManagerTimeoutError(command)
     }
 
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeErrorCode(error, 'ENOENT')) {
       return undefined
     }
 
     throw error
   }
-}
-
-function abnormalAlintMessage(stderr: string): string {
-  const detail = truncateStderr(stderr.trim())
-
-  return detail.length === 0
-    ? 'alint Stop Gate exited abnormally with exit code 1 and produced no stderr output.'
-    : `alint Stop Gate exited abnormally with exit code 1: ${detail}`
-}
-
-function addStartupAllowance(lintTimeoutMs: number): number {
-  // NOTICE: The public config limit reserves five minutes beneath Codex's 24-hour hook timeout.
-  // One of those minutes belongs here so CLI startup does not consume the configured lint budget;
-  // the remaining reserve covers Git discovery, CLI probing, state I/O, and scheduling overhead.
-  return Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER)
 }
 
 function createLongTimeout(timeoutMs: number): { dispose: () => void, signal: AbortSignal } {
@@ -246,13 +247,6 @@ function createLongTimeout(timeoutMs: number): { dispose: () => void, signal: Ab
   }
 }
 
-function emptyConfigOutputError(stderr: string): Error {
-  const detail = truncateStderr(stderr.trim())
-  const stderrContext = detail.length === 0 ? '' : ` alint wrote to stderr: ${detail}`
-
-  return new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`)
-}
-
 function incompatibleAlintError(): Error {
   return new Error('The resolved alint CLI does not support the Stop Gate protocol. Update @alint-js/cli before using this plugin.')
 }
@@ -276,29 +270,11 @@ function isEnvelopeRecord(value: unknown): value is Record<string, unknown> & {
     && record.warningCount >= 0
 }
 
-function isExpectedStopGateExitCode(exitCode: number | undefined, status: StopGateEnvelope['status']): boolean {
-  return exitCode === (status === 'runtime-error' ? 1 : 0)
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
-}
-
 function packageManagerTimeoutError(command: Command): Error {
   const subject = command.source === 'package-manager'
     ? `${command.executable} package-manager exec`
     : `${command.executable} startup`
   return new Error(`${subject} exceeded the 1 minute startup limit. Run the Stop Gate config command manually and fix the local installation before retrying.`)
-}
-
-function repositoryConfigError(result: { exitCode?: number, stderr: string }): Error {
-  const detail = truncateStderr(result.stderr.trim())
-  const exitCode = result.exitCode ?? 'unknown'
-  const reason = detail.length === 0
-    ? `exit code ${exitCode} with no stderr output`
-    : `exit code ${exitCode}: ${detail}`
-
-  return new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`)
 }
 
 function truncateStderr(stderr: string): string {

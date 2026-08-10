@@ -17,8 +17,25 @@ interface StopGateCommandOptions {
 const set = defineCommand({
   async action(context, options: StopGateCommandOptions) {
     try {
-      const target = parseTarget(options.target)
-      const timeoutMs = parseTimeout(options.timeoutMs)
+      let target: StopGateTarget | undefined
+      if (options.target === undefined) {
+        target = undefined
+      }
+      else if (options.target === 'all' || options.target === 'dirty-files') {
+        target = options.target
+      }
+      else {
+        throw new Error('Stop Gate target must be "all" or "dirty-files".')
+      }
+
+      let timeoutMs: number | undefined
+      if (options.timeoutMs !== undefined) {
+        timeoutMs = Number(options.timeoutMs)
+        if (!Number.isInteger(timeoutMs) || timeoutMs <= 0 || timeoutMs > maximumStopGateTimeoutMs) {
+          throw new Error(`Stop Gate timeout must be an integer from 1 to ${maximumStopGateTimeoutMs}.`)
+        }
+      }
+
       const result = await setStopGateConfig({
         configFile: options.config,
         cwd: context.io.cwd,
@@ -89,28 +106,6 @@ export const stopGate = defineCommand({
   ],
   name: 'stop-gate',
 })
-
-function parseTarget(value: string | undefined): StopGateTarget | undefined {
-  if (value === undefined || value === 'all' || value === 'dirty-files') {
-    return value
-  }
-
-  throw new Error('Stop Gate target must be "all" or "dirty-files".')
-}
-
-function parseTimeout(value: string | undefined): number | undefined {
-  if (value === undefined) {
-    return undefined
-  }
-
-  const parsed = Number(value)
-
-  if (!Number.isInteger(parsed) || parsed <= 0 || parsed > maximumStopGateTimeoutMs) {
-    throw new Error(`Stop Gate timeout must be an integer from 1 to ${maximumStopGateTimeoutMs}.`)
-  }
-
-  return parsed
-}
 
 async function setActivation(context: CommandContext, enabled: boolean): Promise<number> {
   try {

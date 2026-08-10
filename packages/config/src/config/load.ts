@@ -1,7 +1,6 @@
 import type { AlintConfig } from '@alint-js/core'
 
-import type { ParsedPluginLockEntry } from '../plugins/types'
-import type { ParsedStaticConfig, StaticPluginReference } from './static'
+import type { ParsedStaticConfig } from './static'
 
 import { resolve } from 'node:path'
 
@@ -60,13 +59,13 @@ export async function loadAlintConfigWithMetadata(
   const missing = listMissing(staticConfig, lock)
 
   if (missing.length > 0) {
-    throw new Error(`Static plugin references are missing from the lock file: ${formatStaticPluginReferences(missing)}.\nRun: alint plugin install`)
+    throw new Error(`Static plugin references are missing from the lock file: ${formatPluginReferences(missing)}.\nRun: alint plugin install`)
   }
 
   const unresolved = await listUnresolved(staticConfig, lock)
 
   if (unresolved.length > 0) {
-    const message = `Static plugins could not be resolved from the lock file: ${formatPluginLockEntries(unresolved)}.\nRun: alint plugin install`
+    const message = `Static plugins could not be resolved from the lock file: ${formatPluginReferences(unresolved)}.\nRun: alint plugin install`
     throw new Error(message, { cause: unresolved[0]?.resolutionError })
   }
 
@@ -88,13 +87,9 @@ export async function loadStaticConfig(
   return (await loadStaticConfigSource(cwd, configFile)).config
 }
 
-function formatPluginLockEntries(entries: readonly ParsedPluginLockEntry[]): string {
-  return entries
-    .map(entry => `${entry.alias} (${entry.specifier.raw})`)
-    .join(', ')
-}
-
-function formatStaticPluginReferences(references: readonly StaticPluginReference[]): string {
+function formatPluginReferences(
+  references: readonly { alias: string, specifier: { raw: string } }[],
+): string {
   return references
     .map(reference => `${reference.alias} (${reference.specifier.raw})`)
     .join(', ')

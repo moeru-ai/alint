@@ -23,7 +23,7 @@ codex plugin marketplace add moeru-ai/alint \
 codex plugin add alint@alint
 ```
 
-Review and trust the Stop hook when Codex asks. The hook runs the bundled Node.js script in `scripts/stop-gate.mjs`; that script discovers and invokes an `alint` CLI from the repository.
+Review and trust the Stop hook when Codex asks. The hook runs the bundled Node.js script in `dist/stop-gate.mjs`; that script discovers and invokes an `alint` CLI from the repository.
 
 ## Configure a repository
 

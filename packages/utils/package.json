@@ -1,0 +1,20 @@
+{
+  "name": "@alint-js/utils",
+  "type": "module",
+  "version": "0.4.0",
+  "exports": {
+    "./node": {
+      "types": "./dist/node.d.mts",
+      "default": "./dist/node.mjs"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --config vitest.config.ts"
+  }
+}

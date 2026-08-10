@@ -21,8 +21,11 @@ export function filterResultToChangedLines(
         return true
       }
 
-      const path = normalizePath(options.cwd, diagnostic.filePath)
-      const ranges = options.changedLines.get(path)
+      const changedLinesPath = (isAbsolute(diagnostic.filePath)
+        ? relative(options.cwd, diagnostic.filePath)
+        : diagnostic.filePath)
+        .replaceAll('\\', '/')
+      const ranges = options.changedLines.get(changedLinesPath)
 
       if (ranges === undefined) {
         return false
@@ -34,9 +37,4 @@ export function filterResultToChangedLines(
       return ranges.some(range => startLine <= range.endLine && endLine >= range.startLine)
     }),
   }
-}
-
-function normalizePath(cwd: string, filePath: string): string {
-  const path = isAbsolute(filePath) ? relative(cwd, filePath) : filePath
-  return path.replaceAll('\\', '/')
 }

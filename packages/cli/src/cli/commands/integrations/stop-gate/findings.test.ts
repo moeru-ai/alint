@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { fingerprintDiagnostics } from './findings'
 
-describe('stop Gate findings fingerprint', () => {
+describe('stop gate findings fingerprint', () => {
   it('ignores diagnostic order and execution metadata', () => {
     const first = diagnostic({
       cached: false,

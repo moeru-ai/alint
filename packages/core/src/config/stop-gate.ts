@@ -1,5 +1,7 @@
 import type { AlintConfig, AlintConfigItem, StopGateConfig, StopGateTarget } from '../dsl/types'
 
+import { boolean, integer, looseObject, maxValue, minValue, number, optional, parse, picklist, pipe } from 'valibot'
+
 import { resolveConfigForProject } from './config-array'
 
 export interface ResolvedStopGateConfig {
@@ -20,6 +22,20 @@ export const defaultStopGateConfig: Readonly<ResolvedStopGateConfig> = {
   timeoutMs: 15 * 60 * 1000,
 }
 
+const stopGateConfigSchema = looseObject({
+  enabled: optional(boolean('integrations.stopGate.enabled must be a boolean.')),
+  target: optional(picklist(
+    ['all', 'dirty-files'],
+    'integrations.stopGate.target must be "all" or "dirty-files".',
+  )),
+  timeoutMs: optional(pipe(
+    number(`integrations.stopGate.timeoutMs must be an integer from 1 to ${maximumStopGateTimeoutMs}.`),
+    integer(`integrations.stopGate.timeoutMs must be an integer from 1 to ${maximumStopGateTimeoutMs}.`),
+    minValue(1, `integrations.stopGate.timeoutMs must be an integer from 1 to ${maximumStopGateTimeoutMs}.`),
+    maxValue(maximumStopGateTimeoutMs, `integrations.stopGate.timeoutMs must be an integer from 1 to ${maximumStopGateTimeoutMs}.`),
+  )),
+}, 'integrations.stopGate must be an object.')
+
 export function resolveStopGateConfig(config: AlintConfig, cwd: string): ResolvedStopGateConfig {
   const project = resolveConfigForProject(cwd, config, { cwd })
 
@@ -36,28 +52,7 @@ export function resolveStopGateConfig(config: AlintConfig, cwd: string): Resolve
 }
 
 function assertStopGateConfig(value: StopGateConfig): void {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new TypeError('integrations.stopGate must be an object.')
-  }
-
-  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
-    throw new TypeError('integrations.stopGate.enabled must be a boolean.')
-  }
-
-  if (value.target !== undefined && value.target !== 'all' && value.target !== 'dirty-files') {
-    throw new TypeError('integrations.stopGate.target must be "all" or "dirty-files".')
-  }
-
-  if (
-    value.timeoutMs !== undefined
-    && (
-      !Number.isInteger(value.timeoutMs)
-      || value.timeoutMs <= 0
-      || value.timeoutMs > maximumStopGateTimeoutMs
-    )
-  ) {
-    throw new TypeError(`integrations.stopGate.timeoutMs must be an integer from 1 to ${maximumStopGateTimeoutMs}.`)
-  }
+  parse(stopGateConfigSchema, value)
 }
 
 function mergeStopGateConfig(

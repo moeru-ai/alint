@@ -24,7 +24,7 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import lockfile from 'proper-lockfile'
 
-import { isError } from '@moeru/std/error'
+import { isNodeErrorCode } from '@alint-js/utils/node'
 import {
   array,
   boolean,
@@ -250,11 +250,9 @@ export async function createCacheStore(options: CacheStoreOptions): Promise<Cach
   const writer = createEventWriter(location, trimmed.metadata, dependencies)
   const fileExists = options.fileExists ?? defaultFileExists
 
-  const flush = async (): Promise<void> => writer.flush(false)
-
   return {
     beginOwner: (owner, metadata) => beginOwner(trimmed.body, owner, options.cwd, writer, metadata),
-    flush,
+    flush: () => writer.flush(false),
     location,
     reconcile: async () => {
       const removedOwners = await collectMissingFileOwners(trimmed.body, options.cwd, fileExists)
@@ -342,15 +340,6 @@ async function appendBatch(location: string, payload: string, append: typeof app
   }
   finally {
     await handle.close()
-  }
-}
-
-function appendLockOptions(): LockOptions {
-  return {
-    realpath: false,
-    retries: { factor: 2, maxTimeout: 16_000, minTimeout: 2_000, retries: 4 },
-    stale: LOCK_STALE_MS,
-    update: LOCK_UPDATE_MS,
   }
 }
 
@@ -480,17 +469,6 @@ async function collectMissingFileOwners(
   return removed
 }
 
-function compactEvents(body: CacheFileBody): CacheEvent[] {
-  return Object.entries(body.owners).map(([ownerKey, owner]) => ({
-    at: body.updatedAt,
-    entries: [...ownerEntries(body, owner)].map(([slotKey, entry]) => ({ entry, slotKey })),
-    mode: 'replace',
-    owner,
-    ownerKey,
-    type: 'replace-owner',
-  }))
-}
-
 function createBaseTargetIdentity(target: TargetIdentityInput): string {
   if (target.identity && (target.kind !== 'file' || target.identity !== 'file')) {
     return target.filePath ? `${target.kind}:${target.filePath}:${target.identity}` : `${target.kind}:${target.identity}`
@@ -527,7 +505,7 @@ function createEventWriter(
     if (backlog.length === 0)
       return
     await mkdir(dirname(location), { recursive: true })
-    await withCacheLock(location, dependencies.lock, appendLockOptions(), async () => {
+    await withCacheLock(location, dependencies.lock, getCacheLockOptions({ factor: 2, maxTimeout: 16_000, minTimeout: 2_000, retries: 4 }), async () => {
       await ensureCompatibleMetadata(location, metadata, dependencies.write)
       const batchSize = backlog.length
       const payload = backlog.slice(0, batchSize).map(event => `${JSON.stringify(event)}\n`).join('')
@@ -555,10 +533,6 @@ function createEventWriter(
   }
 }
 
-function createMetadata(alintVersion: string, createdAt = new Date().toISOString()): CacheMetadata {
-  return { alintVersion, createdAt, magic: CACHE_MAGIC, schemaVersion: CACHE_SCHEMA_VERSION, type: 'metadata' }
-}
-
 function createNoopCacheStore(location: string): CacheStore {
   const transaction: CacheOwnerTransaction = {
     checkpoint: async () => {},
@@ -571,17 +545,21 @@ function createNoopCacheStore(location: string): CacheStore {
 }
 
 function createReadOnlyCacheStore(location: string, body: CacheFileBody, cwd: string): CacheStore {
-  const transaction = (owner: CacheOwnerIdentity): CacheOwnerTransaction => ({
-    checkpoint: async () => {},
-    commit: () => {},
-    discard: () => {},
-    lookup: (slot, fingerprint) => {
-      const cached = body.entries[slotKey(owner, slot, cwd)]
-      return cached && fingerprintsEqual(cached.fingerprint, fingerprint) ? cached : undefined
-    },
-    put: () => {},
-  })
-  return { beginOwner: transaction, flush: async () => {}, location, reconcile: async () => {} }
+  return {
+    beginOwner: owner => ({
+      checkpoint: async () => {},
+      commit: () => {},
+      discard: () => {},
+      lookup: (slot, fingerprint) => {
+        const cached = body.entries[slotKey(owner, slot, cwd)]
+        return cached && fingerprintsEqual(cached.fingerprint, fingerprint) ? cached : undefined
+      },
+      put: () => {},
+    }),
+    flush: async () => {},
+    location,
+    reconcile: async () => {},
+  }
 }
 
 async function defaultFileExists(path: string): Promise<boolean> {
@@ -597,7 +575,13 @@ async function defaultFileExists(path: string): Promise<boolean> {
 }
 
 function emptyLoadedLog(alintVersion: string): LoadedCacheLog {
-  const metadata = createMetadata(alintVersion)
+  const metadata: CacheMetadata = {
+    alintVersion,
+    createdAt: new Date().toISOString(),
+    magic: CACHE_MAGIC,
+    schemaVersion: CACHE_SCHEMA_VERSION,
+    type: 'metadata',
+  }
   return { body: createEmptyCacheBody(metadata.createdAt), metadata }
 }
 
@@ -624,6 +608,15 @@ function fingerprintsEqual(left: CacheFingerprint, right: CacheFingerprint): boo
     && left.targetHash === right.targetHash
 }
 
+function getCacheLockOptions(retries: LockOptions['retries']): LockOptions {
+  return {
+    realpath: false,
+    retries,
+    stale: LOCK_STALE_MS,
+    update: LOCK_UPDATE_MS,
+  }
+}
+
 function hasJsonArrayProperties(input: unknown[], ancestors: WeakSet<object>): boolean {
   let arrayLength: number | undefined
   let indexCount = 0
@@ -637,10 +630,20 @@ function hasJsonArrayProperties(input: unknown[], ancestors: WeakSet<object>): b
       arrayLength = descriptor.value
       continue
     }
-    if (typeof key !== 'string' || !isCanonicalArrayIndex(key) || !descriptor.enumerable)
+    const index = typeof key === 'string' ? Number(key) : Number.NaN
+    if (
+      typeof key !== 'string'
+      || !Number.isInteger(index)
+      || index < 0
+      || index >= 2 ** 32 - 1
+      || String(index) !== key
+      || !descriptor.enumerable
+    ) {
       return false
-    if (!isJsonValueAt(descriptor.value, ancestors))
+    }
+    if (!isJsonValueAt(descriptor.value, ancestors)) {
       return false
+    }
     indexCount += 1
   }
   return arrayLength !== undefined && indexCount === arrayLength
@@ -657,11 +660,6 @@ function hasJsonObjectProperties(input: object, ancestors: WeakSet<object>): boo
       return false
   }
   return true
-}
-
-function isCanonicalArrayIndex(key: string): boolean {
-  const index = Number(key)
-  return Number.isInteger(index) && index >= 0 && index < 2 ** 32 - 1 && String(index) === key
 }
 
 function isJsonValue(input: unknown): input is JsonValue {
@@ -698,10 +696,6 @@ function isJsonValueAt(input: unknown, ancestors: WeakSet<object>): input is Jso
 
 function isMissingFileError(error: unknown): boolean {
   return isNodeErrorCode(error, 'ENOENT') || isNodeErrorCode(error, 'ENOTDIR')
-}
-
-function isNodeErrorCode(error: unknown, code: string): boolean {
-  return isError(error) && 'code' in error && error.code === code
 }
 
 async function loadCacheLog(location: string, alintVersion: string): Promise<LoadedCacheLog> {
@@ -750,7 +744,15 @@ function parseMetadataLine(line: string | undefined, expectedAlintVersion: strin
 
 async function persistCompactedLog(location: string, loaded: LoadedCacheLog, write: typeof writeFileToDisk): Promise<void> {
   const metadata = parse(CacheMetadataSchema, loaded.metadata)
-  const events = compactEvents(parse(CacheFileBodySchema, loaded.body)).map(event => parse(CacheEventSchema, event))
+  const compactedEvents = Object.entries(loaded.body.owners).map(([ownerKey, owner]) => ({
+    at: loaded.body.updatedAt,
+    entries: [...ownerEntries(loaded.body, owner)].map(([slotKey, entry]) => ({ entry, slotKey })),
+    mode: 'replace' as const,
+    owner,
+    ownerKey,
+    type: 'replace-owner' as const,
+  }))
+  const events = compactedEvents.map(event => parse(CacheEventSchema, event))
   const contents = [`${JSON.stringify(metadata)}\n`, ...events.map(event => `${JSON.stringify(event)}\n`)].join('')
   const tempPath = join(dirname(location), `.${basename(location)}.${process.pid}.${randomUUID()}.tmp`)
   try {
@@ -807,10 +809,6 @@ function slotKey(owner: CacheOwnerIdentity, slot: CacheSlotIdentity, cwd: string
   return stableHash({ owner: ownerKey(owner, cwd), ...slot })
 }
 
-function trimLockOptions(): LockOptions {
-  return { realpath: false, retries: 0, stale: LOCK_STALE_MS, update: LOCK_UPDATE_MS }
-}
-
 async function trimOnce(
   location: string,
   alintVersion: string,
@@ -823,7 +821,7 @@ async function trimOnce(
 ): Promise<LoadedCacheLog> {
   await mkdir(dirname(location), { recursive: true })
   try {
-    return await withCacheLock(location, dependencies.lock, trimLockOptions(), async () => {
+    return await withCacheLock(location, dependencies.lock, getCacheLockOptions(0), async () => {
       // The lease closes the read/compact race: trim must rebuild from bytes read after acquisition.
       const latest = await loadCacheLog(location, alintVersion)
       await persistCompactedLog(location, latest, dependencies.write)

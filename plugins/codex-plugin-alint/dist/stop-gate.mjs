@@ -8,7 +8,7 @@ import { access, mkdir, readFile, readdir, rename, rm, stat, writeFile } from "n
 import { spawn } from "node:child_process";
 import { pipeline } from "node:stream/promises";
 import { PassThrough } from "node:stream";
-import u from "node:readline";
+import readline from "node:readline";
 import { randomUUID } from "node:crypto";
 //#region ../../node_modules/.pnpm/@moeru+std@0.1.0-beta.20/node_modules/@moeru/std/dist/error/index.js
 const isError = (err) => {
@@ -78,9 +78,6 @@ function enforceBudget() {
 		total -= diagnostic.size;
 	}
 }
-//#endregion
-//#region src/policy.ts
-const maximumLintRounds = 9;
 function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 	if (envelope.status === "inactive" || envelope.status === "no-dirty-files") return {
 		decision: {},
@@ -98,11 +95,12 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 			lastFindings: void 0,
 			runtimeFailures: state.runtimeFailures + 1
 		});
+		const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${envelope.message}`;
 		return {
 			decision: next.runtimeFailures === 1 ? {
 				decision: "block",
-				reason: runtimeFailureMessage(envelope.message)
-			} : { systemMessage: runtimeFailureMessage(envelope.message) },
+				reason: message
+			} : { systemMessage: message },
 			state: next
 		};
 	}
@@ -123,35 +121,17 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 		decision: {},
 		state: next
 	};
-	const message = findingMessage(next, envelope.reportPath);
+	const message = next.lastFindings === void 0 || envelope.reportPath === void 0 ? "" : repeatedFindings ? `alint-plugin: The same ${next.lastFindings.errorCount} error(s) and ${next.lastFindings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${envelope.reportPath}".` : `alint-plugin: ${next.lastFindings.errorCount} error(s), ${next.lastFindings.warningCount} warning(s). Review the report at "${envelope.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`;
 	return {
-		decision: (envelope.status === "errors" ? lintRounds < maximumLintRounds && !repeatedFindings : lintRounds === 1) ? {
+		decision: (envelope.status === "errors" ? lintRounds < 9 && !repeatedFindings : lintRounds === 1) ? {
 			decision: "block",
 			reason: message
-		} : { systemMessage: repeatedFindings ? repeatedFindingsMessage(next, envelope.reportPath) : message },
+		} : { systemMessage: message },
 		state: next
 	};
 }
-function hasReachedLintLimit(state) {
-	return state.lintRounds >= maximumLintRounds;
-}
 function lintLimitDecision(state) {
-	if (state.lastFindings === void 0) return {};
-	return { systemMessage: findingMessage(state, state.lastFindings.reportPath) };
-}
-function runtimeFailureMessage(message) {
-	return `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${message}`;
-}
-function findingMessage(state, reportPath) {
-	const findings = state.lastFindings;
-	if (findings === void 0) return "";
-	const findingKind = findings.status === "warnings" ? "warnings" : "errors";
-	return `alint-plugin: ${findings.errorCount} error(s), ${findings.warningCount} warning(s). Review the report at "${reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of the reported ${findingKind} are valid or valuable, tell the user that the alint configuration may need to be revised, but do not change it yourself.`;
-}
-function repeatedFindingsMessage(state, reportPath) {
-	const findings = state.lastFindings;
-	if (findings === void 0) return "";
-	return `alint-plugin: The same ${findings.errorCount} error(s) and ${findings.warningCount} warning(s) remain unchanged from the previous automatic lint. Stop Gate is allowing this turn to finish. The report remains at "${reportPath}".`;
+	return { systemMessage: state.lastFindings === void 0 ? "" : `alint-plugin: ${state.lastFindings.errorCount} error(s), ${state.lastFindings.warningCount} warning(s). Review the report at "${state.lastFindings.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.` };
 }
 function updateState(state, now, patch) {
 	return {
@@ -162,201 +142,212 @@ function updateState(state, now, patch) {
 	};
 }
 //#endregion
-//#region ../../node_modules/.pnpm/tinyexec@1.2.4/node_modules/tinyexec/dist/main.mjs
-const h = /^path$/i;
-const g = {
+//#region ../../node_modules/.pnpm/tinyexec@1.3.0/node_modules/tinyexec/dist/main.mjs
+const isPathLikePattern = /^path$/i;
+const defaultEnvPathInfo = {
 	key: "PATH",
 	value: ""
 };
-function _(e) {
-	for (const t in e) {
-		if (!Object.prototype.hasOwnProperty.call(e, t) || !h.test(t)) continue;
-		const n = e[t];
-		if (!n) return g;
+function getPathFromEnv(env) {
+	for (const key in env) {
+		if (!Object.prototype.hasOwnProperty.call(env, key) || !isPathLikePattern.test(key)) continue;
+		const value = env[key];
+		if (!value) return defaultEnvPathInfo;
 		return {
-			key: t,
-			value: n
+			key,
+			value
 		};
 	}
-	return g;
+	return defaultEnvPathInfo;
 }
-function v(e, t) {
-	const n = t.value.split(delimiter);
-	const r = [];
-	let o = e;
-	let c;
+function addNodeBinToPath(cwd, path) {
+	const parts = path.value.split(delimiter);
+	const nodeBinPaths = [];
+	let currentPath = cwd;
+	let lastPath;
 	do {
-		r.push(resolve(o, "node_modules", ".bin"));
-		c = o;
-		o = dirname(o);
-	} while (o !== c);
-	r.push(dirname(process.execPath));
-	const l = r.concat(n).join(delimiter);
+		nodeBinPaths.push(resolve(currentPath, "node_modules", ".bin"));
+		lastPath = currentPath;
+		currentPath = dirname(currentPath);
+	} while (currentPath !== lastPath);
+	nodeBinPaths.push(dirname(process.execPath));
+	const newPath = nodeBinPaths.concat(parts).join(delimiter);
 	return {
-		key: t.key,
-		value: l
+		key: path.key,
+		value: newPath
 	};
 }
-function y(e, t, n = true) {
-	const r = {
+function computeEnv(cwd, env, nodePath = true) {
+	const envWithDefault = {
 		...process.env,
-		...t
+		...env
 	};
-	if (!n) return r;
-	const i = v(e, _(r));
-	r[i.key] = i.value;
-	return r;
+	if (!nodePath) return envWithDefault;
+	const envPathInfo = addNodeBinToPath(cwd, getPathFromEnv(envWithDefault));
+	envWithDefault[envPathInfo.key] = envPathInfo.value;
+	return envWithDefault;
 }
-const b = (e) => {
-	let t = e.length;
-	const n = new PassThrough();
-	const r = () => {
-		if (--t === 0) n.end();
+const combineStreams = (streams) => {
+	let streamCount = streams.length;
+	const combined = new PassThrough();
+	const maybeEmitEnd = () => {
+		if (--streamCount === 0) combined.end();
 	};
-	for (const t of e) pipeline(t, n, { end: false }).then(r).catch(r);
-	return n;
+	for (const stream of streams) pipeline(stream, combined, { end: false }).then(maybeEmitEnd).catch(maybeEmitEnd);
+	return combined;
 };
-const x = /([()\][%!^"`<>&|;, *?])/g;
-const S = /^#!\s*(.+)/;
-const C = /\.(?:com|exe)$/i;
-const w = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
-const T = process.platform === "win32";
-const E = [
+const metaCharsRegExp = /([()\][%!^"`<>&|;, *?])/g;
+const shebangRegExp = /^#!\s*(.+)/;
+const isWindowsExecutableRegExp = /\.(?:com|exe)$/i;
+const isNodeModulesCmdRegExp = /node_modules[\\/]\.bin[\\/][^\\/]+\.cmd$/i;
+const isWindows = process.platform === "win32";
+const defaultPathExt = [
 	".EXE",
 	".CMD",
 	".BAT",
 	".COM"
 ];
+const noPathExt = [""];
 /**
 * Normalizes the command and arguments to work cross-platform.
 * On Windows, this basically handles things like shebangs, calling
 * `node_modules/.bin` commands, and escaping meta characters.
 * On other platforms, it just returns the command and arguments as-is.
 */
-function D(e, t = [], n = {}) {
-	if (n.shell === true || !T) return {
-		command: e,
-		args: t,
-		options: n
+function normalizeSpawnCommand(command, args = [], options = {}) {
+	if (options.shell === true || !isWindows) return {
+		command,
+		args,
+		options
 	};
-	let i = O(e, n);
-	let a = null;
-	if (i !== null) {
-		const e = 150;
-		const t = Buffer.alloc(e);
-		let n = null;
+	let file = resolveCommand(command, options);
+	let shebang = null;
+	if (file !== null) {
+		const size = 150;
+		const buffer = Buffer.alloc(size);
+		let fd = null;
 		try {
-			n = openSync(i, "r");
-			readSync(n, t, 0, e, 0);
+			fd = openSync(file, "r");
+			readSync(fd, buffer, 0, size, 0);
 		} catch {} finally {
-			if (n !== null) closeSync(n);
+			if (fd !== null) closeSync(fd);
 		}
-		const o = t.toString().match(S);
-		if (o !== null) {
-			const e = o[1].trim();
-			const t = e.indexOf(" ");
-			const n = t !== -1 ? e.slice(0, t) : e;
-			const i = t !== -1 ? e.slice(t + 1) : "";
-			const s = basename(n);
-			a = s === "env" ? i || null : s;
+		const match = buffer.toString().match(shebangRegExp);
+		if (match !== null) {
+			const line = match[1].trim();
+			const separatorIndex = line.indexOf(" ");
+			const path = separatorIndex !== -1 ? line.slice(0, separatorIndex) : line;
+			const argument = separatorIndex !== -1 ? line.slice(separatorIndex + 1) : "";
+			const binary = basename(path);
+			shebang = binary === "env" ? argument || null : binary;
 		}
 	}
-	if (a !== null && i !== null) {
-		t = [i, ...t];
-		e = a;
-		i = O(e, n);
+	if (shebang !== null && file !== null) {
+		args = [file, ...args];
+		command = shebang;
+		file = resolveCommand(command, options);
 	}
-	if (i === null || !C.test(i)) {
-		const r = i !== null && w.test(i);
-		e = normalize(e);
-		e = e.replace(x, "^$1");
-		t = t.map((e) => {
-			e = e.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
-			e = e.replace(/(?=(\\+?)?)\1$/, "$1$1");
-			e = `"${e}"`;
-			e = e.replace(x, "^$1");
-			if (r) e = e.replace(x, "^$1");
-			return e;
+	if (file === null || !isWindowsExecutableRegExp.test(file)) {
+		const needsDoubleEscapeMetaChars = file !== null && isNodeModulesCmdRegExp.test(file);
+		command = normalize(command);
+		command = command.replace(metaCharsRegExp, "^$1");
+		args = args.map((arg) => {
+			arg = arg.replace(/(?=(\\+?)?)\1"/g, "$1$1\\\"");
+			arg = arg.replace(/(?=(\\+?)?)\1$/, "$1$1");
+			arg = `"${arg}"`;
+			arg = arg.replace(metaCharsRegExp, "^$1");
+			if (needsDoubleEscapeMetaChars) arg = arg.replace(metaCharsRegExp, "^$1");
+			return arg;
 		});
-		t = [
+		args = [
 			"/d",
 			"/s",
 			"/c",
-			`"${[e, ...t].join(" ")}"`
+			`"${[command, ...args].join(" ")}"`
 		];
-		e = n.env?.comspec ?? "cmd.exe";
-		n = {
-			...n,
+		command = options.env?.comspec ?? "cmd.exe";
+		options = {
+			...options,
 			windowsVerbatimArguments: true
 		};
 	}
 	return {
-		command: e,
-		args: t,
-		options: n
+		command,
+		args,
+		options
 	};
 }
 /**
 * Resolves the command to an absolute path if possible.
 * Handles things like traversing PATH and adding extensions from PATHEXT
 */
-function O(e, t) {
-	const r = (t.cwd ?? cwd()).toString();
-	const a = t.env ?? process.env;
-	const o = _(a).value;
-	const c = e.includes("/") || e.includes("\\") ? [""] : [r, ...o.split(delimiter)];
-	const l = a.PATHEXT ? a.PATHEXT.split(delimiter) : E;
-	if (e.includes(".") && l[0] !== "") l.unshift("");
-	for (const t of c) {
-		const n = resolve(r, t.startsWith("\"") && t.endsWith("\"") && t.length > 1 ? t.slice(1, -1) : t, e);
-		for (const e of l) {
-			const t = n + e;
+function resolveCommand(command, options) {
+	const cwd$3 = (options.cwd ?? cwd()).toString();
+	const env = options.env ?? process.env;
+	const PATH = getPathFromEnv(env).value;
+	const pathEnv = command.includes("/") || command.includes("\\") ? [""] : [cwd$3, ...PATH.split(delimiter)];
+	let pathExt = env.PATHEXT ? env.PATHEXT.split(delimiter) : defaultPathExt;
+	if (command.includes(".") && pathExt[0] !== "") pathExt = ["", ...pathExt];
+	for (const extensions of [pathExt, noPathExt]) for (const path of pathEnv) {
+		const dest = resolve(cwd$3, path.startsWith("\"") && path.endsWith("\"") && path.length > 1 ? path.slice(1, -1) : path, command);
+		for (const ext of extensions) {
+			const destWithExt = dest + ext;
 			try {
-				if (statSync(t).isFile()) return t;
+				if (statSync(destWithExt).isFile()) return destWithExt;
 			} catch {}
 		}
 	}
 	return null;
 }
-var k = class extends Error {
+var NonZeroExitError = class extends Error {
 	result;
 	output;
-	get exitCode() {
-		if (this.result.exitCode !== null) return this.result.exitCode;
+	exitCode;
+	get signalCode() {
+		return this.result.signalCode;
 	}
-	constructor(e, t) {
-		super(`Process exited with non-zero status (${e.exitCode})`);
-		this.result = e;
-		this.output = t;
+	constructor(result, output, command, args) {
+		let target = "The process";
+		if (command) target = `The command \`${args?.length ? `${command} ${args.map((a) => /[ "'`()]/.test(a) ? JSON.stringify(a) : a).join(" ")}` : command}\``;
+		const exitCode = result.exitCode ?? 1;
+		super(result.signalCode !== null ? `${target} was killed by the signal ${result.signalCode}` : `${target} exited with a non-zero status (${exitCode})`);
+		this.result = result;
+		this.output = output;
+		this.exitCode = exitCode;
+		Object.defineProperty(this, "result", {
+			enumerable: false,
+			writable: false,
+			configurable: false
+		});
 	}
 };
-const j = {
+const defaultOptions = {
 	timeout: void 0,
 	persist: false
 };
-const N = { windowsHide: true };
-function P(e) {
-	const t = new AbortController();
-	for (const n of e) {
-		if (n.aborted) {
-			t.abort();
-			return n;
+const defaultNodeOptions = { windowsHide: true };
+function combineSignals(signals) {
+	const controller = new AbortController();
+	for (const signal of signals) {
+		if (signal.aborted) {
+			controller.abort();
+			return signal;
 		}
-		const e = () => {
-			t.abort(n.reason);
+		const onAbort = () => {
+			controller.abort(signal.reason);
 		};
-		n.addEventListener("abort", e, { signal: t.signal });
+		signal.addEventListener("abort", onAbort, { signal: controller.signal });
 	}
-	return t.signal;
+	return controller.signal;
 }
-async function F(e) {
-	let t = "";
+async function readStream(stream) {
+	let output = "";
 	try {
-		for await (const n of e) t += n.toString();
+		for await (const chunk of stream) output += chunk.toString();
 	} catch {}
-	return t;
+	return output;
 }
-var I = class {
+var ExecProcess = class {
 	_process;
 	_aborted = false;
 	_options;
@@ -374,19 +365,22 @@ var I = class {
 	get exitCode() {
 		if (this._process && this._process.exitCode !== null) return this._process.exitCode;
 	}
-	constructor(e, t, n) {
+	get signalCode() {
+		return this._process?.signalCode ?? null;
+	}
+	constructor(command, args, options) {
 		this._options = {
-			...j,
-			...n
+			...defaultOptions,
+			...options
 		};
-		this._command = e;
-		this._args = t ?? [];
-		this._processClosed = new Promise((e) => {
-			this._resolveClose = e;
+		this._command = command;
+		this._args = args ?? [];
+		this._processClosed = new Promise((resolve) => {
+			this._resolveClose = resolve;
 		});
 	}
-	kill(e) {
-		return this._process?.kill(e) === true;
+	kill(signal) {
+		return this._process?.kill(signal) === true;
 	}
 	get aborted() {
 		return this._aborted;
@@ -394,106 +388,106 @@ var I = class {
 	get killed() {
 		return this._process?.killed === true;
 	}
-	pipe(e, t, n) {
-		return z(e, t, {
-			...n,
+	pipe(command, args, options) {
+		return exec(command, args, {
+			...options,
 			stdin: this
 		});
 	}
 	async *[Symbol.asyncIterator]() {
-		const e = this._process;
-		if (!e) return;
-		const t = [];
-		if (this._streamErr) t.push(this._streamErr);
-		if (this._streamOut) t.push(this._streamOut);
-		const n = b(t);
-		const r = u.createInterface({ input: n });
-		for await (const e of r) yield e.toString();
+		const proc = this._process;
+		if (!proc) return;
+		const streams = [];
+		if (this._streamErr) streams.push(this._streamErr);
+		if (this._streamOut) streams.push(this._streamOut);
+		const streamCombined = combineStreams(streams);
+		const rl = readline.createInterface({ input: streamCombined });
+		for await (const chunk of rl) yield chunk.toString();
 		await this._processClosed;
-		e.removeAllListeners();
+		proc.removeAllListeners();
 		if (this._thrownError) throw this._thrownError;
-		if (this._options?.throwOnError && this.exitCode !== 0 && this.exitCode !== void 0) throw new k(this);
+		if (this._options?.throwOnError && (this.exitCode !== 0 && this.exitCode !== void 0 || this.signalCode !== null)) throw new NonZeroExitError(this, void 0, this._command, this._args);
 	}
 	async _waitForOutput() {
-		const e = this._process;
-		if (!e) throw new Error("No process was started");
-		const [t, n] = await Promise.all([this._streamOut ? F(this._streamOut) : "", this._streamErr ? F(this._streamErr) : ""]);
+		const proc = this._process;
+		if (!proc) throw new Error("No process was started");
+		const [stdout, stderr] = await Promise.all([this._streamOut ? readStream(this._streamOut) : "", this._streamErr ? readStream(this._streamErr) : ""]);
 		await this._processClosed;
-		const { stdin: r } = this._options;
-		if (r && typeof r !== "string") await r;
-		e.removeAllListeners();
+		const { stdin } = this._options;
+		if (stdin && typeof stdin !== "string") await stdin;
+		proc.removeAllListeners();
 		if (this._thrownError) throw this._thrownError;
-		const i = {
-			stderr: n,
-			stdout: t,
+		const result = {
+			stderr,
+			stdout,
 			exitCode: this.exitCode
 		};
-		if (this._options.throwOnError && this.exitCode !== 0 && this.exitCode !== void 0) throw new k(this, i);
-		return i;
+		if (this._options.throwOnError && (this.exitCode !== 0 && this.exitCode !== void 0 || this.signalCode !== null)) throw new NonZeroExitError(this, result, this._command, this._args);
+		return result;
 	}
-	then(e, t) {
-		return this._waitForOutput().then(e, t);
+	then(onfulfilled, onrejected) {
+		return this._waitForOutput().then(onfulfilled, onrejected);
 	}
 	_streamOut;
 	_streamErr;
 	spawn() {
-		const t = cwd();
-		const r = this._options;
-		const i = {
-			...N,
-			...r.nodeOptions
+		const cwd$1 = cwd();
+		const options = this._options;
+		const nodeOptions = {
+			...defaultNodeOptions,
+			...options.nodeOptions
 		};
-		const a = [];
+		const signals = [];
 		this._resetState();
-		if (r.timeout !== void 0) a.push(AbortSignal.timeout(r.timeout));
-		if (r.signal !== void 0) a.push(r.signal);
-		if (r.persist === true) i.detached = true;
-		if (a.length > 0) i.signal = P(a);
-		i.env = y(t, i.env, r.nodePath);
-		const o = D(this._command, this._args, i);
-		const s = spawn(o.command, o.args, o.options);
-		if (s.stderr) this._streamErr = s.stderr;
-		if (s.stdout) this._streamOut = s.stdout;
-		this._process = s;
-		s.once("error", this._onError);
-		s.once("close", this._onClose);
-		if (s.stdin) {
-			const { stdin: e } = r;
-			if (typeof e === "string") s.stdin.end(e);
-			else e?.process?.stdout?.pipe(s.stdin);
+		if (options.timeout !== void 0) signals.push(AbortSignal.timeout(options.timeout));
+		if (options.signal !== void 0) signals.push(options.signal);
+		if (options.persist === true) nodeOptions.detached = true;
+		if (signals.length > 0) nodeOptions.signal = combineSignals(signals);
+		nodeOptions.env = computeEnv(cwd$1, nodeOptions.env, options.nodePath);
+		const crossResult = normalizeSpawnCommand(this._command, this._args, nodeOptions);
+		const handle = spawn(crossResult.command, crossResult.args, crossResult.options);
+		if (handle.stderr) this._streamErr = handle.stderr;
+		if (handle.stdout) this._streamOut = handle.stdout;
+		this._process = handle;
+		handle.once("error", this._onError);
+		handle.once("close", this._onClose);
+		if (handle.stdin) {
+			const { stdin } = options;
+			if (typeof stdin === "string") handle.stdin.end(stdin);
+			else stdin?.process?.stdout?.pipe(handle.stdin);
 		}
 	}
 	_resetState() {
 		this._aborted = false;
-		this._processClosed = new Promise((e) => {
-			this._resolveClose = e;
+		this._processClosed = new Promise((resolve) => {
+			this._resolveClose = resolve;
 		});
 		this._thrownError = void 0;
 	}
-	_onError = (e) => {
-		if (e.name === "AbortError" && (!(e.cause instanceof Error) || e.cause.name !== "TimeoutError")) {
+	_onError = (err) => {
+		if (err.name === "AbortError" && (!(err.cause instanceof Error) || err.cause.name !== "TimeoutError")) {
 			this._aborted = true;
 			return;
 		}
-		this._thrownError = e;
+		this._thrownError = err;
 	};
 	_onClose = () => {
 		if (this._resolveClose) this._resolveClose();
 	};
 };
-const R = (e, t, n) => {
-	const r = new I(e, t, n);
-	r.spawn();
-	return r;
+const x = (command, args, userOptions) => {
+	const proc = new ExecProcess(command, args, userOptions);
+	proc.spawn();
+	return proc;
 };
-const z = R;
+const exec = x;
 //#endregion
 //#region src/repository.ts
 const startupTimeoutMs$1 = 6e4;
 const stderrExcerptLimitBytes$1 = 4096;
 const stderrTruncationMarker$1 = "\n... stderr truncated ...\n";
 async function findGitRoot(cwd) {
-	const execution = R("git", ["rev-parse", "--show-toplevel"], commandOptions$1(cwd));
+	const execution = x("git", ["rev-parse", "--show-toplevel"], commandOptions(cwd));
 	const result = await execution;
 	if (execution.killed) throw new Error("Git root discovery exceeded the 1 minute startup limit.");
 	if (result.exitCode !== 0) return;
@@ -503,11 +497,11 @@ async function hasProjectConfig(gitRoot) {
 	return (await readdir(gitRoot, { withFileTypes: true })).some((entry) => entry.isFile() && entry.name.startsWith("alint.config."));
 }
 async function isHeadDetached(gitRoot) {
-	const execution = R("git", [
+	const execution = x("git", [
 		"symbolic-ref",
 		"--quiet",
 		"HEAD"
-	], commandOptions$1(gitRoot));
+	], commandOptions(gitRoot));
 	const result = await execution;
 	if (execution.killed) throw new Error("Git HEAD inspection exceeded the 1 minute startup limit.");
 	if (result.exitCode === 0) return false;
@@ -515,7 +509,7 @@ async function isHeadDetached(gitRoot) {
 	const detail = truncateStderr$1(result.stderr.trim());
 	throw new Error(detail.length === 0 ? `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"} and produced no stderr output.` : `Git HEAD inspection failed with exit code ${result.exitCode ?? "unknown"}: ${detail}`);
 }
-function commandOptions$1(cwd) {
+function commandOptions(cwd) {
 	return {
 		nodeOptions: { cwd },
 		nodePath: false,
@@ -536,14 +530,19 @@ function truncateStderr$1(stderr) {
 	return `${bytes.toString("utf8", 0, headEnd)}${stderrTruncationMarker$1}${bytes.toString("utf8", tailStart)}`;
 }
 //#endregion
+//#region ../../packages/utils/dist/node.mjs
+function isNodeErrorCode(error, code) {
+	return error instanceof Error && "code" in error && error.code === code;
+}
+//#endregion
 //#region src/protocol.ts
 const startupTimeoutMs = 6e4;
 const maximumStopGateTimeoutMs = 861e5;
 const stderrExcerptLimitBytes = 4096;
 const stderrTruncationMarker = "\n... stderr truncated ...\n";
 async function executeStopGate(command, gitRoot, sessionId, lintTimeoutMs) {
-	const timeout = createLongTimeout(addStartupAllowance(lintTimeoutMs));
-	const execution = R(command.executable, [
+	const timeout = createLongTimeout(Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER));
+	const execution = x(command.executable, [
 		...command.args,
 		"integrations",
 		"stop-gate",
@@ -563,10 +562,13 @@ async function executeStopGate(command, gitRoot, sessionId, lintTimeoutMs) {
 	if (execution.aborted) throw new Error("alint did not finish within its configured lint timeout plus the 1 minute startup allowance.");
 	const envelope = parseEnvelope(result.stdout);
 	if (envelope === void 0) {
-		if (result.exitCode === 1) throw new Error(abnormalAlintMessage(result.stderr));
+		if (result.exitCode === 1) {
+			const detail = truncateStderr(result.stderr.trim());
+			throw new Error(detail.length === 0 ? "alint Stop Gate exited abnormally with exit code 1 and produced no stderr output." : `alint Stop Gate exited abnormally with exit code 1: ${detail}`);
+		}
 		throw incompatibleAlintError();
 	}
-	if (!isExpectedStopGateExitCode(result.exitCode, envelope.status)) throw new Error(`alint Stop Gate returned status "${envelope.status}" with unexpected exit code ${result.exitCode ?? "unknown"}.`);
+	if (result.exitCode !== (envelope.status === "runtime-error" ? 1 : 0)) throw new Error(`alint Stop Gate returned status "${envelope.status}" with unexpected exit code ${result.exitCode ?? "unknown"}.`);
 	return envelope;
 }
 function parseConfigOutput(stdout) {
@@ -614,42 +616,41 @@ async function probeStopGateConfig(command, gitRoot, deadline) {
 	if (remainingMs <= 0) throw packageManagerTimeoutError(command);
 	let execution;
 	try {
-		execution = R(command.executable, [
+		execution = x(command.executable, [
 			...command.args,
 			"config",
 			"integrations",
 			"stop-gate",
 			"show"
-		], commandOptions(gitRoot, remainingMs));
+		], {
+			nodeOptions: { cwd: gitRoot },
+			nodePath: false,
+			timeout: remainingMs
+		});
 		const result = await execution;
 		if (execution.killed) throw packageManagerTimeoutError(command);
 		if (result.exitCode !== 0) {
-			if (command.source === "local") throw repositoryConfigError(result);
+			if (command.source === "local") {
+				const detail = truncateStderr(result.stderr.trim());
+				const exitCode = result.exitCode ?? "unknown";
+				const reason = detail.length === 0 ? `exit code ${exitCode} with no stderr output` : `exit code ${exitCode}: ${detail}`;
+				throw new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`);
+			}
 			return;
 		}
-		if (result.stdout.trim().length === 0) throw emptyConfigOutputError(result.stderr);
+		if (result.stdout.trim().length === 0) {
+			const detail = truncateStderr(result.stderr.trim());
+			const stderrContext = detail.length === 0 ? "" : ` alint wrote to stderr: ${detail}`;
+			throw new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`);
+		}
 		const config = parseConfigOutput(result.stdout);
 		if (config === void 0) throw incompatibleAlintError();
 		return config;
 	} catch (error) {
 		if (execution?.killed) throw packageManagerTimeoutError(command);
-		if (isNodeError$2(error) && error.code === "ENOENT") return;
+		if (isNodeErrorCode(error, "ENOENT")) return;
 		throw error;
 	}
-}
-function abnormalAlintMessage(stderr) {
-	const detail = truncateStderr(stderr.trim());
-	return detail.length === 0 ? "alint Stop Gate exited abnormally with exit code 1 and produced no stderr output." : `alint Stop Gate exited abnormally with exit code 1: ${detail}`;
-}
-function addStartupAllowance(lintTimeoutMs) {
-	return Math.min(lintTimeoutMs + startupTimeoutMs, Number.MAX_SAFE_INTEGER);
-}
-function commandOptions(cwd, timeout) {
-	return {
-		nodeOptions: { cwd },
-		nodePath: false,
-		timeout
-	};
 }
 function createLongTimeout(timeoutMs) {
 	const controller = new AbortController();
@@ -672,11 +673,6 @@ function createLongTimeout(timeoutMs) {
 		signal: controller.signal
 	};
 }
-function emptyConfigOutputError(stderr) {
-	const detail = truncateStderr(stderr.trim());
-	const stderrContext = detail.length === 0 ? "" : ` alint wrote to stderr: ${detail}`;
-	return /* @__PURE__ */ new Error(`alint exited successfully but produced no Stop Gate configuration output. Run \`alint config integrations stop-gate show\` manually and make sure it writes the resolved configuration to stdout.${stderrContext}`);
-}
 function incompatibleAlintError() {
 	return /* @__PURE__ */ new Error("The resolved alint CLI does not support the Stop Gate protocol. Update @alint-js/cli before using this plugin.");
 }
@@ -685,21 +681,9 @@ function isEnvelopeRecord(value) {
 	const record = value;
 	return record.schemaVersion === 2 && typeof record.errorCount === "number" && Number.isInteger(record.errorCount) && record.errorCount >= 0 && typeof record.warningCount === "number" && Number.isInteger(record.warningCount) && record.warningCount >= 0;
 }
-function isExpectedStopGateExitCode(exitCode, status) {
-	return exitCode === (status === "runtime-error" ? 1 : 0);
-}
-function isNodeError$2(error) {
-	return error instanceof Error && "code" in error;
-}
 function packageManagerTimeoutError(command) {
 	const subject = command.source === "package-manager" ? `${command.executable} package-manager exec` : `${command.executable} startup`;
 	return /* @__PURE__ */ new Error(`${subject} exceeded the 1 minute startup limit. Run the Stop Gate config command manually and fix the local installation before retrying.`);
-}
-function repositoryConfigError(result) {
-	const detail = truncateStderr(result.stderr.trim());
-	const exitCode = result.exitCode ?? "unknown";
-	const reason = detail.length === 0 ? `exit code ${exitCode} with no stderr output` : `exit code ${exitCode}: ${detail}`;
-	return /* @__PURE__ */ new Error(`The repository-local alint could not read Stop Gate configuration due to ${reason}. Run \`alint config integrations stop-gate show\` manually.`);
 }
 function truncateStderr(stderr) {
 	const bytes = Buffer$1.from(stderr, "utf8");
@@ -725,7 +709,29 @@ async function resolveCommands(gitRoot) {
 		source: "local"
 	});
 	const packageManager = await detectPackageManager(gitRoot);
-	if (packageManager !== void 0) commands.push(packageManagerCommand(packageManager));
+	if (packageManager !== void 0) commands.push(packageManager === "npm" ? {
+		args: [
+			"exec",
+			"--offline",
+			"--yes=false",
+			"--",
+			"alint"
+		],
+		executable: "npm",
+		source: "package-manager"
+	} : packageManager === "bun" ? {
+		args: [
+			"x",
+			"--no-install",
+			"alint"
+		],
+		executable: "bun",
+		source: "package-manager"
+	} : {
+		args: ["exec", "alint"],
+		executable: packageManager,
+		source: "package-manager"
+	});
 	commands.push({
 		args: [],
 		executable: "alint",
@@ -738,7 +744,7 @@ async function canAccess(path, mode) {
 		await access(path, mode);
 		return true;
 	} catch (error) {
-		if (isNodeError$1(error) && (error.code === "ENOENT" || error.code === "EACCES")) return false;
+		if (isNodeErrorCode(error, "ENOENT") || isNodeErrorCode(error, "EACCES")) return false;
 		throw error;
 	}
 }
@@ -754,36 +760,6 @@ async function detectPackageManager(gitRoot) {
 		["npm-shrinkwrap.json", "npm"]
 	]) if (await canAccess(join(gitRoot, lockfile), constants.F_OK)) return manager;
 }
-function isNodeError$1(error) {
-	return error instanceof Error && "code" in error;
-}
-function packageManagerCommand(manager) {
-	if (manager === "npm") return {
-		args: [
-			"exec",
-			"--offline",
-			"--yes=false",
-			"--",
-			"alint"
-		],
-		executable: "npm",
-		source: "package-manager"
-	};
-	if (manager === "bun") return {
-		args: [
-			"x",
-			"--no-install",
-			"alint"
-		],
-		executable: "bun",
-		source: "package-manager"
-	};
-	return {
-		args: ["exec", "alint"],
-		executable: manager,
-		source: "package-manager"
-	};
-}
 async function readPackageManagerField(gitRoot) {
 	try {
 		const packageJson = JSON.parse(await readFile(join(gitRoot, "package.json"), "utf8"));
@@ -791,7 +767,7 @@ async function readPackageManagerField(gitRoot) {
 		const name = packageJson.packageManager.split("@", 1)[0];
 		return name === "bun" || name === "npm" || name === "pnpm" || name === "yarn" ? name : void 0;
 	} catch (error) {
-		if (isNodeError$1(error) && error.code === "ENOENT") return;
+		if (isNodeErrorCode(error, "ENOENT")) return;
 		throw error;
 	}
 }
@@ -824,7 +800,7 @@ function createStateStore(pluginDataDirectory, now = () => /* @__PURE__ */ new D
 			try {
 				return parseState(JSON.parse(await readFile(statePath, "utf8")));
 			} catch (error) {
-				if (isNodeError(error) && error.code === "ENOENT") return emptyState();
+				if (isNodeErrorCode(error, "ENOENT")) return emptyState();
 				throw error;
 			}
 		},
@@ -846,20 +822,14 @@ function emptyState() {
 		updatedAt: (/* @__PURE__ */ new Date(0)).toISOString()
 	};
 }
-function assertSafeSessionId(sessionId) {
-	if (sessionId === "." || sessionId === ".." || !/^[\w.-]+$/u.test(sessionId)) throw new Error("Invalid Stop hook session id.");
-}
 function getStatePath(directory, sessionId) {
-	assertSafeSessionId(sessionId);
+	if (sessionId === "." || sessionId === ".." || !/^[\w.-]+$/u.test(sessionId)) throw new Error("Invalid Stop hook session id.");
 	return join(directory, `${sessionId}.json`);
 }
 function isFindingSummary(value) {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const finding = value;
 	return Number.isInteger(finding.errorCount) && (finding.errorCount ?? -1) >= 0 && typeof finding.findingsHash === "string" && /^[a-f0-9]{64}$/u.test(finding.findingsHash) && typeof finding.reportPath === "string" && (finding.status === "errors" || finding.status === "warnings") && Number.isInteger(finding.warningCount) && (finding.warningCount ?? -1) >= 0;
-}
-function isNodeError(error) {
-	return error instanceof Error && "code" in error;
 }
 function parseState(value) {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError("Invalid Stop Gate session state.");
@@ -885,13 +855,6 @@ async function pruneExpiredStates(directory, nowMs) {
 }
 //#endregion
 //#region src/stop-gate.ts
-function emergencyDecision(input, error) {
-	const message = runtimeFailureMessage(errorMessageFrom(error) ?? "unknown error");
-	return input?.stop_hook_active ? { systemMessage: message } : {
-		decision: "block",
-		reason: message
-	};
-}
 function emit(decision) {
 	if (Object.keys(decision).length > 0) writeSync(process$1.stdout.fd, `${JSON.stringify(decision)}\n`);
 }
@@ -937,9 +900,13 @@ try {
 }
 if (parsedInput !== void 0) run(parsedInput).catch((error) => {
 	try {
-		emit(emergencyDecision(parsedInput, error));
+		const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${errorMessageFrom(error) ?? "unknown error"}`;
+		emit(parsedInput?.stop_hook_active ? { systemMessage: message } : {
+			decision: "block",
+			reason: message
+		});
 	} catch (emitError) {
-		reportFatalFailure("could not return its emergency decision", emitError);
+		reportFatalFailure("could not return its hook failure decision", emitError);
 	}
 });
 async function run(input) {
@@ -966,7 +933,7 @@ async function runForInput(input, sessionId, state) {
 	const stopGate = await resolveAlintStopGate(gitRoot);
 	if (!stopGate.enabled) return { envelope: inactiveEnvelope() };
 	if (stopGate.target === "dirty-files" && await isHeadDetached(gitRoot)) return { decision: { systemMessage: "alint-plugin: Stop Gate skipped because Git HEAD is detached. You may need to let the user know that. Run `alint --dirty` manually if this checkout should be reviewed." } };
-	if (hasReachedLintLimit(state)) return { decision: lintLimitDecision(state) };
+	if (state.lintRounds >= 9) return { decision: lintLimitDecision(state) };
 	return { envelope: await stopGate.run(sessionId) };
 }
 //#endregion

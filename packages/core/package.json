@@ -35,6 +35,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@alint-js/utils": "workspace:*",
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
     "@xsai/generate-text": "catalog:",

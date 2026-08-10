@@ -8,6 +8,7 @@ export default defineConfig({
       'packages/config',
       'packages/cli',
       'packages/tools-fs',
+      'packages/utils',
       'packages/languages',
       'packages/plugin-js',
       'packages/plugin-example-agent',
