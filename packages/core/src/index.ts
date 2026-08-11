@@ -80,6 +80,7 @@ export type {
   ProgressTargetKind,
   RunEndPayload,
   RunExecution,
+  RunInstrumentation,
   RunOptions,
   RunResult,
   RunUsage,

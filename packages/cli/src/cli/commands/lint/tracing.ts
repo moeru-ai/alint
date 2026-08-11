@@ -4,6 +4,7 @@ import type {
   ProgressJobRef,
   ProgressReporter,
   RunEndPayload,
+  RunInstrumentation,
 } from '@alint-js/core'
 import type { Context, Span } from '@alint-js/tracing'
 
@@ -12,7 +13,13 @@ import { errorMessageFrom } from '@moeru/std'
 
 export interface TracingReporter {
   finish: (error?: unknown) => void
+  instrumentation: RunInstrumentation
   reporter: ProgressReporter
+}
+
+interface JobSpan {
+  context: Context
+  span: Span
 }
 
 export function createTracingReporter(runSpan: Span): TracingReporter {
@@ -21,11 +28,11 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
   let executionSpan: Span | undefined
   let planningSpan: Span | undefined
   let prepareSpan: Span | undefined
-  const jobSpans = new Map<string, Span>()
+  const jobSpans = new Map<string, JobSpan>()
 
   const reporter: ProgressReporter = {
     onDiagnostic: ({ diagnostic, job }) => {
-      jobSpans.get(job.id)?.addEvent('alint.diagnostic', {
+      jobSpans.get(job.id)?.span.addEvent('alint.diagnostic', {
         'alint.diagnostic.json': JSON.stringify(diagnostic),
       })
     },
@@ -53,11 +60,12 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
       })
     },
     onJobEnd: (payload) => {
-      const span = jobSpans.get(payload.job.id)
-      if (span == null) {
+      const entry = jobSpans.get(payload.job.id)
+      if (entry == null) {
         return
       }
 
+      const { span } = entry
       setJobEndAttributes(span, payload)
       span.setStatus(payload.state === 'failed'
         ? { code: SpanStatusCode.ERROR, message: payload.failure?.message }
@@ -66,13 +74,17 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
       jobSpans.delete(payload.job.id)
     },
     onJobRetry: (payload) => {
-      jobSpans.get(payload.job.id)?.addEvent('alint.job.retry', retryAttributes(payload), payload.startedAt)
+      jobSpans.get(payload.job.id)?.span.addEvent('alint.job.retry', retryAttributes(payload), payload.startedAt)
     },
     onJobStart: (payload) => {
-      jobSpans.set(payload.job.id, tracer.startSpan('alint.rule', {
+      const span = tracer.startSpan('alint.rule', {
         attributes: jobAttributes(payload.job),
         startTime: payload.startedAt,
-      }, executionContext))
+      }, executionContext)
+      jobSpans.set(payload.job.id, {
+        context: trace.setSpan(executionContext ?? context.active(), span),
+        span,
+      })
     },
     onPlanningEnd: ({ progress }) => {
       planningSpan?.setAttribute('alint.jobs.total', progress.jobsTotal)
@@ -95,7 +107,7 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
       }, payload.endedAt)
     },
     onUsage: ({ job, record }) => {
-      jobSpans.get(job.id)?.addEvent('alint.usage', {
+      jobSpans.get(job.id)?.span.addEvent('alint.usage', {
         'alint.usage.json': JSON.stringify(record),
       })
     },
@@ -107,7 +119,7 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
         ? { code: SpanStatusCode.UNSET }
         : { code: SpanStatusCode.ERROR, message: errorMessageFrom(error) ?? 'Unknown tracing failure.' }
 
-      for (const span of jobSpans.values()) {
+      for (const { span } of jobSpans.values()) {
         span.setStatus(status)
         span.end()
       }
@@ -122,6 +134,12 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
       executionSpan?.end()
       executionSpan = undefined
       executionContext = undefined
+    },
+    instrumentation: {
+      runJob: async (job, operation) => {
+        const entry = jobSpans.get(job.id)
+        return await (entry == null ? operation() : context.with(entry.context, operation))
+      },
     },
     reporter,
   }

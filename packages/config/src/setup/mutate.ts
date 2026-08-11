@@ -34,10 +34,12 @@ export function addProviderModels(
 export function enableTracing(
   config: SetupConfig,
   directory = config.tracing?.directory ?? DEFAULT_TRACING_DIRECTORY,
-): SetupConfig & { tracing: { directory: string, enabled: true } } {
+  captureLlmContent = config.tracing?.captureLlmContent,
+): SetupConfig & { tracing: { captureLlmContent?: boolean, directory: string, enabled: true } } {
   return {
     ...config,
     tracing: {
+      ...(captureLlmContent === undefined ? {} : { captureLlmContent }),
       directory,
       enabled: true,
     },

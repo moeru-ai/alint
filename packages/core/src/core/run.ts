@@ -96,6 +96,7 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
     execute: (job, _startedAt) => executeRuleJob(job, {
       cache: cacheContext,
       cacheOnly: options.cacheOnly,
+      instrumentation: options.instrumentation,
       progress: options.progress,
       runProgress,
       runSignal: options.signal,

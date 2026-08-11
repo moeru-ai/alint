@@ -131,13 +131,20 @@ const runnerSchema = pipe(
   })),
 )
 
-const tracingSchema = object({
-  directory: optional(pipe(
-    string('Invalid tracing directory: must be a string.'),
-    nonEmpty('Invalid tracing directory: must be a non-empty string.'),
-  )),
-  enabled: optional(boolean()),
-})
+const tracingSchema = pipe(
+  object({
+    capture_llm_content: optional(boolean()),
+    directory: optional(pipe(
+      string('Invalid tracing directory: must be a string.'),
+      nonEmpty('Invalid tracing directory: must be a non-empty string.'),
+    )),
+    enabled: optional(boolean()),
+  }),
+  transform(({ capture_llm_content: captureLlmContent, ...tracing }): TracingConfig => ({
+    ...tracing,
+    ...(captureLlmContent === undefined ? {} : { captureLlmContent }),
+  })),
+)
 
 const setupConfigSchema = pipe(
   object({
@@ -191,7 +198,7 @@ interface StringifiableRunnerStatsConfig {
 interface StringifiableSetupConfig {
   providers: StringifiableProviderDefinition[]
   runner?: StringifiableRunnerConfig
-  tracing?: TracingConfig
+  tracing?: StringifiableTracingConfig
   version: 1
 }
 
@@ -203,6 +210,12 @@ interface StringifiableSetupModelDefinition {
   id: string
   name?: string
   size?: ModelSize
+}
+
+interface StringifiableTracingConfig {
+  capture_llm_content?: boolean
+  directory?: string
+  enabled?: boolean
 }
 
 export function parseSetupConfigToml(toml: string): SetupConfig {
@@ -220,7 +233,11 @@ export function stringifySetupConfigToml(config: SetupConfig): string {
   }
 
   if (config.tracing !== undefined) {
-    stringifiableConfig.tracing = { ...config.tracing }
+    stringifiableConfig.tracing = {
+      capture_llm_content: config.tracing.captureLlmContent,
+      directory: config.tracing.directory,
+      enabled: config.tracing.enabled,
+    }
   }
 
   return stringify(stringifiableConfig)

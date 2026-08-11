@@ -12,7 +12,7 @@ describe('setup config loading and merging', () => {
     const merged = mergeSetupConfigs(
       {
         providers: [],
-        tracing: { directory: '/var/lib/alint/traces', enabled: true },
+        tracing: { captureLlmContent: true, directory: '/var/lib/alint/traces', enabled: true },
         version: 1,
       },
       {
@@ -23,6 +23,7 @@ describe('setup config loading and merging', () => {
     )
 
     expect(merged.tracing).toEqual({
+      captureLlmContent: true,
       directory: '/var/lib/alint/traces',
       enabled: false,
     })

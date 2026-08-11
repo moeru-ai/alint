@@ -47,9 +47,10 @@ Setup TOML can enable tracing and select an output directory:
 [tracing]
 enabled = true
 directory = ".alint/traces"
+capture_llm_content = true
 ```
 
-Project fields in `.alint/config.toml` override matching global fields. Other global tracing fields remain active.
+Project fields in `.alint/config.toml` override matching global fields. Other global tracing fields remain active. LLM content capture is disabled when `capture_llm_content` is absent or false.
 
 Static configs can use TOML, YAML, JSON, JSONC, or JSON5. They are data-only alternatives to executable JavaScript and TypeScript flat configs, and identify plugin sources with strings.
 

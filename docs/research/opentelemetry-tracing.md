@@ -121,7 +121,7 @@ Use these ownership rules for later implementation:
 
 | Area | Responsibility |
 | --- | --- |
-| `@alint-js/config` | Parse, merge, mutate, and write `tracing.enabled` and `tracing.directory`. |
+| `@alint-js/config` | Parse, merge, mutate, and write `tracing.enabled`, `tracing.directory`, and `tracing.captureLlmContent`. |
 | `@alint-js/cli` | Resolve global and local configuration. Apply the CLI command. Start and stop the Node tracing host. |
 | `@alint-js/tracing` | Provide portable tracing names, attributes, and helper functions. Depend only on `@opentelemetry/api`. |
 | `@alint-js/tracing/node` or a separate Node package | Configure the SDK, resource, processor, and OTLP JSONL exporter. Own filesystem access. |
@@ -130,9 +130,7 @@ Use these ownership rules for later implementation:
 
 The current core already exposes detailed run progress through `ProgressReporter`. It reports preparation, planning, jobs, retries, diagnostics, usage, and the final result. See [`packages/core/src/core/types.ts`](../../packages/core/src/core/types.ts) and [`packages/core/src/core/run.ts`](../../packages/core/src/core/run.ts).
 
-A CLI wrapper can convert these callbacks into spans and events without an SDK dependency in core. This wrapper cannot make a job span the active context during plugin execution. Plugin spans will attach to the active run span instead.
-
-If job-parent context is required, add one narrow operation wrapper around job execution. Its OpenTelemetry implementation can live in `@alint-js/tracing`. Do not add filesystem or exporter code to core.
+A CLI wrapper converts these callbacks into spans and events without an SDK dependency in core. A narrow injected operation wrapper makes the rule span active during plugin execution. Plugin, model, and tool spans therefore attach to the correct rule span. Core does not own filesystem or exporter code.
 
 ## Run trace model
 
@@ -171,7 +169,7 @@ No implementation can guarantee completion after `SIGKILL` or a process crash. A
 2. Add `alint config tracing enable`, `--local`, and `--directory`.
 3. Add a Node tracing host and write standard OTLP JSONL to one run directory.
 4. Convert the existing progress events into the run, preparation, planning, and rule trace model.
-5. Add `@alint-js/plugin/tracing` for plugin opt-in.
+5. Add portable GenAI and tool helpers to `@alint-js/tracing` for plugin opt-in.
 6. Add a Web host only when a Web application needs tracing. Use OTLP HTTP or a host-provided sink there.
 
-The implementation does not add hashes, fingerprints, a manifest, or core instrumentation. SDK initialization stays in the Node-only tracing entry point.
+The implementation does not add hashes, fingerprints, or a manifest. SDK initialization stays in the Node-only tracing entry point. Core uses only the portable API and an injected operation wrapper.

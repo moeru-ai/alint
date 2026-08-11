@@ -3,8 +3,12 @@ import type { AddressInfo } from 'node:net'
 
 import type { ResolvedModel } from '../models/types'
 
+import { readFile } from 'node:fs/promises'
 import { createServer } from 'node:http'
+import { tmpdir } from 'node:os'
 
+import { withGenAiContentCapture } from '@alint-js/tracing'
+import { startNodeTracing } from '@alint-js/tracing/node'
 import { array, description, number, object, optional, picklist, pipe, string } from 'valibot'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -178,6 +182,34 @@ describe('generateStructured', () => {
     expect(result).toEqual(validPayload)
     expect(requests).toHaveLength(1)
     expect(requests[0].url).toBe('/v1/chat/completions')
+  })
+
+  it('records the structured model transcript when content capture is enabled', async () => {
+    const session = await startNodeTracing({ cwd: tmpdir(), directory: 'alint-structured-output-tests', serviceVersion: 'test' })
+    responses.push({ body: toolCallCompletion(validPayload) })
+
+    try {
+      await withGenAiContentCapture(true, () => generateStructured(createOptions()))
+    }
+    finally {
+      await session.shutdown()
+    }
+
+    const traceData = (await readFile(session.filePath, 'utf8')).trimEnd().split('\n').map(line => JSON.parse(line) as OtlpTraceData)
+    const spans = traceData.flatMap(data => data.resourceSpans.flatMap(resource => resource.scopeSpans.flatMap(scope => scope.spans)))
+    const modelSpan = spans.find(span => span.name === 'chat test-model')
+    const attributes = Object.fromEntries(modelSpan?.attributes.map(attribute => [
+      attribute.key,
+      attribute.value.stringValue
+      ?? attribute.value.intValue
+      ?? attribute.value.arrayValue?.values.map(value => value.stringValue),
+    ]) ?? [])
+
+    expect(attributes['gen_ai.input.messages']).toContain('Review this file.')
+    expect(attributes['gen_ai.output.messages']).toContain('reportFindings')
+    expect(attributes['gen_ai.response.finish_reasons']).toEqual(['tool_calls'])
+    expect(attributes['gen_ai.usage.input_tokens']).toBe(11)
+    expect(attributes['gen_ai.usage.output_tokens']).toBe(5)
   })
 
   describe('signal', () => {
@@ -358,6 +390,24 @@ describe('generateStructured', () => {
     expect(requests).toHaveLength(1)
   })
 })
+
+interface OtlpTraceData {
+  resourceSpans: Array<{
+    scopeSpans: Array<{
+      spans: Array<{
+        attributes: Array<{
+          key: string
+          value: {
+            arrayValue?: { values: Array<{ stringValue: string }> }
+            intValue?: number
+            stringValue?: string
+          }
+        }>
+        name: string
+      }>
+    }>
+  }>
+}
 
 describe('formatSourceWithLineNumbers', () => {
   it('prefixes every line with its 1-based line number', () => {

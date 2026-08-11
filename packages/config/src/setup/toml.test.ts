@@ -264,9 +264,11 @@ id = "qwen"
       '[tracing]',
       'enabled = true',
       'directory = ".alint/traces"',
+      'capture_llm_content = true',
     ].join('\n'))
 
     expect(config.tracing).toEqual({
+      captureLlmContent: true,
       directory: '.alint/traces',
       enabled: true,
     })
@@ -275,6 +277,7 @@ id = "qwen"
     expect(toml).toContain('[tracing]')
     expect(toml).toContain('enabled = true')
     expect(toml).toContain('directory = ".alint/traces"')
+    expect(toml).toContain('capture_llm_content = true')
   })
 
   it('rejects a non-integer runner stats retention', () => {

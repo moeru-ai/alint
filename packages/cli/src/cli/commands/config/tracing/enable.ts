@@ -7,6 +7,7 @@ import { defineCommand } from '../../command'
 import { loadScopedSetupConfig } from '../setup-config'
 
 export interface EnableTracingOptions {
+  captureLlmContent?: boolean
   directory?: string | string[]
   local?: boolean
 }
@@ -16,6 +17,7 @@ export const enable = defineCommand({
   description: 'Enable tracing and configure its output directory',
   name: 'enable',
   options: [
+    { description: 'Capture LLM messages and tool content', flags: '--capture-llm-content' },
     { description: 'Directory for OTLP trace files', flags: '--directory <path>' },
     { description: 'Read and write project-local config', flags: '--local' },
   ],
@@ -36,12 +38,13 @@ async function runEnableTracingCommand(
   }
 
   const { config, path, scope } = await loadScopedSetupConfig(context.io, options.local)
-  const nextConfig = enableTracing(config, options.directory)
+  const nextConfig = enableTracing(config, options.directory, options.captureLlmContent)
 
   await writeSetupConfig(path, nextConfig)
   context.io.stdout.write([
     'enabled: true',
     `directory: ${escapeLineValue(nextConfig.tracing.directory)}`,
+    ...(nextConfig.tracing.captureLlmContent === true ? ['capture_llm_content: true'] : []),
     `scope: ${scope}`,
     '',
   ].join('\n'))

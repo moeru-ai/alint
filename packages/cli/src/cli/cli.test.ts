@@ -784,12 +784,14 @@ describe('executeCli', () => {
       '--local',
       '--directory',
       'artifacts/otel',
+      '--capture-llm-content',
     ], io)
 
     expect(exitCode).toBe(0)
     expect(io.stdoutText).toBe([
       'enabled: true',
       'directory: artifacts/otel',
+      'capture_llm_content: true',
       'scope: local',
       '',
     ].join('\n'))
@@ -799,6 +801,7 @@ describe('executeCli', () => {
     expect(config).toContain('[tracing]')
     expect(config).toContain('enabled = true')
     expect(config).toContain('directory = "artifacts/otel"')
+    expect(config).toContain('capture_llm_content = true')
   })
 
   it('prints description for config inspect help', async () => {

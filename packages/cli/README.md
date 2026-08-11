@@ -190,11 +190,12 @@ The command uses `.alint/traces` as the default output directory. Set a differen
 ```bash
 alint config tracing enable --directory artifacts/otel
 alint config tracing enable --local --directory .alint/traces
+alint config tracing enable --local --capture-llm-content
 ```
 
-The command writes `enabled` and `directory` under `[tracing]`. The `--local` flag selects `.alint/config.toml`.
+The command writes `enabled` and `directory` under `[tracing]`. The `--local` flag selects `.alint/config.toml`. The `--capture-llm-content` flag also writes `capture_llm_content = true`.
 
-Each lint run writes raw OTLP `TracesData` JSON lines to `<directory>/<run-id>/traces.jsonl`. The output contains the run, preparation, planning, execution, and rule spans. The final run result is an `alint.result` event on the run span. Alint does not add an envelope, manifest, hash, or fingerprint.
+Each lint run writes raw OTLP `TracesData` JSON lines to `<directory>/<run-id>/traces.jsonl`. The output contains the run, preparation, planning, execution, rule, model, and tool spans. The final run result is an `alint.result` event on the run span. Model and tool content is disabled by default because it can contain source code, prompts, credentials, and other sensitive data. Alint does not add an envelope, manifest, hash, or fingerprint.
 
 ### Inspect Configuration and Output
 

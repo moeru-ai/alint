@@ -31,6 +31,7 @@ export interface SetupConfig {
 }
 
 export interface TracingConfig {
+  captureLlmContent?: boolean
   directory?: string
   enabled?: boolean
 }

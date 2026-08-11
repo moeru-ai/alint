@@ -1,4 +1,4 @@
-import type { RunResult } from '@alint-js/core'
+import type { RunInstrumentation, RunResult } from '@alint-js/core'
 
 import type { ReporterName } from '../../reporters'
 import type { CliIo, CliWritable } from '../../types'
@@ -8,7 +8,7 @@ import { stat } from 'node:fs/promises'
 
 import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { DEFAULT_TRACING_DIRECTORY } from '@alint-js/config'
-import { SpanStatusCode, trace } from '@alint-js/tracing'
+import { SpanStatusCode, trace, withGenAiContentCapture } from '@alint-js/tracing'
 import { startNodeTracing } from '@alint-js/tracing/node'
 import { resolve } from 'pathe'
 
@@ -73,6 +73,7 @@ async function runConfiguredLintCommand(
   interceptConsoleOutput: (stdout: CliWritable) => () => void,
   session: RunSession,
   tracingReporter?: Parameters<typeof mergeProgressReporters>[0],
+  instrumentation?: RunInstrumentation,
 ): Promise<number> {
   const runner = resolveRunnerConfig(session.runner, options)
   const progress = shouldEnableProgress(options, io)
@@ -112,6 +113,7 @@ async function runConfiguredLintCommand(
         mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
         tracingReporter,
       ),
+      instrumentation,
       runner,
     })
   }
@@ -185,13 +187,17 @@ async function runLintCommand(
       }, async (runSpan) => {
         const tracingReporter = createTracingReporter(runSpan)
         try {
-          const exitCode = await runConfiguredLintCommand(
-            files,
-            options,
-            io,
-            interceptConsoleOutput,
-            session,
-            tracingReporter.reporter,
+          const exitCode = await withGenAiContentCapture(
+            session.tracing?.captureLlmContent === true,
+            () => runConfiguredLintCommand(
+              files,
+              options,
+              io,
+              interceptConsoleOutput,
+              session,
+              tracingReporter.reporter,
+              tracingReporter.instrumentation,
+            ),
           )
           runSpan.setAttribute('alint.exit.code', exitCode)
           runSpan.setStatus(exitCode === 2

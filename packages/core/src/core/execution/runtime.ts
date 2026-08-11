@@ -10,6 +10,8 @@ import type { RuleRuntime, RuleRuntimeState } from './types'
 
 import { AsyncLocalStorage } from 'node:async_hooks'
 
+import { traceGenAiCall, traceGenAiToolCall } from '@alint-js/tracing'
+
 import { combineAbortSignals } from '../../agent'
 import { withAgentRetry } from '../../agent/retry'
 import { resolveModel, UnknownModelError } from '../../models/resolve'
@@ -30,7 +32,7 @@ export function createRuleRuntimes(options: {
   return options.rules.map(({ enabledRule, ruleIndex }) => {
     const executionState = new AsyncLocalStorage<RuleRuntimeState>()
     const agent = options.effectiveAgent
-      ? withAgentRetry(request => options.effectiveAgent!({
+      ? withAgentRetry(request => traceAgentCall(options.effectiveAgent!, {
           ...request,
           signal: combineAbortSignals(executionState.getStore()?.signal, request.signal),
         }), options.runOptions.runner?.agentRetries, {
@@ -239,6 +241,15 @@ function mergeModelRequirement(
   }
 }
 
+function serverAddressFrom(endpoint: string): string | undefined {
+  try {
+    return new URL(endpoint).hostname
+  }
+  catch {
+    return undefined
+  }
+}
+
 function toDiagnosticModel(
   model: ResolvedModel,
   request: string | undefined,
@@ -248,4 +259,40 @@ function toDiagnosticModel(
     requested: request,
     resolvedId: model.id,
   }
+}
+
+function traceAgentCall(adapter: AgentAdapter, request: Parameters<AgentAdapter>[0]): ReturnType<AgentAdapter> {
+  return traceGenAiCall({
+    inputMessages: [
+      { content: request.instructions, role: 'system' },
+      { content: request.prompt, role: 'user' },
+    ],
+    model: request.model.id,
+    operationName: 'invoke_agent',
+    providerName: request.model.provider.id,
+    serverAddress: serverAddressFrom(request.model.provider.endpoint),
+    systemInstructions: [{ content: request.instructions, role: 'system' }],
+    toolDefinitions: request.tools.map(tool => ({
+      description: tool.description,
+      name: tool.name,
+      parameters: tool.parameters,
+      type: 'function',
+    })),
+  }, () => adapter({
+    ...request,
+    tools: request.tools.map(tool => ({
+      ...tool,
+      execute: input => traceGenAiToolCall({
+        arguments: input,
+        description: tool.description,
+        name: tool.name,
+      }, () => tool.execute(input)),
+    })),
+  }), result => ({
+    outputMessages: [{ content: result.answer, role: 'assistant' }],
+    usage: {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+    },
+  }))
 }
