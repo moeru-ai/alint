@@ -5,6 +5,7 @@ import type {
   RunResult,
   SetupConfig,
 } from '@alint-js/core'
+import type { SetupConfig as FileSetupConfig } from '@alint-js/config'
 
 import type { CliIo } from '../types'
 
@@ -30,6 +31,8 @@ export interface RunSession {
   /** Setup config merged with project config. No CLI flag is applied. */
   runner?: RunnerConfig
   setupConfig: SetupConfig
+  /** File-level tracing settings are not part of the normalized core config. */
+  tracing?: FileSetupConfig['tracing']
   shutdown: () => Promise<void>
 }
 
@@ -97,6 +100,7 @@ export async function createRunSession(
     },
     runner: mergeRunnerConfigs(setupConfig.runner, resolveConfigRunner(config)),
     setupConfig,
+    tracing: fileSetupConfig.tracing,
     // Two owners can dispose the same session. Shut the gateway down only once.
     shutdown: () => shutdown ??= runtime.shutdown(),
   }

@@ -194,7 +194,7 @@ alint config tracing enable --local --directory .alint/traces
 
 The command writes `enabled` and `directory` under `[tracing]`. The `--local` flag selects `.alint/config.toml`.
 
-This first-stage configuration does not emit trace files. A later runtime integration will write OTLP data to this directory.
+Each lint run writes raw OTLP `TracesData` JSON lines to `<directory>/<run-id>/traces.jsonl`. The output contains the run, preparation, planning, execution, and rule spans. The final run result is an `alint.result` event on the run span. Alint does not add an envelope, manifest, hash, or fingerprint.
 
 ### Inspect Configuration and Output
 
@@ -598,6 +598,7 @@ defineRule({
 | [`@alint-js/cli`](https://github.com/moeru-ai/alint/tree/main/packages/cli) | CLI entrypoint, user-facing config facade, setup commands, reporters, output inspection, and stats commands. |
 | [`@alint-js/config`](https://github.com/moeru-ai/alint/tree/main/packages/config) | Lower-level config loading, setup TOML parsing, config paths, and ignore defaults for tools. |
 | [`@alint-js/core`](https://github.com/moeru-ai/alint/tree/main/packages/core) | SDK and run engine for plugins, rules, source runtime, model resolution, diagnostics, cache, and agent contracts. |
+| [`@alint-js/tracing`](https://github.com/moeru-ai/alint/tree/main/packages/tracing) | Portable OpenTelemetry API for plugins and the Node.js OTLP JSONL exporter used by the CLI. |
 | [`@alint-js/agent-apeira`](https://github.com/moeru-ai/alint/tree/main/packages/agent-apeira) | Apeira-backed `AgentAdapter`. |
 | [`@alint-js/agent-pi`](https://github.com/moeru-ai/alint/tree/main/packages/agent-pi) | Pi-backed `AgentAdapter`. |
 | [`@alint-js/languages`](https://github.com/moeru-ai/alint/tree/main/packages/languages) | First-party language support beyond core's built-in JavaScript and TypeScript: Go, Python, and Rust. |

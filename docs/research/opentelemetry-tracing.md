@@ -161,7 +161,7 @@ A short-lived CLI must end the root span before it flushes. It must then call `f
 
 `forceFlush()` requests immediate export of all spans that remain in processors. `shutdown()` performs cleanup and shuts down the processors. The specification permits each operation to fail or time out. [Tracing SDK lifecycle](https://opentelemetry.io/docs/specs/otel/trace/sdk/#forceflush)
 
-Use a batching processor for the normal path. The OTLP file exporter specification recommends a batching processor when automatic configuration exists. A batch processor has bounded queues and can drop spans when its queue is full. Therefore, alint must configure explicit queue limits and report exporter failure to stderr. [OTLP file exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/) and [JavaScript HTTP exporter batch example](https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-http#traces-in-web)
+The file exporter uses a simple processor. It avoids a bounded in-memory queue that can drop spans during a short CLI run. The exporter serializes file writes and reports flush or shutdown failures. This choice favors complete local output over network-export throughput. A future network exporter can use a batching processor with explicit queue limits. [OTLP file exporter specification](https://opentelemetry.io/docs/specs/otel/protocol/file-exporter/) and [JavaScript HTTP exporter batch example](https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/exporter-trace-otlp-http#traces-in-web)
 
 No implementation can guarantee completion after `SIGKILL` or a process crash. A valid file can contain completed child spans but no final root span. A reader must treat this shape as an incomplete run.
 
@@ -174,4 +174,4 @@ No implementation can guarantee completion after `SIGKILL` or a process crash. A
 5. Add `@alint-js/plugin/tracing` for plugin opt-in.
 6. Add a Web host only when a Web application needs tracing. Use OTLP HTTP or a host-provided sink there.
 
-The first stage must not add hashes, fingerprints, a manifest, SDK initialization, or core instrumentation.
+The implementation does not add hashes, fingerprints, a manifest, or core instrumentation. SDK initialization stays in the Node-only tracing entry point.

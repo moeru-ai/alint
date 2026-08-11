@@ -44,6 +44,12 @@ catalog:
   '@moeru/eslint-config': ^0.1.0-beta.20
   '@moeru/std': ^0.1.0-beta.20
   '@openai/codex-sdk': ^0.144.6
+  '@opentelemetry/api': ^1.9.0
+  '@opentelemetry/core': ^2.10.0
+  '@opentelemetry/otlp-transformer': ^0.221.0
+  '@opentelemetry/resources': ^2.10.0
+  '@opentelemetry/sdk-node': ^0.221.0
+  '@opentelemetry/sdk-trace': ^2.10.0
   '@package-json/types': ^0.0.13
   '@pnpm/find-workspace-dir': ^1000.1.5
   '@smithy/node-http-handler': ^4.9.13

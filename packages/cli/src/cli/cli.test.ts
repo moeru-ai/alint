@@ -2799,6 +2799,96 @@ export default [
     expect(io.stdoutText).toContain('company/prefer-load')
   })
 
+  it('exports the complete run as raw OTLP JSON lines when tracing is enabled', async () => {
+    const io = await createTestIo()
+    const tracingDirectory = 'test-traces'
+
+    await writeProgressFixture(io.cwd)
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      tracing: { directory: tracingDirectory, enabled: true },
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    const runDirectories = await readdir(join(io.cwd, tracingDirectory))
+    expect(runDirectories).toHaveLength(1)
+    const runDirectory = runDirectories[0]
+    expect(runDirectory).toBeDefined()
+    if (runDirectory == null) {
+      throw new Error('Expected one trace run directory.')
+    }
+
+    const text = await readFile(join(io.cwd, tracingDirectory, runDirectory, 'traces.jsonl'), 'utf8')
+    const traceData = text.trimEnd().split('\n').map(line => JSON.parse(line) as OtlpTraceData)
+    const spans = traceData.flatMap(data => data.resourceSpans.flatMap(resource =>
+      resource.scopeSpans.flatMap(scope => scope.spans),
+    ))
+    const names = spans.map(span => span.name)
+    const runSpan = spans.find(span => span.name === 'alint.run')
+    const resultEvent = runSpan?.events.find(event => event.name === 'alint.result')
+    const resultJson = resultEvent?.attributes.find(attribute => attribute.key === 'alint.result.json')?.value.stringValue
+
+    expect(exitCode).toBe(0)
+    expect(traceData.every(data => Object.keys(data).length === 1 && 'resourceSpans' in data)).toBe(true)
+    expect(names).toContain('alint.prepare')
+    expect(names).toContain('alint.plan')
+    expect(names).toContain('alint.execute')
+    expect(names).toContain('alint.rule')
+    expect(runSpan).toBeDefined()
+    expect(resultJson).toBeDefined()
+    expect(JSON.parse(resultJson ?? '{}')).toEqual(JSON.parse(io.stdoutText))
+  })
+
+  it('exports a failed run result and error span status', async () => {
+    const io = await createTestIo()
+    const tracingDirectory = 'failed-traces'
+
+    await writePartialFailureFixture(io.cwd)
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      tracing: { directory: tracingDirectory, enabled: true },
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    const runDirectories = await readdir(join(io.cwd, tracingDirectory))
+    const runDirectory = runDirectories[0]
+    expect(runDirectory).toBeDefined()
+    if (runDirectory == null) {
+      throw new Error('Expected one failed trace run directory.')
+    }
+
+    const text = await readFile(join(io.cwd, tracingDirectory, runDirectory, 'traces.jsonl'), 'utf8')
+    const traceData = text.trimEnd().split('\n').map(line => JSON.parse(line) as OtlpTraceData)
+    const spans = traceData.flatMap(data => data.resourceSpans.flatMap(resource =>
+      resource.scopeSpans.flatMap(scope => scope.spans),
+    ))
+    const runSpan = spans.find(span => span.name === 'alint.run')
+    const failedRuleSpan = spans.find(span => span.name === 'alint.rule' && span.status.code === 2)
+    const resultEvent = runSpan?.events.find(event => event.name === 'alint.result')
+    const resultJson = resultEvent?.attributes.find(attribute => attribute.key === 'alint.result.json')?.value.stringValue
+
+    expect(exitCode).toBe(2)
+    expect(runSpan?.status.code).toBe(2)
+    expect(failedRuleSpan).toBeDefined()
+    expect(JSON.parse(resultJson ?? '{}')).toEqual(JSON.parse(io.stdoutText))
+  })
+
   it('threads stderr rows into bounded TTY progress rendering', async () => {
     const io = await createTestIo()
     io.stderr.columns = 120
@@ -3577,3 +3667,21 @@ export default [
     expect(io.stderrText).toBe('')
   })
 })
+
+interface OtlpTraceData {
+  resourceSpans: Array<{
+    scopeSpans: Array<{
+      spans: Array<{
+        events: Array<{
+          attributes: Array<{
+            key: string
+            value: { stringValue?: string }
+          }>
+          name: string
+        }>
+        name: string
+        status: { code: number }
+      }>
+    }>
+  }>
+}

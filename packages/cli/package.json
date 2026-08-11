@@ -27,6 +27,7 @@
     "@alint-js/config": "workspace:*",
     "@alint-js/core": "workspace:*",
     "@alint-js/model-adapter-acp": "workspace:*",
+    "@alint-js/tracing": "workspace:*",
     "@clack/prompts": "catalog:",
     "@moeru/std": "catalog:",
     "cac": "catalog:",
