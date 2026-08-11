@@ -5,7 +5,7 @@ import type {
   SetupModelDefinition,
 } from '@alint-js/core'
 
-import type { AcpModelConfig, ModelConfig, ProviderConfig, SetupConfig } from './types'
+import type { AcpModelConfig, ModelConfig, ProviderConfig, SetupConfig, TracingConfig } from './types'
 
 import { parse as parseToml, stringify } from 'smol-toml'
 import { array, boolean, check, finite, integer, literal, minValue, nonEmpty, number, object, optional, parse, picklist, pipe, record, string, transform, undefined_, union, unknown, variant } from 'valibot'
@@ -131,15 +131,25 @@ const runnerSchema = pipe(
   })),
 )
 
+const tracingSchema = object({
+  directory: optional(pipe(
+    string('Invalid tracing directory: must be a string.'),
+    nonEmpty('Invalid tracing directory: must be a non-empty string.'),
+  )),
+  enabled: optional(boolean()),
+})
+
 const setupConfigSchema = pipe(
   object({
     providers: optional(array(providerSchema), []),
     runner: optional(runnerSchema),
+    tracing: optional(tracingSchema),
     version: literal(1, 'Invalid setup config: version must be 1.'),
   }),
-  transform(({ runner, ...config }): SetupConfig => ({
+  transform(({ runner, tracing, ...config }): SetupConfig => ({
     ...config,
     ...(runner === undefined ? {} : { runner }),
+    ...(tracing === undefined ? {} : { tracing }),
   })),
 )
 
@@ -181,6 +191,7 @@ interface StringifiableRunnerStatsConfig {
 interface StringifiableSetupConfig {
   providers: StringifiableProviderDefinition[]
   runner?: StringifiableRunnerConfig
+  tracing?: TracingConfig
   version: 1
 }
 
@@ -206,6 +217,10 @@ export function stringifySetupConfigToml(config: SetupConfig): string {
 
   if (config.runner !== undefined) {
     stringifiableConfig.runner = toTomlRunner(config.runner)
+  }
+
+  if (config.tracing !== undefined) {
+    stringifiableConfig.tracing = { ...config.tracing }
   }
 
   return stringify(stringifiableConfig)

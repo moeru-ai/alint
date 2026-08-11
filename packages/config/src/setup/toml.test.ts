@@ -257,6 +257,26 @@ id = "qwen"
     expect(toml).toContain('retention_months = 6')
   })
 
+  it('parses and stringifies tracing settings', () => {
+    const config = parseSetupConfigToml([
+      'version = 1',
+      '',
+      '[tracing]',
+      'enabled = true',
+      'directory = ".alint/traces"',
+    ].join('\n'))
+
+    expect(config.tracing).toEqual({
+      directory: '.alint/traces',
+      enabled: true,
+    })
+
+    const toml = stringifySetupConfigToml(config)
+    expect(toml).toContain('[tracing]')
+    expect(toml).toContain('enabled = true')
+    expect(toml).toContain('directory = ".alint/traces"')
+  })
+
   it('rejects a non-integer runner stats retention', () => {
     expect(() => parseSetupConfigToml([
       'version = 1',

@@ -10,6 +10,7 @@ This package owns the file-system side of configuration:
 - resolves global and project setup TOML paths
 - parses and stringifies setup TOML
 - merges setup layers
+- reads and writes tracing activation and output-directory settings
 - writes provider setup files
 - installs remote plugin packages or local plugin directories and writes `.alint/plugins/lock.json`
 - exports built-in ignore pattern groups for lower-level tooling
@@ -39,6 +40,16 @@ const config = await loadAlintConfig(cwd)
 
 await writeSetupConfig(setupPath, setup)
 ```
+
+Setup TOML can enable tracing and select an output directory:
+
+```toml
+[tracing]
+enabled = true
+directory = ".alint/traces"
+```
+
+Project fields in `.alint/config.toml` override matching global fields. Other global tracing fields remain active.
 
 Static configs can use TOML, YAML, JSON, JSONC, or JSON5. They are data-only alternatives to executable JavaScript and TypeScript flat configs, and identify plugin sources with strings.
 

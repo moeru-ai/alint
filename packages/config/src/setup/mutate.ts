@@ -4,6 +4,8 @@ import type { ModelConfig, ProviderConfig, SetupConfig } from './types'
 
 import { isAcpModel } from './types'
 
+export const DEFAULT_TRACING_DIRECTORY = '.alint/traces'
+
 export function addProviderModels(
   config: SetupConfig,
   providerId: string,
@@ -27,6 +29,19 @@ export function addProviderModels(
       models: [...provider.models, ...addedModels],
     }
   })
+}
+
+export function enableTracing(
+  config: SetupConfig,
+  directory = config.tracing?.directory ?? DEFAULT_TRACING_DIRECTORY,
+): SetupConfig & { tracing: { directory: string, enabled: true } } {
+  return {
+    ...config,
+    tracing: {
+      directory,
+      enabled: true,
+    },
+  }
 }
 
 export function pruneProviderModels(

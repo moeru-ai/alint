@@ -26,7 +26,13 @@ export interface ProviderConfig {
 export interface SetupConfig {
   providers: ProviderConfig[]
   runner?: RunnerConfig
+  tracing?: TracingConfig
   version: 1
+}
+
+export interface TracingConfig {
+  directory?: string
+  enabled?: boolean
 }
 
 export function isAcpModel(model: ModelConfig): model is AcpModelConfig {

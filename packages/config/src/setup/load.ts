@@ -26,6 +26,7 @@ export async function loadSetupConfig(filePath: string): Promise<SetupConfig> {
 export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
   let providers: ProviderConfig[] = []
   let runner: SetupConfig['runner']
+  let tracing: SetupConfig['tracing']
   const providersById = new Map<string, ProviderConfig>()
 
   for (const config of configs) {
@@ -35,6 +36,13 @@ export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
       runner = {
         ...(runner ?? {}),
         ...config.runner,
+      }
+    }
+
+    if (config.tracing !== undefined) {
+      tracing = {
+        ...(tracing ?? {}),
+        ...config.tracing,
       }
     }
 
@@ -96,6 +104,10 @@ export function mergeSetupConfigs(...configs: SetupConfig[]): SetupConfig {
 
   if (runner !== undefined) {
     mergedConfig.runner = runner
+  }
+
+  if (tracing !== undefined) {
+    mergedConfig.tracing = tracing
   }
 
   return mergedConfig

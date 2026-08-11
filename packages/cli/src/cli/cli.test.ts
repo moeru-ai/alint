@@ -742,7 +742,63 @@ describe('executeCli', () => {
     expect(io.stdoutText).toContain('config inspect <path>')
     expect(io.stdoutText).toContain('config models')
     expect(io.stdoutText).toContain('config providers')
+    expect(io.stdoutText).toContain('config tracing')
     expect(io.stderrText).toBe('')
+  })
+
+  it('enables global tracing with the default output directory', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'tracing',
+      'enable',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'enabled: true',
+      'directory: .alint/traces',
+      'scope: global',
+      '',
+    ].join('\n'))
+    expect(io.stderrText).toBe('')
+
+    const config = await readFile(getGlobalSetupConfigPath(io.env), 'utf8')
+    expect(config).toContain('[tracing]')
+    expect(config).toContain('enabled = true')
+    expect(config).toContain('directory = ".alint/traces"')
+  })
+
+  it('enables local tracing with an explicit output directory', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'tracing',
+      'enable',
+      '--local',
+      '--directory',
+      'artifacts/otel',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'enabled: true',
+      'directory: artifacts/otel',
+      'scope: local',
+      '',
+    ].join('\n'))
+    expect(io.stderrText).toBe('')
+
+    const config = await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')
+    expect(config).toContain('[tracing]')
+    expect(config).toContain('enabled = true')
+    expect(config).toContain('directory = "artifacts/otel"')
   })
 
   it('prints description for config inspect help', async () => {

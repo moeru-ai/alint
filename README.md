@@ -177,6 +177,25 @@ alint --lang zh-CN src
 
 `alint` returns exit code `0` when diagnostics contain no errors, including warning-only runs. It returns `1` when at least one error diagnostic is reported and `2` when the command cannot complete because of a configuration, input, or runtime failure. `alint output inspect` uses the same exit-code behavior for saved results.
 
+### Configure Tracing
+
+Enable tracing in the global setup config:
+
+```bash
+alint config tracing enable
+```
+
+The command uses `.alint/traces` as the default output directory. Set a different directory when necessary:
+
+```bash
+alint config tracing enable --directory artifacts/otel
+alint config tracing enable --local --directory .alint/traces
+```
+
+The command writes `enabled` and `directory` under `[tracing]`. The `--local` flag selects `.alint/config.toml`.
+
+This first-stage configuration does not emit trace files. A later runtime integration will write OTLP data to this directory.
+
 ### Inspect Configuration and Output
 
 Useful CLI commands:
