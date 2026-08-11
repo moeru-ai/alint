@@ -317,8 +317,10 @@ function parseStructuredResponse<Schema extends GenericSchema>(
   }
 
   const toolResults = response.toolResults.filter(result => result.toolName === toolName)
+  const toolCalls = response.toolCalls.filter(call => call.toolName === toolName)
+  const matches = toolResults.length + toolCalls.length
 
-  if (toolResults.length === 0) {
+  if (matches === 0) {
     return {
       error: `Missing ${toolName} tool result; finishReason=${response.finishReason}`,
       ok: false,
@@ -326,9 +328,27 @@ function parseStructuredResponse<Schema extends GenericSchema>(
     }
   }
 
-  if (toolResults.length > 1) {
+  if (matches > 1) {
     return {
-      error: `Expected one ${toolName} tool result, received ${toolResults.length}`,
+      error: `Expected one ${toolName} tool result, received ${matches}`,
+      ok: false,
+      retriable: true,
+    }
+  }
+
+  // xsAI executes tool calls only when a stopWhen condition permits another step; the
+  // pending call then carries the same arguments and is consumed directly. See:
+  // https://github.com/moeru-ai/xsai/issues/321
+  let value: unknown
+
+  try {
+    value = toolResults[0] !== undefined
+      ? toolResults[0].result
+      : JSON.parse(toolCalls[0].args)
+  }
+  catch (error) {
+    return {
+      error: `Tool call failed before validation: ${errorMessageFrom(error) ?? String(error)}`,
       ok: false,
       retriable: true,
     }
@@ -337,7 +357,7 @@ function parseStructuredResponse<Schema extends GenericSchema>(
   try {
     return {
       ok: true,
-      value: parse(schema, toolResults[0].result),
+      value: parse(schema, value),
     }
   }
   catch (error) {

@@ -180,6 +180,20 @@ describe('generateStructured', () => {
     expect(requests[0].url).toBe('/v1/chat/completions')
   })
 
+  // Regression test for https://github.com/moeru-ai/alint/issues/75
+  it('consumes a pending tool call that xsAI does not execute (Issue #75)', async () => {
+    // xsAI beta.8 checks stopWhen before executing tools, so the forced `reportFindings`
+    // call comes back as a pending `toolCalls` entry with empty `toolResults`. The
+    // arguments still are the structured output and must be consumed without a follow-up
+    // request.
+    responses.push({ body: toolCallCompletion(validPayload) })
+
+    const result = await generateStructured(createOptions())
+
+    expect(result).toEqual(validPayload)
+    expect(requests).toHaveLength(1)
+  })
+
   describe('signal', () => {
     it('does not call the model when the signal is already aborted', async () => {
       responses.push({ body: toolCallCompletion(validPayload) })
