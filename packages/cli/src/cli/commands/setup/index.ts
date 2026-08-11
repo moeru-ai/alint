@@ -1,5 +1,7 @@
 import type { SetupConfig } from '@alint-js/config'
 
+import type { CliIo } from '../../types'
+
 import process from 'node:process'
 
 import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, mergeSetupConfigs, writeSetupConfig } from '@alint-js/config'
@@ -7,14 +9,6 @@ import { getGlobalSetupConfigPath, getProjectSetupConfigPath, loadSetupConfig, m
 import { parseHeaderList } from '../../provider-registry'
 import { defineCommand } from '../command'
 import { runInteractiveSetup } from './interactive'
-
-export interface SetupCommandIo {
-  cwd: string
-  env?: NodeJS.ProcessEnv
-  stderr: { isTTY?: boolean, write: (chunk: string) => unknown }
-  stdin?: { isTTY?: boolean }
-  stdout: { isTTY?: boolean, write: (chunk: string) => unknown }
-}
 
 export interface SetupCommandOptions {
   local?: boolean
@@ -87,7 +81,7 @@ function createSetupConfig(
 
 async function runSetupCommand(
   options: SetupCommandOptions,
-  io: SetupCommandIo,
+  io: CliIo,
 ): Promise<number> {
   if (!options.providerEndpoint) {
     if (options.noInteractive !== true) {

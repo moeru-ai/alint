@@ -207,6 +207,43 @@ alint --format json src > alint-output.json
 alint output inspect alint-output.json
 ```
 
+### Editor Integration
+
+> **Work in progress.** `alint lsp` currently publishes cached diagnostics when an editor opens a
+> workspace, and nothing more. Saving a file does not refresh it, changing `alint.config.ts` does
+> not reload it, and the run commands below are advertised but not yet implemented. Restart the
+> server to pick up either kind of change.
+
+`alint lsp` runs alint as a language server over stdin and stdout.
+
+It is cache-first. The server reads diagnostics that earlier runs already stored and **never calls
+a model on its own**, so opening a workspace costs nothing. A cold cache therefore shows nothing —
+run `alint` once to populate it.
+
+Point any LSP editor at the command. In Neovim:
+
+```lua
+vim.lsp.config.alint = {
+  cmd = { 'alint', 'lsp' },
+  root_markers = { 'alint.config.ts' },
+}
+```
+
+The server declares two commands, `alint.runFile` and `alint.runWorkspace`, which will start runs
+that call models and spend tokens. Both return `MethodNotFound` today.
+
+A VS Code extension lives in `apps/vscode`. It starts the server and shows the diagnostics; it is
+not published to the marketplace yet. To run it from a checkout:
+
+```bash
+pnpm -F @alint-js/vscode build
+code --extensionDevelopmentPath=apps/vscode /path/to/your/project
+```
+
+It resolves the alint executable from the `alint.path` setting, then `node_modules/.bin/alint` in
+the workspace folder, then `PATH`. The workspace install wins so that the server and the alint you
+run in a terminal share one cache.
+
 ## Concepts
 
 `alint` keeps the familiar lint shape: select targets, apply named rules, report diagnostics, and return an exit code that CI can understand. The difference is that a rule can reach its judgment through model calls or a tool-using agent when syntax-only checks are not enough.

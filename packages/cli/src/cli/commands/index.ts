@@ -1,5 +1,6 @@
 import { config } from './config'
 import { lint } from './lint'
+import { lsp } from './lsp'
 import { output } from './output-inspect'
 import { plugin } from './plugin'
 import { setup } from './setup'
@@ -11,6 +12,7 @@ export const commandTree = [
   plugin,
   output,
   stats,
+  lsp,
   lint,
 ]
 
