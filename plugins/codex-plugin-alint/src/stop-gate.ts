@@ -100,6 +100,7 @@ if (parsedInput !== undefined) {
 
 async function run(input: HookInput): Promise<void> {
   const sessionId = requiredString(input.session_id, 'Stop hook input did not include session_id.')
+  // Codex defines CLAUDE_PLUGIN_DATA as an official compatibility alias for its PLUGIN_DATA variable.
   const pluginData = requiredString(process.env.CLAUDE_PLUGIN_DATA, 'Codex did not provide CLAUDE_PLUGIN_DATA to the alint plugin.')
   const store = createStateStore(pluginData)
   const state = await store.load(sessionId)

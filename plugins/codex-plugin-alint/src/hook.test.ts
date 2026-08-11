@@ -30,6 +30,7 @@ describe('bundled Stop hook', () => {
     }
     const handler = manifest.hooks.Stop[0]?.hooks[0]
 
+    // Codex defines CLAUDE_PLUGIN_ROOT as an official compatibility alias for its PLUGIN_ROOT variable.
     expect(handler?.command).toBe(`node "${'$'}{CLAUDE_PLUGIN_ROOT}/dist/stop-gate.mjs"`)
     expect(handler).not.toHaveProperty('args')
   })
@@ -380,6 +381,7 @@ async function runHook(
 ) {
   return x(process.execPath, [bundledHook], {
     nodeOptions: {
+      // NOTICE: Codex defines CLAUDE_PLUGIN_DATA as an official compatibility alias for its PLUGIN_DATA variable.
       env: { ...process.env, ...env, CLAUDE_PLUGIN_DATA: pluginData },
     },
     nodePath: false,
@@ -399,6 +401,7 @@ function runMalformedHook(systemTemp: string) {
     nodeOptions: {
       env: {
         ...process.env,
+        // NOTICE: Codex defines CLAUDE_PLUGIN_DATA as an official compatibility alias for its PLUGIN_DATA variable.
         CLAUDE_PLUGIN_DATA: systemTemp,
         TEMP: systemTemp,
         TMP: systemTemp,
