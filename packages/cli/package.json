@@ -38,7 +38,8 @@
     "minimatch": "catalog:",
     "pathe": "catalog:",
     "table": "catalog:",
-    "tinyrainbow": "catalog:"
+    "tinyrainbow": "catalog:",
+    "vscode-languageserver": "catalog:"
   },
   "devDependencies": {
     "@pnpm/find-workspace-dir": "catalog:",

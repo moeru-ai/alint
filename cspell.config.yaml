@@ -40,6 +40,7 @@ words:
   - ollama
   - openrouter
   - oxlint
+  - PATHEXT
   - picklist
   - pycache
   - qwen
@@ -58,6 +59,7 @@ words:
   - tinylib
   - tinyrainbow
   - tsdown
+  - uinteger
   - unjs
   - unocss
   - Unrefable

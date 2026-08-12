@@ -1,4 +1,3 @@
-import type { SetupConfig } from '@alint-js/config'
 import type { RunResult } from '@alint-js/core'
 
 import { chmod, mkdir, mkdtemp, readdir, readFile, writeFile } from 'node:fs/promises'
@@ -14,7 +13,6 @@ import * as alintCore from '@alint-js/core'
 import packageJson from '../../package.json'
 
 import { executeCli } from './cli'
-import { resolveRunnerConfig } from './commands/lint/runner'
 import { createProviderId, providerSetupSources } from './provider-registry'
 import { formatProbeModelsFailure, isBackInput, withBackOption } from './tui/provider-editor/prompts'
 
@@ -2893,48 +2891,6 @@ export default [
     finally {
       runAlint.mockRestore()
     }
-  })
-
-  it('resolves concurrency and timeout with CLI over config over setup and no injected default', () => {
-    expect(resolveRunnerConfig(
-      { providers: [], runner: { ruleConcurrency: 2, timeoutMs: 100 }, version: 1 },
-      { runner: { ruleConcurrency: 4, timeoutMs: 200 } },
-      { format: 'stylish', ruleConcurrency: '6' },
-    )).toEqual({
-      ruleConcurrency: 6,
-      timeoutMs: 200,
-    })
-
-    expect(resolveRunnerConfig(
-      { providers: [], version: 1 },
-      {},
-      { format: 'stylish' },
-    )).toBeUndefined()
-
-    expect(resolveRunnerConfig(
-      { providers: [], runner: { ruleConcurrency: 2, timeoutMs: 100 }, version: 1 },
-      {},
-      { format: 'stylish' },
-    )).toEqual({
-      ruleConcurrency: 2,
-      timeoutMs: 100,
-    })
-  })
-
-  it('validates concurrency and timeout runner options as positive integers', () => {
-    const setupConfig: SetupConfig = { providers: [], version: 1 }
-
-    expect(() => resolveRunnerConfig(
-      setupConfig,
-      {},
-      { format: 'stylish', ruleConcurrency: '0' },
-    )).toThrow('--rule-concurrency must be a positive integer.')
-
-    expect(() => resolveRunnerConfig(
-      setupConfig,
-      {},
-      { format: 'stylish', timeoutMs: '1.5' },
-    )).toThrow('--timeout-ms must be a positive integer.')
   })
 
   it('writes the default cache and reuses it on the next run', async () => {

@@ -49,6 +49,10 @@ catalog:
   '@smithy/node-http-handler': ^4.9.13
   '@types/node': ^26.1.2
   '@types/tar-stream': ^3.1.4
+  # Pinned, not caret-ranged: this is the VS Code API surface the extension is allowed to use, and
+  # it has to stay equal to `engines.vscode` in apps/vscode. A caret would let the type checker
+  # accept APIs that the oldest supported VS Code does not ship.
+  '@types/vscode': 1.91.0
   '@valibot/to-json-schema': ^1.7.1
   '@xsai/generate-text': ^0.5.0-beta.7
   '@xsai/shared-chat': ^0.5.0-beta.7
@@ -105,6 +109,8 @@ catalog:
 
   valibot: ^1.4.2
   vite: ^8.2.0
+  vscode-languageclient: ^10.1.0
+  vscode-languageserver: ^10.1.0
   web-tree-sitter: ^0.24.7
   xdg-basedir: ^5.1.0
   zod: ^4.4.3

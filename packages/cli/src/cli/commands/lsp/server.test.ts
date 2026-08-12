@@ -1,0 +1,152 @@
+import type { RunResult } from '@alint-js/core'
+
+import process from 'node:process'
+
+import { mkdtemp, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+
+import { describe, expect, it, vi } from 'vitest'
+
+import * as alintCore from '@alint-js/core'
+
+import { executeCli } from '../../cli'
+import { startLspServer } from './server'
+import { createTestClient, initializeParams } from './test-client'
+
+/** Restores what `executeCli` replaces, since the lsp command's promise never settles. */
+function withRestoredConsole(): () => void {
+  const { console } = globalThis
+  const { debug, dir, info, log } = console
+
+  return () => {
+    console.debug = debug
+    console.dir = dir
+    console.info = info
+    console.log = log
+  }
+}
+
+async function writeWorkspaceFixture(): Promise<{ configHome: string, cwd: string }> {
+  const cwd = await mkdtemp(join(tmpdir(), 'alint-lsp-'))
+  const configHome = await mkdtemp(join(tmpdir(), 'alint-lsp-home-'))
+
+  await writeFile(join(cwd, 'date.ts'), 'export function format() {\n  return 1\n}\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+export default [
+  {
+    files: ['**/*.ts'],
+    plugins: {
+      company: { rules: {} },
+    },
+  },
+]
+`)
+
+  return { configHome, cwd }
+}
+
+describe('startLspServer', () => {
+  it('answers initialize with the capabilities the client needs', async () => {
+    const client = createTestClient()
+
+    void startLspServer(client.io)
+    client.send({ id: 1, method: 'initialize', params: initializeParams() })
+
+    const response = await client.receive()
+
+    expect(response.id).toBe(1)
+    expect(response.result?.capabilities.executeCommandProvider?.commands)
+      .toEqual(['alint.runFile', 'alint.runWorkspace'])
+    expect(response.result?.capabilities.executeCommandProvider?.workDoneProgress).toBe(true)
+    expect(response.result?.capabilities.workspace?.workspaceFolders)
+      .toEqual({ changeNotifications: true, supported: true })
+    // change 0 is TextDocumentSyncKind.None. Open and save drive every refresh.
+    expect(response.result?.capabilities.textDocumentSync)
+      .toEqual({ change: 0, openClose: true, save: true })
+  })
+
+  it('publishes cached diagnostics for every workspace folder file once initialized', async () => {
+    const { configHome, cwd } = await writeWorkspaceFixture()
+    const client = createTestClient({ ...process.env, XDG_CONFIG_HOME: configHome })
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue({
+      diagnostics: [{
+        filePath: join(cwd, 'date.ts'),
+        loc: { start: { column: 2, line: 4 } },
+        message: 'helper is duplicated',
+        ruleId: 'js/no-duplicated-helper',
+        severity: 'warn',
+      }],
+      execution: {
+        cached: 0,
+        cancelled: 0,
+        completed: 0,
+        failed: 0,
+        planned: 0,
+        queued: 0,
+        running: 0,
+        skipped: 0,
+      },
+      usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
+    } satisfies RunResult)
+
+    try {
+      void startLspServer(client.io)
+      client.send({ id: 1, method: 'initialize', params: initializeParams(pathToFileURL(cwd).toString()) })
+      await client.receive()
+
+      // The server sends no notification before this.
+      client.send({ method: 'initialized', params: {} })
+
+      const published = await client.receive()
+
+      expect(published.method).toBe('textDocument/publishDiagnostics')
+      expect(published.params?.uri).toBe(pathToFileURL(join(cwd, 'date.ts')).toString())
+      expect(published.params?.diagnostics?.[0]?.message).toBe('helper is duplicated')
+      expect(published.params?.diagnostics?.[0]?.range.start).toEqual({ character: 0, line: 3 })
+      expect(runAlint.mock.calls[0]?.[0]?.cacheOnly).toBe(true)
+    }
+    finally {
+      runAlint.mockRestore()
+    }
+  })
+
+  it('reports a missing stdin instead of crashing', async () => {
+    const client = createTestClient()
+
+    const exitCode = await startLspServer({ ...client.io, stdin: undefined })
+
+    expect(exitCode).toBe(2)
+    expect(client.stderrText()).toContain('stdin')
+    expect(client.stdoutText()).toBe('')
+  })
+})
+
+describe('alint lsp', () => {
+  it('writes nothing but framed JSON-RPC to stdout', async () => {
+    // A rule that logs to stdout corrupts the JSON-RPC stream and ends the session.
+    const client = createTestClient()
+    const restoreConsole = withRestoredConsole()
+
+    try {
+      void executeCli(['node', 'alint', 'lsp', '--stdio'], client.io)
+      client.send({ id: 1, method: 'initialize', params: initializeParams() })
+      await client.receive()
+
+      globalThis.console.log('rule noise')
+
+      client.send({ id: 2, method: 'shutdown' })
+
+      const response = await client.receive()
+
+      expect(response.id).toBe(2)
+      expect(client.stdoutText().startsWith('Content-Length: ')).toBe(true)
+      expect(client.stdoutText()).not.toContain('rule noise')
+      expect(client.stderrText()).toContain('rule noise')
+    }
+    finally {
+      restoreConsole()
+    }
+  })
+})

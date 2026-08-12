@@ -7,9 +7,9 @@ import type { StatsCommandOptions } from './options'
 import { getStatsDir, loadAlintConfig } from '@alint-js/config'
 import { errorMessageFrom } from '@moeru/std'
 
+import { resolveConfigRunner } from '../../runtime/runner'
 import { createJsonlStatsStore } from '../../stats'
 import { loadMergedSetupConfig } from '../config/setup-config'
-import { resolveConfigRunner } from '../lint/runner'
 import { formatStatsAggregate } from './format'
 import { formatStatsTimeline } from './timeline'
 

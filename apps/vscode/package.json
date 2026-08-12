@@ -1,0 +1,43 @@
+{
+  "name": "@alint-js/vscode",
+  "displayName": "alint",
+  "type": "module",
+  "version": "0.4.0",
+  "private": true,
+  "description": "VS Code client for alint",
+  "categories": [
+    "Linters"
+  ],
+  "main": "./dist/index.cjs",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "activationEvents": [
+    "workspaceContains:alint.config.*"
+  ],
+  "contributes": {
+    "configuration": {
+      "title": "alint",
+      "properties": {
+        "alint.path": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the alint executable. Leave empty to use the workspace's own installation, then alint on PATH."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "vscode-languageclient": "catalog:"
+  },
+  "devDependencies": {
+    "@types/vscode": "catalog:"
+  }
+}

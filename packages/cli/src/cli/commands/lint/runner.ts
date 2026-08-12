@@ -1,78 +1,32 @@
-import type { RunnerConfig, SetupConfig } from '@alint-js/config'
-import type { AlintConfig } from '@alint-js/core'
+import type { RunnerConfig } from '@alint-js/core'
 
 import type { LintCommandOptions } from './options'
 
-import { normalizeConfig } from '@alint-js/core'
-
-export function resolveConfigRunner(config: AlintConfig): RunnerConfig | undefined {
-  const runner = normalizeConfig(config).reduce<RunnerConfig | undefined>(
-    (merged, item) => item.runner ? { ...merged, ...item.runner } : merged,
-    undefined,
-  )
-
-  return runner
-}
-
+/**
+ * Applies this invocation's flags on top of the project's resolved runner.
+ *
+ * The setup/config merge itself lives in `runtime/runner.ts` because the language server needs the
+ * same base without any flags; only the overrides below are CLI-shaped.
+ */
 export function resolveRunnerConfig(
-  setupConfig: SetupConfig,
-  config: { runner?: SetupConfig['runner'] },
+  baseRunner: RunnerConfig | undefined,
   options: LintCommandOptions,
-): SetupConfig['runner'] {
-  const cache = resolveRunnerCacheConfig(setupConfig.runner?.cache, config.runner?.cache, options)
-  const stats = resolveRunnerStatsConfig(setupConfig.runner?.stats, config.runner?.stats, options)
+): RunnerConfig | undefined {
   const ruleConcurrency = parsePositiveIntegerOption(options.ruleConcurrency, '--rule-concurrency')
   const timeoutMs = parsePositiveIntegerOption(options.timeoutMs, '--timeout-ms')
   const runner = {
-    ...(setupConfig.runner ?? {}),
-    ...(config.runner ?? {}),
-    cache,
-    ruleConcurrency: ruleConcurrency ?? config.runner?.ruleConcurrency ?? setupConfig.runner?.ruleConcurrency,
-    stats,
-    timeoutMs: timeoutMs ?? config.runner?.timeoutMs ?? setupConfig.runner?.timeoutMs,
+    ...(baseRunner ?? {}),
+    cache: resolveCacheOption(baseRunner?.cache, options),
+    ruleConcurrency: ruleConcurrency ?? baseRunner?.ruleConcurrency,
+    // --no-stats is a hard off-switch for this run. The CI gate lives in the writer
+    // (resolveStatsWrite), not here.
+    stats: options.stats === false ? false : baseRunner?.stats,
+    timeoutMs: timeoutMs ?? baseRunner?.timeoutMs,
   }
 
   return Object.values(runner).some(value => value !== undefined)
     ? runner
     : undefined
-}
-
-function mergeRunnerCacheConfig(
-  setupCache: RunnerConfig['cache'],
-  configCache: RunnerConfig['cache'],
-): RunnerConfig['cache'] {
-  if (configCache === undefined) {
-    return setupCache
-  }
-
-  if (typeof configCache === 'boolean') {
-    return configCache
-  }
-
-  if (typeof setupCache === 'object') {
-    return { ...setupCache, ...configCache }
-  }
-
-  return configCache
-}
-
-function mergeRunnerStatsConfig(
-  setupStats: RunnerConfig['stats'],
-  configStats: RunnerConfig['stats'],
-): RunnerConfig['stats'] {
-  if (configStats === undefined) {
-    return setupStats
-  }
-
-  if (typeof configStats === 'boolean') {
-    return configStats
-  }
-
-  if (typeof setupStats === 'object') {
-    return { ...setupStats, ...configStats }
-  }
-
-  return configStats
 }
 
 function parsePositiveIntegerOption(value: string | undefined, label: string): number | undefined {
@@ -89,36 +43,19 @@ function parsePositiveIntegerOption(value: string | undefined, label: string): n
   return parsed
 }
 
-function resolveRunnerCacheConfig(
-  setupCache: RunnerConfig['cache'],
-  configCache: RunnerConfig['cache'],
+function resolveCacheOption(
+  baseCache: RunnerConfig['cache'],
   options: LintCommandOptions,
 ): RunnerConfig['cache'] {
   if (options.cache === false) {
     return false
   }
 
-  const configuredCache = mergeRunnerCacheConfig(setupCache, configCache)
-
   if (options.cacheLocation !== undefined) {
-    return typeof configuredCache === 'object'
-      ? { ...configuredCache, location: options.cacheLocation }
+    return typeof baseCache === 'object'
+      ? { ...baseCache, location: options.cacheLocation }
       : { location: options.cacheLocation }
   }
 
-  return configuredCache
-}
-
-// The --no-stats flag is a hard off-switch for this run; otherwise config/setup merge like cache.
-// The CI gate lives in the writer (resolveStatsWrite), not here.
-function resolveRunnerStatsConfig(
-  setupStats: RunnerConfig['stats'],
-  configStats: RunnerConfig['stats'],
-  options: LintCommandOptions,
-): RunnerConfig['stats'] {
-  if (options.stats === false) {
-    return false
-  }
-
-  return mergeRunnerStatsConfig(setupStats, configStats)
+  return baseCache
 }

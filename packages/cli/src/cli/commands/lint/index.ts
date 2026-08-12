@@ -1,21 +1,21 @@
+import type { RunResult } from '@alint-js/core'
+
 import type { ReporterName } from '../../reporters'
 import type { CliIo, CliWritable } from '../../types'
 import type { LintCommandOptions } from './options'
 
 import { stat } from 'node:fs/promises'
 
-import { loadAlintConfig } from '@alint-js/config'
-import { AlintRunCancelledError, AlintRunError, runAlint } from '@alint-js/core'
+import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { resolve } from 'pathe'
 
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
-import { startModelAdapters } from '../../runtime/model-adapter'
+import { createRunSession } from '../../runtime/session'
 import { defineCommand } from '../command'
-import { loadRunSetupConfig } from '../config/setup-config'
-import { findLintTargets, NoFilesFoundError } from './discovery'
+import { NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
-import { resolveConfigRunner, resolveRunnerConfig } from './runner'
+import { resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
 
 export const lint = defineCommand({
@@ -69,78 +69,56 @@ async function runLintCommand(
     await assertConfigExists(io.cwd, options.config)
   }
 
-  const [{ defaultModel, setupConfig }, config] = await Promise.all([
-    loadRunSetupConfig(io),
-    loadAlintConfig(io.cwd, options.config),
-  ])
-  let lintTargets: Awaited<ReturnType<typeof findLintTargets>>
+  const session = await createRunSession(io, { configPath: options.config })
 
   try {
-    lintTargets = await findLintTargets({
-      config,
-      cwd: io.cwd,
-      errorOnUnmatchedPattern: true,
-      globInputPaths: true,
-      inputs: files,
-    })
-  }
-  catch (error) {
-    if (error instanceof NoFilesFoundError) {
-      io.stderr.write(`${error.message}\n`)
-      return 2
+    const runner = resolveRunnerConfig(session.runner, options)
+    const progress = shouldEnableProgress(options, io)
+      ? createCliProgressReporter({
+          color: io.stderr.isTTY === true,
+          columns: io.stderr.columns ?? 80,
+          cwd: io.cwd,
+          isTty: io.stderr.isTTY === true,
+          rows: io.stderr.rows,
+          write: chunk => io.stderr.write(chunk),
+        })
+      : undefined
+    const restoreProgressConsole = progress
+      ? interceptConsoleOutput({ write: progress.write })
+      : undefined
+    const statsTarget = resolveStatsWrite(runner?.stats, io.env)
+    const statsCollector = statsTarget ? createStatsCollector() : undefined
+    const persistStats = async (runResult: RunResult): Promise<void> => {
+      if (statsTarget && statsCollector)
+        await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
     }
+    const writeResult = (runResult: RunResult): void => {
+      io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
+        color: io.stdout.isTTY === true,
+      }))
+    }
+    let result: RunResult
 
-    throw error
-  }
-
-  const runner = resolveRunnerConfig(setupConfig, { runner: resolveConfigRunner(config) }, options)
-  const progress = shouldEnableProgress(options, io)
-    ? createCliProgressReporter({
-        color: io.stderr.isTTY === true,
-        columns: io.stderr.columns ?? 80,
-        cwd: io.cwd,
-        isTty: io.stderr.isTTY === true,
-        rows: io.stderr.rows,
-        write: chunk => io.stderr.write(chunk),
-      })
-    : undefined
-  const restoreProgressConsole = progress
-    ? interceptConsoleOutput({ write: progress.write })
-    : undefined
-  const statsTarget = resolveStatsWrite(runner?.stats, io.env)
-  const statsCollector = statsTarget ? createStatsCollector() : undefined
-  const persistStats = async (runResult: Awaited<ReturnType<typeof runAlint>>): Promise<void> => {
-    if (statsTarget && statsCollector)
-      await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
-  }
-  const writeResult = (runResult: Awaited<ReturnType<typeof runAlint>>): void => {
-    io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
-      color: io.stdout.isTTY === true,
-    }))
-  }
-  const runtime = await startModelAdapters(setupConfig, io)
-  let result: Awaited<ReturnType<typeof runAlint>>
-
-  try {
     try {
-      // TODO: (cli-sigint) Wire SIGINT to RunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
-      result = await runAlint({
+      // TODO: (cli-sigint) Wire SIGINT to SessionRunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
+      result = await session.run({
         cacheOnly: options.cacheOnly,
-        config,
-        cwd: io.cwd,
-        defaultModel,
-        directories: lintTargets.directories,
-        files: lintTargets.files,
+        files,
         modelOverride: options.model,
         outputLanguage: options.outputLanguage,
         progress: mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
         runner,
-        setupConfig: runtime.setupConfig,
       })
     }
     catch (error) {
       restoreProgressConsole?.()
       progress?.dispose()
+
+      // The session discovers targets, so an unmatched input arrives here and not before the run.
+      if (error instanceof NoFilesFoundError) {
+        io.stderr.write(`${error.message}\n`)
+        return 2
+      }
 
       if (error instanceof AlintRunError) {
         await persistStats(error.result)
@@ -168,7 +146,7 @@ async function runLintCommand(
     return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
   }
   finally {
-    await runtime.shutdown()
+    await session.shutdown()
   }
 }
 
