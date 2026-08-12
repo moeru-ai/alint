@@ -13,8 +13,8 @@ import { ExportResultCode } from '@opentelemetry/core'
 // https://github.com/open-telemetry/opentelemetry-js/blob/76fa6b509e2b48d9cbee31cb37a2efc61dc4d384/experimental/packages/otlp-transformer/src/index.ts#L26-L28
 import { JsonTraceSerializer } from '@opentelemetry/otlp-transformer'
 import { defaultResource, resourceFromAttributes } from '@opentelemetry/resources'
-import { NodeSDK } from '@opentelemetry/sdk-node'
 import { SimpleSpanProcessor } from '@opentelemetry/sdk-trace'
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node'
 
 export interface NodeTracingOptions {
   cwd: string
@@ -85,14 +85,13 @@ export async function startNodeTracing(options: NodeTracingOptions): Promise<Nod
     'service.name': 'alint',
     'service.version': options.serviceVersion,
   }))
-  const sdk = new NodeSDK({
-    autoDetectResources: false,
+  const provider = new NodeTracerProvider({
     resource,
     spanProcessors: [processor],
   })
 
   try {
-    sdk.start()
+    provider.register()
   }
   catch (error) {
     await file.close()
@@ -114,14 +113,14 @@ export async function startNodeTracing(options: NodeTracingOptions): Promise<Nod
 
       let flushError: unknown
       try {
-        await processor.forceFlush()
+        await provider.forceFlush()
       }
       catch (error) {
         flushError = error
       }
 
       try {
-        await sdk.shutdown()
+        await provider.shutdown()
       }
       finally {
         trace.disable()

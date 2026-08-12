@@ -23,7 +23,7 @@ Later work can add a portable API package and a Node host package. The Node host
 | Use | Package | Node.js | Web | Stability and notes |
 | --- | --- | --- | --- | --- |
 | Plugin and library calls | `@opentelemetry/api` | Yes | Yes | The package includes no-op implementations. Libraries can use it without an SDK. |
-| Node host setup | `@opentelemetry/sdk-node` | Yes | No | This package configures Node resources, context propagation, processors, and exporters. The package is experimental. |
+| Node trace setup | `@opentelemetry/sdk-trace-node` | Yes | No | This package configures a Node tracer provider and asynchronous context propagation. |
 | Portable manual tracing | `@opentelemetry/sdk-trace` | Yes | Yes | This package supplies the portable tracer provider and span processors. |
 | Browser host setup | `@opentelemetry/sdk-trace-web` | No | Yes | Browser instrumentation is experimental. The current minimum target is ES2022. |
 | OTLP over HTTP with JSON | `@opentelemetry/exporter-trace-otlp-http` | Yes | Yes | This exporter works in Node.js and browsers. Browser endpoints must accept browser requests. |
@@ -36,7 +36,7 @@ Sources:
 - [JavaScript runtime support](https://github.com/open-telemetry/opentelemetry-js#supported-runtimes)
 - [portable Trace SDK README](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/sdk-trace)
 - [Trace SDK package metadata](https://github.com/open-telemetry/opentelemetry-js/blob/main/packages/sdk-trace/package.json)
-- [Node SDK README](https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-sdk-node)
+- [Node trace SDK README](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-node)
 - [Web SDK README](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-web)
 - [HTTP exporter package metadata](https://github.com/open-telemetry/opentelemetry-js/blob/main/experimental/packages/exporter-trace-otlp-http/package.json)
 - [protobuf exporter package metadata](https://github.com/open-telemetry/opentelemetry-js/blob/main/experimental/packages/exporter-trace-otlp-proto/package.json)
@@ -78,7 +78,7 @@ The host must register a tracer provider and a context manager. Without that reg
 
 ## Node.js and Web differences
 
-`NodeSDK` uses `AsyncLocalStorageContextManager` by default. It also uses W3C Trace Context and Baggage propagation by default. The SDK must start before instrumented modules load when automatic instrumentation is required. [Node SDK configuration](https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-sdk-node#configuration)
+`NodeTracerProvider` uses `AsyncLocalStorageContextManager` by default. It also uses W3C Trace Context and Baggage propagation by default. [Node trace SDK](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-node)
 
 `WebTracerProvider` is the browser provider. The Web SDK README offers `ZoneContextManager` for asynchronous context. It also warns that this manager does not work with code that targets ES2017 or later without transpilation to ES2015. Browser automatic instrumentation requires explicit registration. [Web SDK README](https://github.com/open-telemetry/opentelemetry-js/tree/main/packages/opentelemetry-sdk-trace-web)
 
@@ -149,7 +149,7 @@ A span status has only `UNSET`, `OK`, and `ERROR`. A lint diagnostic is a produc
 
 Trace attributes are not a general artifact store. Diagnostic evidence can contain arbitrary and large values. If “complete result” means byte-for-byte retention of arbitrary evidence, traces alone are insufficient. A later phase can add OTLP logs for result records, or keep the existing alint result artifact beside `traces.jsonl`. This addition does not require a manifest or integrity file.
 
-Use resources for process-wide identity. Suggested resource attributes are `service.name=alint`, `service.version`, and the standard telemetry SDK attributes. Keep `alint.run.id` on the run span because one process can run more than once. The Node SDK warns that a custom resource must retain the default resource, or standard resource attributes can disappear. [Node SDK resource configuration](https://github.com/open-telemetry/opentelemetry-js/tree/main/experimental/packages/opentelemetry-sdk-node#resource)
+Use resources for process-wide identity. Suggested resource attributes are `service.name=alint`, `service.version`, and the standard telemetry SDK attributes. Keep `alint.run.id` on the run span because one process can run more than once. Merge custom attributes with the default resource to keep the standard attributes. [Resource API](https://open-telemetry.github.io/opentelemetry-js/modules/_opentelemetry_resources.html)
 
 Use an instrumentation scope for each owner. Examples are `@alint-js/cli`, `@alint-js/core`, and the plugin package name. A tracer name identifies its instrumentation scope. [Tracing API tracer identity](https://opentelemetry.io/docs/specs/otel/trace/api/#get-a-tracer)
 

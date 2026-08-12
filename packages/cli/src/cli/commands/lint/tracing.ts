@@ -1,117 +1,90 @@
-import type {
-  JobEndPayload,
-  JobRetryPayload,
-  ProgressJobRef,
-  ProgressReporter,
-  RunEndPayload,
-  RunInstrumentation,
-} from '@alint-js/core'
-import type { Context, Span } from '@alint-js/tracing'
+import type { ProgressReporter, RunEndPayload } from '@alint-js/core'
+import type { Span } from '@alint-js/tracing'
 
-import { context, SpanStatusCode, trace } from '@alint-js/tracing'
+import { SpanStatusCode, trace, withGenAiContentCapture } from '@alint-js/tracing'
+import { startNodeTracing } from '@alint-js/tracing/node'
 import { errorMessageFrom } from '@moeru/std'
 
-export interface TracingReporter {
+import packageJson from '../../../../package.json'
+
+export interface RunWithTracingOptions {
+  captureLlmContent: boolean
+  cwd: string
+  directory: string
+  files: string[]
+}
+
+interface TracingReporter {
   finish: (error?: unknown) => void
-  instrumentation: RunInstrumentation
   reporter: ProgressReporter
 }
 
-interface JobSpan {
-  context: Context
-  span: Span
+export async function runWithTracing(
+  options: RunWithTracingOptions,
+  operation: (reporter: ProgressReporter) => Promise<number>,
+): Promise<number> {
+  const session = await startNodeTracing({
+    cwd: options.cwd,
+    directory: options.directory,
+    serviceVersion: packageJson.version,
+  })
+  const tracer = trace.getTracer('@alint-js/cli', packageJson.version)
+
+  try {
+    return await tracer.startActiveSpan('alint.run', {
+      attributes: {
+        'alint.cwd': options.cwd,
+        'alint.input.files': options.files,
+        'alint.run.id': session.runId,
+      },
+    }, async (runSpan) => {
+      const tracing = createTracingReporter(runSpan)
+      let failure: unknown
+
+      try {
+        const exitCode = await withGenAiContentCapture(
+          options.captureLlmContent,
+          () => operation(tracing.reporter),
+        )
+        runSpan.setAttribute('alint.exit.code', exitCode)
+        runSpan.setStatus(exitCode === 2
+          ? { code: SpanStatusCode.ERROR, message: 'Alint run failed.' }
+          : { code: SpanStatusCode.OK })
+        return exitCode
+      }
+      catch (error) {
+        failure = error
+        runSpan.recordException(recordableException(error))
+        runSpan.setStatus({ code: SpanStatusCode.ERROR })
+        throw error
+      }
+      finally {
+        tracing.finish(failure)
+        runSpan.end()
+      }
+    })
+  }
+  finally {
+    await session.shutdown()
+  }
 }
 
-export function createTracingReporter(runSpan: Span): TracingReporter {
+function addJsonEvent(span: Span, name: string, attributeName: string, value: unknown, startTime?: number): void {
+  try {
+    const json = JSON.stringify(value)
+    if (json !== undefined) {
+      span.addEvent(name, { [attributeName]: json }, startTime)
+    }
+  }
+  catch {
+    span.addEvent('alint.content.serialization_error', { 'alint.attribute.name': attributeName })
+  }
+}
+
+function createTracingReporter(runSpan: Span): TracingReporter {
   const tracer = trace.getTracer('@alint-js/cli')
-  let executionContext: Context | undefined
-  let executionSpan: Span | undefined
   let planningSpan: Span | undefined
   let prepareSpan: Span | undefined
-  const jobSpans = new Map<string, JobSpan>()
-
-  const reporter: ProgressReporter = {
-    onDiagnostic: ({ diagnostic, job }) => {
-      jobSpans.get(job.id)?.span.addEvent('alint.diagnostic', {
-        'alint.diagnostic.json': JSON.stringify(diagnostic),
-      })
-    },
-    onExecuteEnd: ({ endedAt, progress }) => {
-      executionSpan?.setAttribute('alint.execution.json', JSON.stringify(progress.execution))
-      executionSpan?.setStatus({ code: SpanStatusCode.OK })
-      executionSpan?.end(endedAt)
-      executionSpan = undefined
-      executionContext = undefined
-    },
-    onExecuteStart: ({ progress, startedAt }) => {
-      executionSpan = tracer.startSpan('alint.execute', {
-        attributes: {
-          'alint.files.total': progress.filesTotal,
-        },
-        startTime: startedAt,
-      })
-      executionContext = trace.setSpan(context.active(), executionSpan)
-      planningSpan = tracer.startSpan('alint.plan', { startTime: startedAt }, executionContext)
-    },
-    onFileReady: ({ inputPath, jobsAdded }) => {
-      planningSpan?.addEvent('alint.file.ready', {
-        'alint.file.path': inputPath,
-        'alint.jobs.added': jobsAdded,
-      })
-    },
-    onJobEnd: (payload) => {
-      const entry = jobSpans.get(payload.job.id)
-      if (entry == null) {
-        return
-      }
-
-      const { span } = entry
-      setJobEndAttributes(span, payload)
-      span.setStatus(payload.state === 'failed'
-        ? { code: SpanStatusCode.ERROR, message: payload.failure?.message }
-        : { code: SpanStatusCode.OK })
-      span.end(payload.endedAt)
-      jobSpans.delete(payload.job.id)
-    },
-    onJobRetry: (payload) => {
-      jobSpans.get(payload.job.id)?.span.addEvent('alint.job.retry', retryAttributes(payload), payload.startedAt)
-    },
-    onJobStart: (payload) => {
-      const span = tracer.startSpan('alint.rule', {
-        attributes: jobAttributes(payload.job),
-        startTime: payload.startedAt,
-      }, executionContext)
-      jobSpans.set(payload.job.id, {
-        context: trace.setSpan(executionContext ?? context.active(), span),
-        span,
-      })
-    },
-    onPlanningEnd: ({ progress }) => {
-      planningSpan?.setAttribute('alint.jobs.total', progress.jobsTotal)
-      planningSpan?.setStatus({ code: SpanStatusCode.OK })
-      planningSpan?.end()
-      planningSpan = undefined
-    },
-    onPrepareEnd: ({ endedAt, filesTotal }) => {
-      prepareSpan?.setAttribute('alint.files.total', filesTotal)
-      prepareSpan?.setStatus({ code: SpanStatusCode.OK })
-      prepareSpan?.end(endedAt)
-      prepareSpan = undefined
-    },
-    onPrepareStart: ({ startedAt }) => {
-      prepareSpan = tracer.startSpan('alint.prepare', { startTime: startedAt })
-    },
-    onRunEnd: (payload) => {
-      runSpan.addEvent('alint.result', {
-        'alint.result.json': JSON.stringify(runResultFrom(payload)),
-      }, payload.endedAt)
-    },
-    onUsage: ({ job, record }) => {
-      jobSpans.get(job.id)?.span.addEvent('alint.usage', {
-        'alint.usage.json': JSON.stringify(record),
-      })
-    },
-  }
 
   return {
     finish: (error) => {
@@ -119,49 +92,47 @@ export function createTracingReporter(runSpan: Span): TracingReporter {
         ? { code: SpanStatusCode.UNSET }
         : { code: SpanStatusCode.ERROR, message: errorMessageFrom(error) ?? 'Unknown tracing failure.' }
 
-      for (const { span } of jobSpans.values()) {
-        span.setStatus(status)
-        span.end()
-      }
-      jobSpans.clear()
       planningSpan?.setStatus(status)
       planningSpan?.end()
       planningSpan = undefined
       prepareSpan?.setStatus(status)
       prepareSpan?.end()
       prepareSpan = undefined
-      executionSpan?.setStatus(status)
-      executionSpan?.end()
-      executionSpan = undefined
-      executionContext = undefined
     },
-    instrumentation: {
-      runJob: async (job, operation) => {
-        const entry = jobSpans.get(job.id)
-        return await (entry == null ? operation() : context.with(entry.context, operation))
+    reporter: {
+      onExecuteStart: ({ startedAt }) => {
+        planningSpan = tracer.startSpan('alint.plan', { startTime: startedAt })
+      },
+      onFileReady: ({ inputPath, jobsAdded }) => {
+        planningSpan?.addEvent('alint.file.ready', {
+          'alint.file.path': inputPath,
+          'alint.jobs.added': jobsAdded,
+        })
+      },
+      onPlanningEnd: ({ progress }) => {
+        planningSpan?.setAttribute('alint.jobs.total', progress.jobsTotal)
+        planningSpan?.setStatus({ code: SpanStatusCode.OK })
+        planningSpan?.end()
+        planningSpan = undefined
+      },
+      onPrepareEnd: ({ endedAt, filesTotal }) => {
+        prepareSpan?.setAttribute('alint.files.total', filesTotal)
+        prepareSpan?.setStatus({ code: SpanStatusCode.OK })
+        prepareSpan?.end(endedAt)
+        prepareSpan = undefined
+      },
+      onPrepareStart: ({ startedAt }) => {
+        prepareSpan = tracer.startSpan('alint.prepare', { startTime: startedAt })
+      },
+      onRunEnd: (payload) => {
+        addJsonEvent(runSpan, 'alint.result', 'alint.result.json', runResultFrom(payload), payload.endedAt)
       },
     },
-    reporter,
   }
 }
 
-function jobAttributes(job: ProgressJobRef) {
-  return {
-    'alint.job.id': job.id,
-    'alint.job.index': job.index,
-    'alint.rule.id': job.ruleId,
-    'alint.target.identity': job.target.identity,
-    'alint.target.kind': job.target.kind,
-    'alint.target.name': job.target.name ?? '',
-    'code.file.path': job.inputPath,
-  }
-}
-
-function retryAttributes(payload: JobRetryPayload) {
-  return {
-    'alint.retry.attempt': payload.attempt,
-    'alint.retry.max_attempts': payload.maxAttempts,
-  }
+function recordableException(error: unknown): Error | string {
+  return error instanceof Error ? error : String(error)
 }
 
 function runResultFrom(payload: RunEndPayload) {
@@ -169,19 +140,5 @@ function runResultFrom(payload: RunEndPayload) {
     diagnostics: payload.diagnostics,
     execution: payload.execution,
     usage: payload.usage,
-  }
-}
-
-function setJobEndAttributes(span: Span, payload: JobEndPayload): void {
-  span.setAttributes({
-    'alint.cache': payload.cache,
-    'alint.job.state': payload.state,
-  })
-
-  if (payload.failure != null) {
-    span.addEvent('exception', {
-      'exception.message': payload.failure.message,
-      'exception.type': payload.failure.kind,
-    })
   }
 }

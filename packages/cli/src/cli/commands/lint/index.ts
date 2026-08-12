@@ -1,41 +1,31 @@
-import type { RunInstrumentation, RunResult } from '@alint-js/core'
+import type { RunResult } from '@alint-js/core'
 
 import type { ReporterName } from '../../reporters'
+import type { RunSession } from '../../runtime/session'
 import type { CliIo, CliWritable } from '../../types'
 import type { LintCommandOptions } from './options'
 
 import { stat } from 'node:fs/promises'
 
-import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { DEFAULT_TRACING_DIRECTORY } from '@alint-js/config'
-import { SpanStatusCode, trace, withGenAiContentCapture } from '@alint-js/tracing'
-import { startNodeTracing } from '@alint-js/tracing/node'
+import { AlintRunCancelledError, AlintRunError } from '@alint-js/core'
 import { resolve } from 'pathe'
-
-import packageJson from '../../../../package.json'
 
 import { formatDiagnostics } from '../../reporters'
 import { createCliProgressReporter } from '../../reporters/progress'
 import { createRunSession } from '../../runtime/session'
-import type { RunSession } from '../../runtime/session'
 import { defineCommand } from '../command'
 import { NoFilesFoundError } from './discovery'
 import { formatCancelledError, formatRunError } from './errors'
 import { resolveRunnerConfig } from './runner'
 import { createStatsCollector, mergeProgressReporters, resolveStatsWrite, writeRunStats } from './stats'
-import { createTracingReporter } from './tracing'
+import { runWithTracing } from './tracing'
 
 export const lint = defineCommand({
-  action: (context, files: string[] = [], options: LintCommandOptions) =>
-    runLintCommand(
-      files,
-      {
-        ...options,
-        outputLanguage: options.lang ?? context.globalOptions.outputLanguage,
-      },
-      context.io,
-      context.interceptConsoleOutput,
-    ),
+  action: (context, files: string[] = [], options: LintCommandOptions) => runLintCommand(files, {
+    ...options,
+    outputLanguage: options.lang ?? context.globalOptions.outputLanguage,
+  }, context.io, context.interceptConsoleOutput),
   alias: ['!'],
   arguments: '[...files]',
   default: true,
@@ -45,19 +35,14 @@ export const lint = defineCommand({
 
 async function assertConfigExists(cwd: string, configPath: string): Promise<void> {
   const resolvedConfigPath = resolve(cwd, configPath)
-
   try {
     const stats = await stat(resolvedConfigPath)
-
-    if (!stats.isFile()) {
+    if (!stats.isFile())
       throw new Error(`Config file "${configPath}" is not a file.`)
-    }
   }
   catch (error) {
-    if (isNodeError(error) && error.code === 'ENOENT') {
+    if (isNodeError(error) && error.code === 'ENOENT')
       throw new Error(`Config file "${configPath}" does not exist.`)
-    }
-
     throw error
   }
 }
@@ -73,22 +58,12 @@ async function runConfiguredLintCommand(
   interceptConsoleOutput: (stdout: CliWritable) => () => void,
   session: RunSession,
   tracingReporter?: Parameters<typeof mergeProgressReporters>[0],
-  instrumentation?: RunInstrumentation,
 ): Promise<number> {
   const runner = resolveRunnerConfig(session.runner, options)
   const progress = shouldEnableProgress(options, io)
-    ? createCliProgressReporter({
-        color: io.stderr.isTTY === true,
-        columns: io.stderr.columns ?? 80,
-        cwd: io.cwd,
-        isTty: io.stderr.isTTY === true,
-        rows: io.stderr.rows,
-        write: chunk => io.stderr.write(chunk),
-      })
+    ? createCliProgressReporter({ color: io.stderr.isTTY === true, columns: io.stderr.columns ?? 80, cwd: io.cwd, isTty: io.stderr.isTTY === true, rows: io.stderr.rows, write: chunk => io.stderr.write(chunk) })
     : undefined
-  const restoreProgressConsole = progress
-    ? interceptConsoleOutput({ write: progress.write })
-    : undefined
+  const restoreProgressConsole = progress ? interceptConsoleOutput({ write: progress.write }) : undefined
   const statsTarget = resolveStatsWrite(runner?.stats, io.env)
   const statsCollector = statsTarget ? createStatsCollector() : undefined
   const persistStats = async (runResult: RunResult): Promise<void> => {
@@ -96,130 +71,60 @@ async function runConfiguredLintCommand(
       await writeRunStats(statsTarget, statsCollector, runResult, io.cwd)
   }
   const writeResult = (runResult: RunResult): void => {
-    io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, {
-      color: io.stdout.isTTY === true,
-    }))
+    io.stdout.write(formatDiagnostics(options.format as ReporterName, runResult, { color: io.stdout.isTTY === true }))
   }
   let result: RunResult
-
   try {
-    // TODO: (cli-sigint) Wire SIGINT to SessionRunOptions.signal after the CLI lifecycle owner approves process-level cancellation handling; core cancellation is already available.
     result = await session.run({
       cacheOnly: options.cacheOnly,
       files,
       modelOverride: options.model,
       outputLanguage: options.outputLanguage,
-      progress: mergeProgressReporters(
-        mergeProgressReporters(progress?.reporter, statsCollector?.reporter),
-        tracingReporter,
-      ),
-      instrumentation,
+      progress: mergeProgressReporters(mergeProgressReporters(progress?.reporter, statsCollector?.reporter), tracingReporter),
       runner,
     })
   }
   catch (error) {
     restoreProgressConsole?.()
     progress?.dispose()
-
-    // The session discovers targets, so an unmatched input arrives here and not before the run.
     if (error instanceof NoFilesFoundError) {
       io.stderr.write(`${error.message}\n`)
       return 2
     }
-
     if (error instanceof AlintRunError) {
       await persistStats(error.result)
       writeResult(error.result)
       io.stderr.write(formatRunError(error, io.stderr.isTTY === true))
       return 2
     }
-
     if (error instanceof AlintRunCancelledError) {
       await persistStats(error.result)
       writeResult(error.result)
       io.stderr.write(formatCancelledError(error, io.stderr.isTTY === true))
       return 2
     }
-
     throw error
   }
-
   restoreProgressConsole?.()
   progress?.dispose()
-
   await persistStats(result)
-
   writeResult(result)
   return result.diagnostics.some(diagnostic => diagnostic.severity === 'error') ? 1 : 0
 }
 
-async function runLintCommand(
-  files: string[],
-  options: LintCommandOptions,
-  io: CliIo,
-  interceptConsoleOutput: (stdout: CliWritable) => () => void,
-): Promise<number> {
-  if (options.config) {
+async function runLintCommand(files: string[], options: LintCommandOptions, io: CliIo, interceptConsoleOutput: (stdout: CliWritable) => () => void): Promise<number> {
+  if (options.config)
     await assertConfigExists(io.cwd, options.config)
-  }
-
   const session = await createRunSession(io, { configPath: options.config })
-
   try {
-    if (session.tracing?.enabled !== true) {
+    if (session.tracing?.enabled !== true)
       return await runConfiguredLintCommand(files, options, io, interceptConsoleOutput, session)
-    }
-
-    const tracing = await startNodeTracing({
+    return await runWithTracing({
+      captureLlmContent: session.tracing.captureLlmContent === true,
       cwd: io.cwd,
       directory: session.tracing.directory ?? DEFAULT_TRACING_DIRECTORY,
-      serviceVersion: packageJson.version,
-    })
-    const tracer = trace.getTracer('@alint-js/cli', packageJson.version)
-
-    try {
-      return await tracer.startActiveSpan('alint.run', {
-        attributes: {
-          'alint.cwd': io.cwd,
-          'alint.input.files': files,
-          'alint.run.id': tracing.runId,
-        },
-      }, async (runSpan) => {
-        const tracingReporter = createTracingReporter(runSpan)
-        try {
-          const exitCode = await withGenAiContentCapture(
-            session.tracing?.captureLlmContent === true,
-            () => runConfiguredLintCommand(
-              files,
-              options,
-              io,
-              interceptConsoleOutput,
-              session,
-              tracingReporter.reporter,
-              tracingReporter.instrumentation,
-            ),
-          )
-          runSpan.setAttribute('alint.exit.code', exitCode)
-          runSpan.setStatus(exitCode === 2
-            ? { code: SpanStatusCode.ERROR, message: 'Alint run failed.' }
-            : { code: SpanStatusCode.OK })
-          return exitCode
-        }
-        catch (error) {
-          tracingReporter.finish(error)
-          runSpan.recordException(error instanceof Error ? error : String(error))
-          runSpan.setStatus({ code: SpanStatusCode.ERROR })
-          throw error
-        }
-        finally {
-          tracingReporter.finish()
-          runSpan.end()
-        }
-      })
-    }
-    finally {
-      await tracing.shutdown()
-    }
+      files,
+    }, reporter => runConfiguredLintCommand(files, options, io, interceptConsoleOutput, session, reporter))
   }
   finally {
     await session.shutdown()
@@ -229,6 +134,5 @@ async function runLintCommand(
 function shouldEnableProgress(options: LintCommandOptions, io: CliIo): boolean {
   if (options.progress !== undefined)
     return options.progress
-
   return options.format === 'stylish' && io.stderr.isTTY === true
 }

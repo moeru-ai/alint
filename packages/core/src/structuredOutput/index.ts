@@ -14,6 +14,8 @@ import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
 import { getDescription, parse } from 'valibot'
 
+import { modelTraceOptions } from '../models/tracing'
+
 const defaultMaxAttempts = 3
 const defaultToolName = 'reportFindings'
 
@@ -105,12 +107,8 @@ export async function generateStructured<Schema extends GenericSchema>(
     try {
       options.signal?.throwIfAborted()
       response = await traceGenAiCall({
+        ...modelTraceOptions(options.model, 'chat'),
         inputMessages: messages,
-        model: options.model.id,
-        operationName: 'chat',
-        providerName: options.model.provider.id,
-        serverAddress: serverAddressFrom(options.model.provider.endpoint),
-        systemInstructions: messages.filter(message => message.role === 'system' || message.role === 'developer'),
         toolDefinitions: [{
           description: tool.function.description,
           name: tool.function.name,
@@ -399,13 +397,4 @@ function retryFeedbackFrom(toolName: string, error: string): string {
     `Validation error: ${error}`,
     `Call ${toolName} again with arguments that exactly match the tool schema.`,
   ].join('\n')
-}
-
-function serverAddressFrom(endpoint: string): string | undefined {
-  try {
-    return new URL(endpoint).hostname
-  }
-  catch {
-    return undefined
-  }
 }

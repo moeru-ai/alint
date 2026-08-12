@@ -26,8 +26,8 @@
     "@opentelemetry/core": "catalog:",
     "@opentelemetry/otlp-transformer": "catalog:",
     "@opentelemetry/resources": "catalog:",
-    "@opentelemetry/sdk-node": "catalog:",
-    "@opentelemetry/sdk-trace": "catalog:"
+    "@opentelemetry/sdk-trace": "catalog:",
+    "@opentelemetry/sdk-trace-node": "catalog:"
   },
   "devDependencies": {
     "@types/node": "catalog:"

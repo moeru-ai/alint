@@ -158,11 +158,6 @@ export interface RunEndPayload {
 
 export type RunExecution = ExecutionCounts
 
-/** Activates host-owned instrumentation around one rule operation without coupling core to a trace SDK. */
-export interface RunInstrumentation {
-  runJob: <Result>(job: ProgressJobRef, operation: () => PromiseLike<Result> | Result) => Promise<Result>
-}
-
 export type RunnerOptions = RunnerConfig
 
 export interface RunOptions {
@@ -176,7 +171,6 @@ export interface RunOptions {
   defaultModel?: string
   directories?: string[]
   files?: string[]
-  instrumentation?: RunInstrumentation
   modelOverride?: string
   outputLanguage?: string
   progress?: ProgressReporter

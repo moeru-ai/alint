@@ -48,8 +48,8 @@ catalog:
   '@opentelemetry/core': ^2.10.0
   '@opentelemetry/otlp-transformer': ^0.221.0
   '@opentelemetry/resources': ^2.10.0
-  '@opentelemetry/sdk-node': ^0.221.0
   '@opentelemetry/sdk-trace': ^2.10.0
+  '@opentelemetry/sdk-trace-node': ^2.10.0
   '@package-json/types': ^0.0.13
   '@pnpm/find-workspace-dir': ^1000.1.5
   '@smithy/node-http-handler': ^4.9.13

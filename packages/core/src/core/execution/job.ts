@@ -1,7 +1,7 @@
 import type { DirectoryTarget, ProjectTarget } from '../../dsl/types'
 import type { CacheEntry, CacheFingerprint, CacheSlotIdentity } from '../cache'
 import type { ClassTarget, FileTarget, FunctionTarget } from '../source/types'
-import type { AlintFailureCause, AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter, RunInstrumentation } from '../types'
+import type { AlintFailureCause, AlintRuleFailure, Diagnostic, ProgressJobRef, ProgressReporter } from '../types'
 import type { RunProgress } from './progress'
 import type { CacheRunContext, JobOrderKey, JobScope, RuleExecutionBucket, RuleJob, RuleJobOutcome, RuleRuntimeState, TerminalOutcome } from './types'
 
@@ -9,11 +9,11 @@ import { errorMessageFrom } from '@moeru/std/error'
 
 import { SourceChangedError } from '../source/runtime'
 import { snapshotDiagnostic, snapshotDiagnostics, snapshotFailure, snapshotProgressJobRef, snapshotUsage, snapshotUsageRecords } from './records'
+import { addRuleJsonEvent } from './tracing'
 
 export interface ExecuteRuleJobOptions {
   cache: CacheRunContext
   cacheOnly?: boolean
-  instrumentation?: RunInstrumentation
   progress?: ProgressReporter
   runProgress: RunProgress
   runSignal?: AbortSignal
@@ -99,10 +99,7 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
 
   try {
     // NOTICE: JavaScript handlers cannot be force-terminated. A timed-out handler keeps its permit until its promise settles; process isolation would require a separately approved runtime design.
-    const operation = () => job.execution.runtime.executionState.run(state, () => runHandler(job))
-    await (options.instrumentation
-      ? options.instrumentation.runJob(snapshotProgressJobRef(job.jobRef), operation)
-      : operation())
+    await job.execution.runtime.executionState.run(state, () => runHandler(job))
   }
   catch (cause) {
     if (state.reporterFailed)
@@ -306,12 +303,14 @@ function replayCachedEntry(
   for (const cachedDiagnostic of diagnostics) {
     const diagnostic: Diagnostic = snapshotDiagnostic({ ...cachedDiagnostic, cached: true })
     bucket.diagnostics.push(diagnostic)
+    addRuleJsonEvent('alint.diagnostic', 'alint.diagnostic.json', diagnostic)
     progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJobRef(job), progress: runProgress.snapshot() })
   }
 
   for (const record of usage) {
     const usageRecord = snapshotUsage(record)
     bucket.usage.push(usageRecord)
+    addRuleJsonEvent('alint.usage', 'alint.usage.json', usageRecord)
     progress?.onUsage?.({ job: snapshotProgressJobRef(job), progress: runProgress.snapshot(), record: snapshotUsage(usageRecord) })
   }
 }

@@ -12,6 +12,7 @@ export type {
 
 export {
   context,
+  createContextKey,
   SpanKind,
   SpanStatusCode,
   trace,

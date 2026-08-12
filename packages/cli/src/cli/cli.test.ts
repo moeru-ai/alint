@@ -356,6 +356,37 @@ export default [
 `)
 }
 
+async function writeTracingFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export const value = 1\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+import { traceGenAiCall } from '@alint-js/tracing'
+
+export default [{
+  files: ['**/*.ts'],
+  plugins: {
+    company: {
+      rules: {
+        review: {
+          languages: 'any',
+          create: ctx => ({
+            onTargetFile: async (target) => {
+              await traceGenAiCall({
+                model: 'demo-model',
+                operationName: 'chat',
+                providerName: 'demo-provider',
+              }, async () => 'done')
+              ctx.report({ filePath: target.file.path, message: 'Problem found' })
+            },
+          }),
+        },
+      },
+    },
+  },
+  rules: { 'company/review': 'warn' },
+}]
+`)
+}
+
 describe('createProviderId', () => {
   it('creates endpoint-based provider ids and avoids collisions', () => {
     expect(createProviderId('https://openrouter.ai/api/v1', new Set())).toBe('openrouter')
@@ -2806,7 +2837,7 @@ export default [
     const io = await createTestIo()
     const tracingDirectory = 'test-traces'
 
-    await writeProgressFixture(io.cwd)
+    await writeTracingFixture(io.cwd)
     await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
       providers: [],
       tracing: { directory: tracingDirectory, enabled: true },
@@ -2836,6 +2867,8 @@ export default [
     ))
     const names = spans.map(span => span.name)
     const runSpan = spans.find(span => span.name === 'alint.run')
+    const ruleSpan = spans.find(span => span.name === 'alint.rule')
+    const modelSpan = spans.find(span => span.name === 'chat demo-model')
     const resultEvent = runSpan?.events.find(event => event.name === 'alint.result')
     const resultJson = resultEvent?.attributes.find(attribute => attribute.key === 'alint.result.json')?.value.stringValue
 
@@ -2843,9 +2876,10 @@ export default [
     expect(traceData.every(data => Object.keys(data).length === 1 && 'resourceSpans' in data)).toBe(true)
     expect(names).toContain('alint.prepare')
     expect(names).toContain('alint.plan')
-    expect(names).toContain('alint.execute')
     expect(names).toContain('alint.rule')
     expect(runSpan).toBeDefined()
+    expect(ruleSpan?.parentSpanId).toBe(runSpan?.spanId)
+    expect(modelSpan?.parentSpanId).toBe(ruleSpan?.spanId)
     expect(resultJson).toBeDefined()
     expect(JSON.parse(resultJson ?? '{}')).toEqual(JSON.parse(io.stdoutText))
   })
@@ -3683,6 +3717,8 @@ interface OtlpTraceData {
           name: string
         }>
         name: string
+        parentSpanId?: string
+        spanId: string
         status: { code: number }
       }>
     }>

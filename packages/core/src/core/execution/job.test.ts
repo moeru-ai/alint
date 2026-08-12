@@ -120,34 +120,6 @@ it('detaches a completed outcome from the active rule job', async () => {
   expect(JSON.stringify(outcome)).not.toContain('retained source sentinel')
 })
 
-it('runs a live rule handler inside host instrumentation', async () => {
-  const executionState = new AsyncLocalStorage<RuleRuntimeState>()
-  const order: string[] = []
-  const job = createTestJob({
-    executionState,
-    rule: defineRule({ create: () => ({}) }),
-    run: () => {
-      order.push('handler')
-    },
-  })
-
-  await executeRuleJob(job, {
-    cache: { modelHash: 'model-hash' },
-    instrumentation: {
-      runJob: async (jobRef, operation) => {
-        expect(jobRef).toEqual(job.jobRef)
-        order.push('before')
-        const result = await operation()
-        order.push('after')
-        return result
-      },
-    },
-    runProgress: startedProgress(),
-  })
-
-  expect(order).toEqual(['before', 'handler', 'after'])
-})
-
 it.each([
   ['throwing message getter', () => Object.defineProperty({}, 'message', { get: () => { throw new Error('hostile getter') } })],
   ['hostile proxy', () => new Proxy({}, { get: () => { throw new Error('hostile proxy') } })],

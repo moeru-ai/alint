@@ -1,7 +1,6 @@
 import type {
   AlintConfig,
   ProgressReporter,
-  RunInstrumentation,
   RunnerConfig,
   RunResult,
   SetupConfig,
@@ -40,7 +39,6 @@ export interface RunSession {
 export interface SessionRunOptions {
   cacheOnly?: boolean
   files?: string[]
-  instrumentation?: RunInstrumentation
   modelOverride?: string
   outputLanguage?: string
   progress?: ProgressReporter
@@ -91,7 +89,6 @@ export async function createRunSession(
         defaultModel,
         directories: targets.directories,
         files: targets.files,
-        instrumentation: runOptions.instrumentation,
         modelOverride: runOptions.modelOverride,
         outputLanguage: runOptions.outputLanguage,
         progress: runOptions.progress,

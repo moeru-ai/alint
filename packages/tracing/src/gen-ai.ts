@@ -53,8 +53,7 @@ export async function traceGenAiCall<Result>(
       setJsonAttribute(span, 'gen_ai.tool.definitions', options.toolDefinitions)
     }
 
-    try {
-      const result = await execute()
+    return runTracedOperation(span, execute, (result) => {
       let details: GenAiCallResult
       try {
         details = resultFrom(result)
@@ -62,8 +61,7 @@ export async function traceGenAiCall<Result>(
       catch {
         // Trace enrichment must not change a successful model result.
         span.addEvent('alint.gen_ai.result_mapping_error')
-        span.setStatus({ code: SpanStatusCode.OK })
-        return result
+        return
       }
 
       span.setAttributes(definedAttributes({
@@ -75,17 +73,7 @@ export async function traceGenAiCall<Result>(
       if (capturesContent()) {
         setJsonAttribute(span, 'gen_ai.output.messages', details.outputMessages)
       }
-      span.setStatus({ code: SpanStatusCode.OK })
-      return result
-    }
-    catch (error) {
-      span.recordException(recordableException(error))
-      span.setStatus({ code: SpanStatusCode.ERROR })
-      throw error
-    }
-    finally {
-      span.end()
-    }
+    })
   })
 }
 
@@ -108,22 +96,11 @@ export async function traceGenAiToolCall<Result>(
       setJsonAttribute(span, 'gen_ai.tool.call.arguments', options.arguments)
     }
 
-    try {
-      const result = await execute()
+    return runTracedOperation(span, execute, (result) => {
       if (capturesContent()) {
         setJsonAttribute(span, 'gen_ai.tool.call.result', result)
       }
-      span.setStatus({ code: SpanStatusCode.OK })
-      return result
-    }
-    catch (error) {
-      span.recordException(recordableException(error))
-      span.setStatus({ code: SpanStatusCode.ERROR })
-      throw error
-    }
-    finally {
-      span.end()
-    }
+    })
   })
 }
 
@@ -144,6 +121,27 @@ function definedAttributes(attributes: Record<string, AttributeValue | undefined
 
 function recordableException(error: unknown): Error | string {
   return error instanceof Error ? error : String(error)
+}
+
+async function runTracedOperation<Result>(
+  span: Span,
+  execute: () => Promise<Result> | Result,
+  addResult?: (result: Result) => void,
+): Promise<Result> {
+  try {
+    const result = await execute()
+    addResult?.(result)
+    span.setStatus({ code: SpanStatusCode.OK })
+    return result
+  }
+  catch (error) {
+    span.recordException(recordableException(error))
+    span.setStatus({ code: SpanStatusCode.ERROR })
+    throw error
+  }
+  finally {
+    span.end()
+  }
 }
 
 function setJsonAttribute(span: Span, name: string, value: unknown): void {

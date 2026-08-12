@@ -15,8 +15,10 @@ import { traceGenAiCall, traceGenAiToolCall } from '@alint-js/tracing'
 import { combineAbortSignals } from '../../agent'
 import { withAgentRetry } from '../../agent/retry'
 import { resolveModel, UnknownModelError } from '../../models/resolve'
+import { modelTraceOptions } from '../../models/tracing'
 import { stableHash } from '../hash'
 import { snapshotDiagnostic, snapshotProgressJobRef, snapshotUsage } from './records'
+import { addRuleEvent, addRuleJsonEvent } from './tracing'
 
 export function createRuleRuntimes(options: {
   cwd: string
@@ -41,6 +43,10 @@ export function createRuleRuntimes(options: {
             if (!state || state.sealed)
               return
             const startedAt = Date.now()
+            addRuleEvent('alint.job.retry', {
+              'alint.retry.attempt': attempt,
+              'alint.retry.max_attempts': maxAttempts,
+            }, startedAt)
             try {
               options.progress?.onJobRetry?.({ attempt, job: snapshotProgressJobRef(state.jobRef), maxAttempts, progress: state.runProgress.snapshot(), startedAt })
             }
@@ -77,6 +83,7 @@ export function createRuleRuntimes(options: {
           })
 
           state.bucket.usage.push(usageRecord)
+          addRuleJsonEvent('alint.usage', 'alint.usage.json', usageRecord)
           try {
             options.progress?.onUsage?.({ job: snapshotProgressJobRef(state.jobRef), progress: state.runProgress.snapshot(), record: snapshotUsage(usageRecord) })
           }
@@ -161,6 +168,7 @@ export function createRuleRuntimes(options: {
         } satisfies Diagnostic)
 
         state.bucket.diagnostics.push(diagnostic)
+        addRuleJsonEvent('alint.diagnostic', 'alint.diagnostic.json', diagnostic)
         try {
           options.progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJobRef(state.jobRef), progress: state.runProgress.snapshot() })
         }
@@ -241,15 +249,6 @@ function mergeModelRequirement(
   }
 }
 
-function serverAddressFrom(endpoint: string): string | undefined {
-  try {
-    return new URL(endpoint).hostname
-  }
-  catch {
-    return undefined
-  }
-}
-
 function toDiagnosticModel(
   model: ResolvedModel,
   request: string | undefined,
@@ -263,14 +262,8 @@ function toDiagnosticModel(
 
 function traceAgentCall(adapter: AgentAdapter, request: Parameters<AgentAdapter>[0]): ReturnType<AgentAdapter> {
   return traceGenAiCall({
-    inputMessages: [
-      { content: request.instructions, role: 'system' },
-      { content: request.prompt, role: 'user' },
-    ],
-    model: request.model.id,
-    operationName: 'invoke_agent',
-    providerName: request.model.provider.id,
-    serverAddress: serverAddressFrom(request.model.provider.endpoint),
+    ...modelTraceOptions(request.model, 'invoke_agent'),
+    inputMessages: [{ content: request.prompt, role: 'user' }],
     systemInstructions: [{ content: request.instructions, role: 'system' }],
     toolDefinitions: request.tools.map(tool => ({
       description: tool.description,
