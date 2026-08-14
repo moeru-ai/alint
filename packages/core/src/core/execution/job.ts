@@ -9,6 +9,7 @@ import { errorMessageFrom } from '@moeru/std/error'
 
 import { SourceChangedError } from '../source/runtime'
 import { snapshotDiagnostic, snapshotDiagnostics, snapshotFailure, snapshotProgressJobRef, snapshotUsage, snapshotUsageRecords } from './records'
+import { addRuleJsonEvent } from './tracing'
 
 export interface ExecuteRuleJobOptions {
   cache: CacheRunContext
@@ -302,12 +303,14 @@ function replayCachedEntry(
   for (const cachedDiagnostic of diagnostics) {
     const diagnostic: Diagnostic = snapshotDiagnostic({ ...cachedDiagnostic, cached: true })
     bucket.diagnostics.push(diagnostic)
+    addRuleJsonEvent('alint.diagnostic', 'alint.diagnostic.json', diagnostic)
     progress?.onDiagnostic?.({ diagnostic: snapshotDiagnostic(diagnostic), job: snapshotProgressJobRef(job), progress: runProgress.snapshot() })
   }
 
   for (const record of usage) {
     const usageRecord = snapshotUsage(record)
     bucket.usage.push(usageRecord)
+    addRuleJsonEvent('alint.usage', 'alint.usage.json', usageRecord)
     progress?.onUsage?.({ job: snapshotProgressJobRef(job), progress: runProgress.snapshot(), record: snapshotUsage(usageRecord) })
   }
 }

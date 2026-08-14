@@ -356,6 +356,37 @@ export default [
 `)
 }
 
+async function writeTracingFixture(cwd: string): Promise<void> {
+  await writeFile(join(cwd, 'demo.ts'), 'export const value = 1\n')
+  await writeFile(join(cwd, 'alint.config.ts'), `
+import { traceGenAiCall } from '@alint-js/tracing'
+
+export default [{
+  files: ['**/*.ts'],
+  plugins: {
+    company: {
+      rules: {
+        review: {
+          languages: 'any',
+          create: ctx => ({
+            onTargetFile: async (target) => {
+              await traceGenAiCall({
+                model: 'demo-model',
+                operationName: 'chat',
+                providerName: 'demo-provider',
+              }, async () => 'done')
+              ctx.report({ filePath: target.file.path, message: 'Problem found' })
+            },
+          }),
+        },
+      },
+    },
+  },
+  rules: { 'company/review': 'warn' },
+}]
+`)
+}
+
 describe('createProviderId', () => {
   it('creates endpoint-based provider ids and avoids collisions', () => {
     expect(createProviderId('https://openrouter.ai/api/v1', new Set())).toBe('openrouter')
@@ -742,7 +773,66 @@ describe('executeCli', () => {
     expect(io.stdoutText).toContain('config inspect <path>')
     expect(io.stdoutText).toContain('config models')
     expect(io.stdoutText).toContain('config providers')
+    expect(io.stdoutText).toContain('config tracing')
     expect(io.stderrText).toBe('')
+  })
+
+  it('enables global tracing with the default output directory', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'tracing',
+      'enable',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'enabled: true',
+      'directory: .alint/traces',
+      'scope: global',
+      '',
+    ].join('\n'))
+    expect(io.stderrText).toBe('')
+
+    const config = await readFile(getGlobalSetupConfigPath(io.env), 'utf8')
+    expect(config).toContain('[tracing]')
+    expect(config).toContain('enabled = true')
+    expect(config).toContain('directory = ".alint/traces"')
+  })
+
+  it('enables local tracing with an explicit output directory', async () => {
+    const io = await createTestIo()
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      'config',
+      'tracing',
+      'enable',
+      '--local',
+      '--directory',
+      'artifacts/otel',
+      '--capture-llm-content',
+    ], io)
+
+    expect(exitCode).toBe(0)
+    expect(io.stdoutText).toBe([
+      'enabled: true',
+      'directory: artifacts/otel',
+      'capture_llm_content: true',
+      'scope: local',
+      '',
+    ].join('\n'))
+    expect(io.stderrText).toBe('')
+
+    const config = await readFile(getProjectSetupConfigPath(io.cwd), 'utf8')
+    expect(config).toContain('[tracing]')
+    expect(config).toContain('enabled = true')
+    expect(config).toContain('directory = "artifacts/otel"')
+    expect(config).toContain('capture_llm_content = true')
   })
 
   it('prints description for config inspect help', async () => {
@@ -2743,6 +2833,99 @@ export default [
     expect(io.stdoutText).toContain('company/prefer-load')
   })
 
+  it('exports the complete run as raw OTLP JSON lines when tracing is enabled', async () => {
+    const io = await createTestIo()
+    const tracingDirectory = 'test-traces'
+
+    await writeTracingFixture(io.cwd)
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      tracing: { directory: tracingDirectory, enabled: true },
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    const runDirectories = await readdir(join(io.cwd, tracingDirectory))
+    expect(runDirectories).toHaveLength(1)
+    const runDirectory = runDirectories[0]
+    expect(runDirectory).toBeDefined()
+    if (runDirectory == null) {
+      throw new Error('Expected one trace run directory.')
+    }
+
+    const text = await readFile(join(io.cwd, tracingDirectory, runDirectory, 'traces.jsonl'), 'utf8')
+    const traceData = text.trimEnd().split('\n').map(line => JSON.parse(line) as OtlpTraceData)
+    const spans = traceData.flatMap(data => data.resourceSpans.flatMap(resource =>
+      resource.scopeSpans.flatMap(scope => scope.spans),
+    ))
+    const names = spans.map(span => span.name)
+    const runSpan = spans.find(span => span.name === 'alint.run')
+    const ruleSpan = spans.find(span => span.name === 'alint.rule')
+    const modelSpan = spans.find(span => span.name === 'chat demo-model')
+    const resultEvent = runSpan?.events.find(event => event.name === 'alint.result')
+    const resultJson = resultEvent?.attributes.find(attribute => attribute.key === 'alint.result.json')?.value.stringValue
+
+    expect(exitCode).toBe(0)
+    expect(traceData.every(data => Object.keys(data).length === 1 && 'resourceSpans' in data)).toBe(true)
+    expect(names).toContain('alint.prepare')
+    expect(names).toContain('alint.plan')
+    expect(names).toContain('alint.rule')
+    expect(runSpan).toBeDefined()
+    expect(ruleSpan?.parentSpanId).toBe(runSpan?.spanId)
+    expect(modelSpan?.parentSpanId).toBe(ruleSpan?.spanId)
+    expect(resultJson).toBeDefined()
+    expect(JSON.parse(resultJson ?? '{}')).toEqual(JSON.parse(io.stdoutText))
+  })
+
+  it('exports a failed run result and error span status', async () => {
+    const io = await createTestIo()
+    const tracingDirectory = 'failed-traces'
+
+    await writePartialFailureFixture(io.cwd)
+    await writeSetupConfig(getProjectSetupConfigPath(io.cwd), {
+      providers: [],
+      tracing: { directory: tracingDirectory, enabled: true },
+      version: 1,
+    })
+
+    const exitCode = await executeCli([
+      'node',
+      'alint',
+      '--format',
+      'json',
+      'demo.ts',
+    ], io)
+
+    const runDirectories = await readdir(join(io.cwd, tracingDirectory))
+    const runDirectory = runDirectories[0]
+    expect(runDirectory).toBeDefined()
+    if (runDirectory == null) {
+      throw new Error('Expected one failed trace run directory.')
+    }
+
+    const text = await readFile(join(io.cwd, tracingDirectory, runDirectory, 'traces.jsonl'), 'utf8')
+    const traceData = text.trimEnd().split('\n').map(line => JSON.parse(line) as OtlpTraceData)
+    const spans = traceData.flatMap(data => data.resourceSpans.flatMap(resource =>
+      resource.scopeSpans.flatMap(scope => scope.spans),
+    ))
+    const runSpan = spans.find(span => span.name === 'alint.run')
+    const failedRuleSpan = spans.find(span => span.name === 'alint.rule' && span.status.code === 2)
+    const resultEvent = runSpan?.events.find(event => event.name === 'alint.result')
+    const resultJson = resultEvent?.attributes.find(attribute => attribute.key === 'alint.result.json')?.value.stringValue
+
+    expect(exitCode).toBe(2)
+    expect(runSpan?.status.code).toBe(2)
+    expect(failedRuleSpan).toBeDefined()
+    expect(JSON.parse(resultJson ?? '{}')).toEqual(JSON.parse(io.stdoutText))
+  })
+
   it('threads stderr rows into bounded TTY progress rendering', async () => {
     const io = await createTestIo()
     io.stderr.columns = 120
@@ -3521,3 +3704,23 @@ export default [
     expect(io.stderrText).toBe('')
   })
 })
+
+interface OtlpTraceData {
+  resourceSpans: Array<{
+    scopeSpans: Array<{
+      spans: Array<{
+        events: Array<{
+          attributes: Array<{
+            key: string
+            value: { stringValue?: string }
+          }>
+          name: string
+        }>
+        name: string
+        parentSpanId?: string
+        spanId: string
+        status: { code: number }
+      }>
+    }>
+  }>
+}

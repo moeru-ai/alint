@@ -8,6 +8,27 @@ import { loadSetupConfig, mergeSetupConfigs } from './load'
 import { writeSetupConfig } from './write'
 
 describe('setup config loading and merging', () => {
+  it('merges tracing fields with project values taking precedence', () => {
+    const merged = mergeSetupConfigs(
+      {
+        providers: [],
+        tracing: { captureLlmContent: true, directory: '/var/lib/alint/traces', enabled: true },
+        version: 1,
+      },
+      {
+        providers: [],
+        tracing: { enabled: false },
+        version: 1,
+      },
+    )
+
+    expect(merged.tracing).toEqual({
+      captureLlmContent: true,
+      directory: '/var/lib/alint/traces',
+      enabled: false,
+    })
+  })
+
   it('merges ACP-driven provider models by id with project models first', () => {
     const merged = mergeSetupConfigs(
       {

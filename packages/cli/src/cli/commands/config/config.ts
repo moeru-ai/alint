@@ -2,12 +2,14 @@ import { defineCommand } from '../command'
 import { inspect } from './inspect'
 import { models } from './models'
 import { providers } from './providers'
+import { tracing } from './tracing/tracing'
 
 export const config = defineCommand({
   children: [
     inspect,
     models,
     providers,
+    tracing,
   ],
   description: 'Manage alint configuration',
   examples: [

@@ -10,6 +10,7 @@ import { createRunProgress } from './execution/progress'
 import { snapshotDiagnostics, snapshotUsageRecords } from './execution/records'
 import { createRuleRuntimes } from './execution/runtime'
 import { resolveRuleConcurrency, RuleScheduler } from './execution/scheduler'
+import { traceRuleJob } from './execution/tracing'
 import { stableHash } from './hash'
 import { missingLanguageDiagnostics, unregisteredLanguageDiagnostics } from './languages/diagnostics'
 import { createSourceExtractor, prepareRun } from './preparation'
@@ -93,14 +94,14 @@ export async function runAlint(options: RunOptions = {}): Promise<RunResult> {
   const scheduler = new RuleScheduler({
     clock,
     concurrency,
-    execute: (job, _startedAt) => executeRuleJob(job, {
+    execute: (job, startedAt) => traceRuleJob(job.jobRef, startedAt, () => executeRuleJob(job, {
       cache: cacheContext,
       cacheOnly: options.cacheOnly,
       progress: options.progress,
       runProgress,
       runSignal: options.signal,
       timeoutMs,
-    }),
+    })),
     progress: runProgress,
     reporter: options.progress,
     signal: options.signal,

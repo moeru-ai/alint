@@ -6,12 +6,15 @@ import type { GenericSchema, InferOutput } from 'valibot'
 import type { RuleContext } from '../dsl/types'
 import type { ResolvedModel } from '../models/types'
 
+import { traceGenAiCall } from '@alint-js/tracing'
 import { errorMessageFrom } from '@moeru/std/error'
 import { sleepWithAbort } from '@moeru/std/sleep'
 import { toJsonSchema } from '@valibot/to-json-schema'
 import { generateText } from '@xsai/generate-text'
 import { rawTool } from '@xsai/tool'
 import { getDescription, parse } from 'valibot'
+
+import { modelTraceOptions } from '../models/tracing'
 
 const defaultMaxAttempts = 3
 const defaultToolName = 'reportFindings'
@@ -99,15 +102,25 @@ export async function generateStructured<Schema extends GenericSchema>(
     options.signal?.throwIfAborted()
 
     let response: GenerateTextResult
+    const messages = options.createMessages(previousError ? retryFeedbackFrom(toolName, previousError) : undefined)
 
     try {
       options.signal?.throwIfAborted()
-      response = await generateText({
+      response = await traceGenAiCall({
+        ...modelTraceOptions(options.model, 'chat'),
+        inputMessages: messages,
+        toolDefinitions: [{
+          description: tool.function.description,
+          name: tool.function.name,
+          parameters: tool.function.parameters,
+          type: tool.type,
+        }],
+      }, () => generateText({
         ...options.model.params,
         abortSignal: options.signal,
         baseURL: options.model.provider.endpoint,
         headers: options.model.provider.headers,
-        messages: options.createMessages(previousError ? retryFeedbackFrom(toolName, previousError) : undefined),
+        messages,
         model: options.model.id,
         parallelToolCalls: false,
         temperature: options.temperature ?? 0,
@@ -118,7 +131,14 @@ export async function generateStructured<Schema extends GenericSchema>(
           type: 'function',
         },
         tools: [tool],
-      })
+      }), result => ({
+        finishReasons: [result.finishReason],
+        outputMessages: result.messages.slice(messages.length),
+        usage: {
+          inputTokens: result.totalUsage.inputTokens,
+          outputTokens: result.totalUsage.outputTokens,
+        },
+      }))
     }
     catch (error) {
       // A cancelled call is not a model failure, so surface the abort instead of logging it as

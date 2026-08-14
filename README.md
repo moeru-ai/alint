@@ -177,6 +177,26 @@ alint --lang zh-CN src
 
 `alint` returns exit code `0` when diagnostics contain no errors, including warning-only runs. It returns `1` when at least one error diagnostic is reported and `2` when the command cannot complete because of a configuration, input, or runtime failure. `alint output inspect` uses the same exit-code behavior for saved results.
 
+### Configure Tracing
+
+Enable tracing in the global setup config:
+
+```bash
+alint config tracing enable
+```
+
+The command uses `.alint/traces` as the default output directory. Set a different directory when necessary:
+
+```bash
+alint config tracing enable --directory artifacts/otel
+alint config tracing enable --local --directory .alint/traces
+alint config tracing enable --local --capture-llm-content
+```
+
+The command writes `enabled` and `directory` under `[tracing]`. The `--local` flag selects `.alint/config.toml`. The `--capture-llm-content` flag also writes `capture_llm_content = true`.
+
+Each lint run writes raw OTLP `TracesData` JSON lines to `<directory>/<run-id>/traces.jsonl`. The output contains the run, preparation, planning, execution, rule, model, and tool spans. The final run result is an `alint.result` event on the run span. Model and tool content is disabled by default because it can contain source code, prompts, credentials, and other sensitive data. Alint does not add an envelope, manifest, hash, or fingerprint.
+
 ### Inspect Configuration and Output
 
 Useful CLI commands:
@@ -579,6 +599,7 @@ defineRule({
 | [`@alint-js/cli`](https://github.com/moeru-ai/alint/tree/main/packages/cli) | CLI entrypoint, user-facing config facade, setup commands, reporters, output inspection, and stats commands. |
 | [`@alint-js/config`](https://github.com/moeru-ai/alint/tree/main/packages/config) | Lower-level config loading, setup TOML parsing, config paths, and ignore defaults for tools. |
 | [`@alint-js/core`](https://github.com/moeru-ai/alint/tree/main/packages/core) | SDK and run engine for plugins, rules, source runtime, model resolution, diagnostics, cache, and agent contracts. |
+| [`@alint-js/tracing`](https://github.com/moeru-ai/alint/tree/main/packages/tracing) | Portable OpenTelemetry API for plugins and the Node.js OTLP JSONL exporter used by the CLI. |
 | [`@alint-js/agent-apeira`](https://github.com/moeru-ai/alint/tree/main/packages/agent-apeira) | Apeira-backed `AgentAdapter`. |
 | [`@alint-js/agent-pi`](https://github.com/moeru-ai/alint/tree/main/packages/agent-pi) | Pi-backed `AgentAdapter`. |
 | [`@alint-js/languages`](https://github.com/moeru-ai/alint/tree/main/packages/languages) | First-party language support beyond core's built-in JavaScript and TypeScript: Go, Python, and Rust. |
