@@ -4,7 +4,7 @@ import type { CliIo } from '../../types'
 
 import process from 'node:process'
 
-import { mkdtemp, realpath, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, realpath, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -263,7 +263,7 @@ describe('folderSession.refreshFile', () => {
     const folder = await createFolderSession({ folderUri, io })
 
     try {
-      // Built from the folder the client opened, which is what didSave carries.
+      // Built from the folder the client opened, which is what didSave sends.
       await folder.refreshFile(pathToFileURL(join(cwd, 'date.ts')).toString())
 
       expect(runAlint.mock.calls[0]?.[0]?.cacheOnly).toBe(true)
@@ -500,5 +500,299 @@ export default [
 
     // The replaced session is already closed, and the current one closes exactly once.
     await expect(folder.dispose()).resolves.toBeUndefined()
+  })
+})
+
+describe('folderSession.runExplicit', () => {
+  it('calls models and records the run', async () => {
+    // Passive passes read the cache and disable stats. This path spends, so it records the run.
+    const { folderUri, io } = await createFolder()
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([]))
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({})
+
+      expect(runAlint.mock.calls[0]?.[0]?.cacheOnly).toBeFalsy()
+      expect(runAlint.mock.calls[0]?.[0]?.runner?.stats).not.toBe(false)
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('runs one file under the run path and leaves project rules out', async () => {
+    // The user asked for one file. A project rule would plan the whole project and bill for it.
+    const { io, linkPath } = await createSymlinkedFolder()
+    const resolvedCwd = await realpath(linkPath)
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([]))
+    const folder = await createFolderSession({ folderUri: pathToFileURL(linkPath).toString(), io })
+
+    try {
+      await folder.runExplicit({ files: [pathToFileURL(join(linkPath, 'date.ts')).toString()] })
+
+      expect(runAlint.mock.calls[0]?.[0]?.files).toEqual([join(resolvedCwd, 'date.ts')])
+      expect(runAlint.mock.calls[0]?.[0]?.projectTargets).toBe(false)
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('keeps project rules for a workspace run', async () => {
+    const { folderUri, io } = await createFolder()
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([]))
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({})
+
+      expect(runAlint.mock.calls[0]?.[0]?.projectTargets).not.toBe(false)
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('publishes each finding as it arrives instead of only at the end', async () => {
+    // A workspace run takes minutes. Each diagnostic must reach the editor when it arrives.
+    const { cwd, folderUri, io } = await createFolder()
+    const dateUri = pathToFileURL(join(cwd, 'date.ts')).toString()
+    const seen: string[][] = []
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockImplementation(async (options) => {
+      options?.progress?.onDiagnostic?.({
+        diagnostic: {
+          filePath: join(cwd, 'date.ts'),
+          message: 'streamed',
+          ruleId: 'r',
+          severity: 'warn',
+        },
+        job: {} as never,
+        progress: {} as never,
+      })
+
+      return runResultWith([])
+    })
+    const folder = await createFolderSession({ folderUri, io, onChanged: uris => seen.push(uris) })
+
+    try {
+      await folder.runExplicit({})
+
+      expect(seen[0]).toEqual([dateUri])
+      expect(folder.diagnostics.get(dateUri)?.[0]?.message).toBe('streamed')
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('keeps the findings a failed run produced', async () => {
+    const { cwd, folderUri, io } = await createFolder()
+    const partial = runResultWith([
+      { filePath: join(cwd, 'date.ts'), message: 'paid for', ruleId: 'r', severity: 'warn' },
+    ])
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(
+      new alintCore.AlintRunError('a rule threw', partial),
+    )
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({})
+
+      expect([...folder.diagnostics.values()].flat()[0]?.message).toBe('paid for')
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+})
+
+describe('folderSession.runExplicit progress and cancellation', () => {
+  it('reports how far the run has got', async () => {
+    const { folderUri, io } = await createFolder()
+    const reported: Array<{ inputPath: string, percentage: number }> = []
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockImplementation(async (options) => {
+      options?.progress?.onJobStart?.({
+        job: { id: 'j', index: 0, inputPath: 'date.ts', ruleId: 'r', target: { identity: 'file', kind: 'file' } },
+        progress: { jobsCompleted: 3, jobsTotal: 12 } as never,
+      })
+
+      return runResultWith([])
+    })
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({
+        onProgress: (progress, inputPath) => reported.push({
+          inputPath,
+          percentage: Math.round((progress.jobsCompleted / progress.jobsTotal) * 100),
+        }),
+      })
+
+      expect(reported).toEqual([{ inputPath: 'date.ts', percentage: 25 }])
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('passes the caller signal to the run', async () => {
+    // The signal reaches the model call, not only the scheduler. Without it, a cancelled run
+    // keeps spending until every job ends.
+    const { folderUri, io } = await createFolder()
+    const controller = new AbortController()
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([]))
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({ signal: controller.signal })
+
+      expect(runAlint.mock.calls[0]?.[0]?.signal).toBe(controller.signal)
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('publishes what a cancelled run already produced', async () => {
+    const { cwd, folderUri, io } = await createFolder()
+    const partial = runResultWith([
+      { filePath: join(cwd, 'date.ts'), message: 'paid for before cancel', ruleId: 'r', severity: 'warn' },
+    ])
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(
+      new alintCore.AlintAbortError(partial),
+    )
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await folder.runExplicit({})
+
+      expect([...folder.diagnostics.values()].flat()[0]?.message).toBe('paid for before cancel')
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+})
+
+describe('folderSession run concurrency', () => {
+  it('runs one explicit run at a time', async () => {
+    // The cache file is rewritten whole, so two runs at once discard each other's paid results.
+    const { folderUri, io } = await createFolder()
+    const order: string[] = []
+    let releaseFirst: () => void = () => {}
+    const firstStarted = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const runAlint = vi.spyOn(alintCore, 'runAlint')
+      .mockImplementationOnce(async () => {
+        order.push('first start')
+        await firstStarted
+        order.push('first end')
+        return runResultWith([])
+      })
+      .mockImplementationOnce(async () => {
+        order.push('second start')
+        return runResultWith([])
+      })
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      const first = folder.runExplicit({})
+      const second = folder.runExplicit({})
+
+      await new Promise(resolve => setTimeout(resolve, 20))
+      releaseFirst()
+      await Promise.all([first, second])
+
+      expect(order).toEqual(['first start', 'first end', 'second start'])
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('skips a cache pass while an explicit run is in flight', async () => {
+    // The explicit run is already publishing newer diagnostics. A cache read would publish older
+    // values over them.
+    const { folderUri, io } = await createFolder()
+    let release: () => void = () => {}
+    const held = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const runAlint = vi.spyOn(alintCore, 'runAlint')
+      .mockImplementationOnce(async () => {
+        await held
+        return runResultWith([])
+      })
+      .mockResolvedValue(runResultWith([]))
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      const explicit = folder.runExplicit({})
+      await new Promise(resolve => setTimeout(resolve, 20))
+
+      await folder.refreshFromCache()
+
+      expect(runAlint).toHaveBeenCalledTimes(1)
+
+      release()
+      await explicit
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+})
+
+describe('folderSession.clearCache', () => {
+  it('deletes the cache file and reports every document it emptied', async () => {
+    const { cwd, folderUri, io } = await createFolder()
+    const dateUri = pathToFileURL(join(cwd, 'date.ts')).toString()
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([
+      { filePath: join(cwd, 'date.ts'), message: 'cached', ruleId: 'r', severity: 'warn' },
+    ]))
+    const folder = await createFolderSession({ folderUri, io })
+    const cachePath = join(await realpath(cwd), '.project-alintcache')
+
+    await writeFile(cachePath, '{}')
+
+    try {
+      await folder.refreshFromCache()
+      expect(folder.diagnostics.has(dateUri)).toBe(true)
+
+      const changed = await folder.clearCache()
+
+      expect(changed).toEqual([dateUri])
+      expect(folder.diagnostics.size).toBe(0)
+      await expect(readFile(cachePath, 'utf8')).rejects.toThrow()
+    }
+    finally {
+      runAlint.mockRestore()
+      await folder.dispose()
+    }
+  })
+
+  it('succeeds when no cache file was ever written', async () => {
+    // A project that has never run, or one with caching turned off, has no file to delete.
+    const { folderUri, io } = await createFolder()
+    const folder = await createFolderSession({ folderUri, io })
+
+    try {
+      await expect(folder.clearCache()).resolves.toEqual([])
+    }
+    finally {
+      await folder.dispose()
+    }
   })
 })

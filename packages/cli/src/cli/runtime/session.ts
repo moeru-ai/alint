@@ -1,5 +1,6 @@
 import type {
   AlintConfig,
+  NormalizedRunnerCacheConfig,
   ProgressReporter,
   RunnerConfig,
   RunResult,
@@ -10,7 +11,7 @@ import type { LintTargets } from '../commands/lint/discovery'
 import type { CliIo } from '../types'
 
 import { loadAlintConfig } from '@alint-js/config'
-import { runAlint } from '@alint-js/core'
+import { normalizeRunnerCacheConfig, runAlint } from '@alint-js/core'
 
 import { loadRunSetupConfig } from '../commands/config/setup-config'
 import { findLintTargets } from '../commands/lint/discovery'
@@ -26,6 +27,8 @@ export interface CreateRunSessionOptions {
 }
 
 export interface RunSession {
+  /** Where this project's cache file is, and whether the project uses one. */
+  cache: NormalizedRunnerCacheConfig
   config: AlintConfig
   cwd: string
   defaultModel?: string
@@ -74,7 +77,10 @@ export async function createRunSession(
   const { setupConfig } = runtime
   let shutdown: Promise<void> | undefined
 
+  const runner = mergeRunnerConfigs(setupConfig.runner, resolveConfigRunner(config))
+
   return {
+    cache: normalizeRunnerCacheConfig(runner?.cache, io.cwd),
     config,
     cwd: io.cwd,
     defaultModel,
@@ -103,7 +109,7 @@ export async function createRunSession(
         signal: runOptions.signal,
       })
     },
-    runner: mergeRunnerConfigs(setupConfig.runner, resolveConfigRunner(config)),
+    runner,
     setupConfig,
     // Two owners can dispose the same session. Shut the gateway down only once.
     shutdown: () => shutdown ??= runtime.shutdown(),

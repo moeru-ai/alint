@@ -1,57 +1,84 @@
 # `@alint-js/vscode`
 
-VS Code client for alint. It starts `alint lsp` and lets the diagnostics flow; everything else
-happens in the server.
+The VS Code client for alint. It starts `alint lsp` and displays the diagnostics the server
+publishes. All analysis happens in the server.
 
 ## What it does
 
-- Resolves the alint executable, in order: the `alint.path` setting, `node_modules/.bin/alint` in a
-  workspace folder, then `alint` on `PATH`.
-- Starts it as `alint lsp` over stdio and holds one `LanguageClient`.
-- Shows one error naming all three locations if none of them resolve.
+- Finds the alint executable, in this order: the `alint.path` setting, `node_modules/.bin/alint` in
+  a workspace folder, then `alint` on `PATH`. If none of them resolve, it reports one error that
+  names all three locations.
+- Starts that executable as `alint lsp` over stdio and keeps one `LanguageClient`.
+- Adds the run and clear-cache commands to the command palette. The server performs the run,
+  reports its progress, and handles cancellation. The extension forwards the request, and asks for
+  confirmation before the cache is cleared.
 
-The server is the user's own installed alint, running on the user's own Node. That is what keeps
-its cwd, config discovery, and cache keys identical to a terminal run — the editor and the CLI read
-the same cache file, which is the whole point of shipping the server as a CLI subcommand.
+The server is the alint the workspace installs, running on the user's own Node. Its working
+directory, config discovery, and cache keys therefore match a terminal run, and both read the same
+cache file.
 
 ## How to use it
 
 The extension activates when a workspace contains an `alint.config.*` file. A workspace that does
-not use alint never spawns a server.
+not use alint starts no server.
 
 ```jsonc
-// .vscode/settings.json — only needed for a non-standard install
+// .vscode/settings.json - only needed for a non-standard installation
 {
   "alint.path": "/usr/local/bin/alint"
 }
 ```
 
-To run it from source, open this repository in the Extension Development Host (F5) with a warm
-`.alintcache`, open a file that has a cached diagnostic, and it appears. The `alint` output channel
-carries the server's log.
+To run it from a checkout, build the extension and open a project with it. The build writes the
+extension manifest into `dist`, so the extension development path is `dist` and not the package
+root.
 
 ```sh
 pnpm -F @alint-js/vscode build
+code --extensionDevelopmentPath=apps/vscode/dist /path/to/your/project
 ```
+
+The `alint` output channel contains the server log.
 
 ## When to use it
 
-- You want alint findings as squiggles and in the Problems panel.
-- You already run alint from a terminal and want the results you have already paid for, for free.
+- You want alint diagnostics underlined in the editor and listed in the Problems panel.
+- You already run alint in a terminal, and you want those results in the editor without paying for
+  them again.
 
 ## When not to use it
 
-- You want lint-on-keystroke. alint never runs a model on its own; the passive display is
-  cache-only, and runs that spend tokens are explicit.
-- You are not in VS Code. The server works in any LSP editor — point it at `alint lsp` directly
-  (`cmd = { 'alint', 'lsp' }` in Neovim). Only the status bar is VS Code specific.
-- Your cache is cold. Passive display has nothing to show until the first real run.
+- You want analysis on every keystroke. alint never calls a model on its own. The editor shows
+  cached diagnostics, and a run that spends tokens is always explicit.
+- You do not use VS Code. The server works in any editor with LSP support: start `alint lsp`
+  directly, for example `cmd = { 'alint', 'lsp' }` in Neovim. Only the status bar is specific to
+  VS Code.
+- Your cache is empty. There is nothing to display until the first run.
 
-## Status
+## Roadmap
 
-Group 1 of the VS Code support plan: diagnostics appear on workspace load. No status bar, no
-commands, and no run controls yet.
+### Available
 
-Marketplace packaging is not done. Note for that work: `name` is currently the pnpm workspace name
-`@alint-js/vscode`, and the marketplace requires `^[a-z0-9][a-z0-9\-]*$`, so it has to change
-together with the `publisher` field when the extension is first packaged.
+- Diagnostics on workspace load, refreshed when a file is saved
+- `alint: Run on Current File` and `alint: Run on Workspace`, with progress and a cancel button
+- `alint: Clear Cache`, behind a confirmation
+- Executable resolution: the `alint.path` setting, the workspace install, then `PATH`
+
+### Planned
+
+- A status bar with the number of checks that need a run, and the tokens a run spends
+- A prompt when the workspace has no config or no model provider
+
+Everything else an editor shows comes from `alint lsp`, which serves any LSP editor. Work on the
+server is tracked with [alint](https://github.com/moeru-ai/alint) itself, not here.
+
+## Packaging notes
+
+The npm package name and the extension identifier are different things, and they cannot share one
+file: VS Code builds the identifier from `publisher` and `name`, and the marketplace rejects a
+scoped name. This package keeps the workspace name `@alint-js/vscode`, declares the identity under
+a `vscode` key, and the build writes `dist/package.json` with `moeru-ai.alint`.
+
+Configure the extension host and `vsce` to use `dist`, not the package root. The bundle includes
+everything except `vscode`, which the host provides, so the emitted manifest declares no
+dependencies and the package needs no `node_modules`.

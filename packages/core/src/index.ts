@@ -22,6 +22,8 @@ export type {
   SetupConfig,
   SetupModelDefinition,
 } from './config/types'
+export { normalizeRunnerCacheConfig } from './core/cache'
+export type { NormalizedRunnerCacheConfig } from './core/cache'
 export { stableHash } from './core/hash'
 export {
   createBuiltInLanguageRegistry,

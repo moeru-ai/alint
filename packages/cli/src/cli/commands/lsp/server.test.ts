@@ -58,7 +58,7 @@ describe('startLspServer', () => {
 
     expect(response.id).toBe(1)
     expect(response.result?.capabilities.executeCommandProvider?.commands)
-      .toEqual(['alint.runFile', 'alint.runWorkspace'])
+      .toEqual(['alint.clearCache', 'alint.runFile', 'alint.runWorkspace'])
     expect(response.result?.capabilities.executeCommandProvider?.workDoneProgress).toBe(true)
     expect(response.result?.capabilities.workspace?.workspaceFolders)
       .toEqual({ changeNotifications: true, supported: true })

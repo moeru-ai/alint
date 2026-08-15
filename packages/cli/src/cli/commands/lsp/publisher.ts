@@ -14,14 +14,14 @@ export interface Publisher {
 /**
  * Collects document URIs and publishes each one once per window, open documents first.
  *
- * An LSP publish carries a whole document, so one publish per finding would send the same document
- * many times. A workspace pass can queue thousands of documents, and the open one must not wait
- * for the rest.
+ * An LSP publish contains a whole document, so one publish per diagnostic would send the same
+ * document many times. A workspace pass can queue thousands of documents, and the open one must
+ * not wait for the rest.
  */
 export function createPublisher(options: CreatePublisherOptions): Publisher {
-  // `TextDocuments` from `vscode-languageserver` also tracks open documents, but it keeps the text
-  // of each one and needs `vscode-languageserver-textdocument` to build them. This server never
-  // reads file content, and it declares `change: None`, so a set of URIs is the whole requirement.
+  // `TextDocuments` from `vscode-languageserver` also tracks open documents. It keeps the text of
+  // each one and needs `vscode-languageserver-textdocument` to build them. This server reads no
+  // file content and declares `change: None`, so a set of URIs is enough.
   const open = new Set<string>()
   const pending = new Set<string>()
   let timer: ReturnType<typeof setTimeout> | undefined

@@ -1,10 +1,10 @@
-import type { RunResult } from '@alint-js/core'
+import type { ProgressSnapshot, RunResult } from '@alint-js/core'
 import type { Diagnostic as LspDiagnostic } from 'vscode-languageserver'
 
 import type { RunSession } from '../../runtime/session'
 import type { CliIo } from '../../types'
 
-import { realpath } from 'node:fs/promises'
+import { realpath, rm } from 'node:fs/promises'
 import { join, relative, sep } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
@@ -25,11 +25,6 @@ export interface CreateFolderSessionOptions {
 }
 
 export interface FolderSession {
-  cwd: string
-  /** Document URI to its diagnostics. A workspace pass replaces the whole map. */
-  readonly diagnostics: ReadonlyMap<string, LspDiagnostic[]>
-  dispose: () => Promise<void>
-  folderUri: string
   /**
    * Re-reads one file and returns the document URIs to publish.
    *
@@ -37,12 +32,40 @@ export interface FolderSession {
    * the usual result after an edit: the changed target misses the cache and its job is skipped.
    * The caller must publish the empty list, or the editor keeps showing the old diagnostics.
    */
+  /**
+   * Deletes the cache file and drops every diagnostic. Returns the document URIs to publish.
+   *
+   * This throws away diagnostics the user paid for. Only an explicit run can produce them again.
+   */
+  clearCache: () => Promise<string[]>
+  cwd: string
+  /** Document URI to its diagnostics. A workspace pass replaces the whole map. */
+  readonly diagnostics: ReadonlyMap<string, LspDiagnostic[]>
+  dispose: () => Promise<void>
+  folderUri: string
   refreshFile: (uri: string) => Promise<string[]>
   refreshFromCache: () => Promise<void>
   /** Builds a new run session, which is how the config on disk is re-read. */
   reloadConfig: () => Promise<void>
+  /**
+   * Runs the rules and calls models. This is the only path that spends tokens.
+   *
+   * Pass no files to run the whole folder. Pass document URIs to run only those files, without
+   * project rules.
+   *
+   * One folder runs one set of rules at a time. The cache file is rewritten whole, so two runs at
+   * once discard each other's results.
+   */
+  runExplicit: (options: RunExplicitOptions) => Promise<void>
   /** Requests a whole-workspace pass. Requests that arrive together produce one pass. */
   scheduleWorkspacePass: () => void
+}
+
+export interface RunExplicitOptions {
+  files?: string[]
+  /** Called as each job starts, with the run totals and the file that job reads. */
+  onProgress?: (progress: ProgressSnapshot, inputPath: string) => void
+  signal?: AbortSignal
 }
 
 /**
@@ -64,6 +87,8 @@ export async function createFolderSession(
   let session = await createRunSession(runIo)
   let diagnostics: Map<string, LspDiagnostic[]> = new Map()
   let scheduled: ReturnType<typeof setTimeout> | undefined
+  let explicitRun: Promise<void> = Promise.resolve()
+  let explicitRunning = false
 
   const replaceMap = (next: Map<string, LspDiagnostic[]>): string[] => {
     // A document that lost its last diagnostic must still be published, as an empty list.
@@ -73,7 +98,65 @@ export async function createFolderSession(
     return [...changed]
   }
 
+  const runOnce = async (runOptions: RunExplicitOptions): Promise<void> => {
+    const runPaths = runOptions.files
+      ?.map(uri => toRunPath(uri, paths))
+      .filter(path => path !== undefined)
+    const changed = new Set<string>()
+
+    const merge = (result: RunResult): void => {
+      for (const [uri, list] of groupByUri(result, paths)) {
+        diagnostics.set(uri, list)
+        changed.add(uri)
+      }
+    }
+
+    explicitRunning = true
+
+    try {
+      merge(await session.run({
+        files: runPaths,
+        progress: {
+          // `onDiagnostic` fires while the run continues. A workspace run takes minutes, so the
+          // server publishes each diagnostic when it arrives.
+          onDiagnostic: ({ diagnostic }) => {
+            const uri = toDocumentUri(diagnostic.filePath, paths)
+
+            diagnostics.set(uri, [...diagnostics.get(uri) ?? [], toLspDiagnostic(diagnostic)])
+            changed.add(uri)
+          },
+          onJobStart: ({ job, progress }) => runOptions.onProgress?.(progress, job.inputPath),
+        },
+        // The user asked for these files. A project rule would plan the whole project.
+        projectTargets: runPaths === undefined ? undefined : false,
+        runner: session.runner,
+        signal: runOptions.signal,
+      }))
+    }
+    catch (error) {
+      if (!(error instanceof AlintRunError) && !(error instanceof AlintRunCancelledError)) {
+        throw error
+      }
+
+      // A cancelled or failed run keeps what it produced. Those diagnostics were paid for.
+      merge(error.result)
+    }
+    finally {
+      explicitRunning = false
+
+      if (changed.size > 0) {
+        options.onChanged?.([...changed])
+      }
+    }
+  }
+
   return {
+    clearCache: async () => {
+      // `rm` with `force` so a project that never ran, or has caching turned off, is not an error.
+      await rm(session.cache.location, { force: true })
+
+      return replaceMap(new Map())
+    },
     cwd,
     get diagnostics() {
       return diagnostics
@@ -91,7 +174,7 @@ export async function createFolderSession(
     refreshFile: async (uri) => {
       const filePath = toRunPath(uri, paths)
 
-      if (filePath === undefined) {
+      if (filePath === undefined || explicitRunning) {
         return []
       }
 
@@ -113,6 +196,10 @@ export async function createFolderSession(
       return [...changed]
     },
     refreshFromCache: async () => {
+      if (explicitRunning) {
+        return
+      }
+
       replaceMap(groupByUri(await runFromCache(session), paths))
     },
     reloadConfig: async () => {
@@ -122,6 +209,14 @@ export async function createFolderSession(
 
       // Close the old session last. If the new config fails to load, the folder keeps a usable one.
       await replaced.shutdown()
+    },
+    runExplicit: (runOptions) => {
+      // Wait for the run in flight. A failed run must not stop the runs behind it.
+      explicitRun = explicitRun
+        .catch(() => {})
+        .then(() => runOnce(runOptions))
+
+      return explicitRun
     },
     scheduleWorkspacePass: () => {
       if (scheduled !== undefined) {
@@ -133,6 +228,10 @@ export async function createFolderSession(
 
         void (async () => {
           try {
+            if (explicitRunning) {
+              return
+            }
+
             options.onChanged?.(replaceMap(groupByUri(await runFromCache(session), paths)))
           }
           catch (error) {
@@ -181,7 +280,7 @@ async function runFromCache(
     })
   }
   catch (error) {
-    // A failed run still carries the diagnostics it produced. Without them, one unreadable file
+    // A failed run still returns the diagnostics it produced. Without them, one unreadable file
     // clears every diagnostic in the workspace.
     if (error instanceof AlintRunError || error instanceof AlintRunCancelledError) {
       return error.result
