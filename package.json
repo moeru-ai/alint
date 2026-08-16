@@ -7,7 +7,7 @@
   "scripts": {
     "alint": "pnpm -F @alint-js/cli run alint",
     "build": "pnpm -r run build",
-    "build:codex-plugin": "tsdown --config plugins/codex-plugin-alint/tsdown.config.ts",
+    "build:codex-plugin": "pnpm -F @alint-js/codex-plugin build",
     "test": "vitest",
     "test:run": "vitest run",
     "test:codex-plugin": "vitest run --config plugins/codex-plugin-alint/vitest.config.ts",

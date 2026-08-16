@@ -1,8 +1,8 @@
-import type { RunResult, StopGateTarget } from '@alint-js/core'
+import type { AlintRunFailure, RunResult, StopGateTarget } from '@alint-js/core'
 
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
-import { mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, readdir, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -16,6 +16,10 @@ export interface StopGateReport {
   cwd: string
   diagnostics: RunResult['diagnostics']
   execution: RunResult['execution']
+  failure?: {
+    details: AlintRunFailure[]
+    message: string
+  }
   files: string[]
   schemaVersion: 1
   target: StopGateTarget
@@ -47,7 +51,8 @@ export async function writeStopGateReport(
   const reportPath = getReportPath(sessionId)
   const tempPath = join(sessionDirectory, `report-${randomUUID()}.tmp`)
   await mkdir(sessionDirectory, { recursive: true })
-  await writeFile(tempPath, content, 'utf8')
+  await writeFile(tempPath, content, { encoding: 'utf8', mode: 0o644 })
+  await chmod(tempPath, 0o644)
   await rename(tempPath, reportPath)
   await enforceReportBudget(reportPath)
   return reportPath

@@ -1,6 +1,6 @@
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
+import { chmod, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +9,7 @@ import { x } from 'tinyexec'
 import { describe, expect, it, onTestFinished } from 'vitest'
 
 const bundledHook = fileURLToPath(new URL('../dist/stop-gate.mjs', import.meta.url))
+const bundledLauncher = fileURLToPath(new URL('../dist/stop-gate-launcher.mjs', import.meta.url))
 const hookManifest = fileURLToPath(new URL('../hooks/hooks.json', import.meta.url))
 
 type RepositoryActivation
@@ -31,17 +32,43 @@ describe('bundled Stop hook', () => {
     const handler = manifest.hooks.Stop[0]?.hooks[0]
 
     // Codex defines CLAUDE_PLUGIN_ROOT as an official compatibility alias for its PLUGIN_ROOT variable.
-    expect(handler?.command).toBe(`node "${'$'}{CLAUDE_PLUGIN_ROOT}/dist/stop-gate.mjs"`)
+    expect(handler?.command).toBe(`node "${'$'}{CLAUDE_PLUGIN_ROOT}/dist/stop-gate-launcher.mjs"`)
     expect(handler).not.toHaveProperty('args')
   })
 
   it('contains no external runtime imports', async () => {
-    const source = await readFile(bundledHook, 'utf8')
-    const imports = [...source.matchAll(/^import .*? from ["'](.+?)["'];?$/gmu)]
+    const sources = await Promise.all([
+      readFile(bundledHook, 'utf8'),
+      readFile(bundledLauncher, 'utf8'),
+    ])
+    const imports = sources.flatMap(source => [...source.matchAll(/^import .*? from ["'](.+?)["'];?$/gmu)])
       .map(match => match[1])
       .filter(specifier => !specifier?.startsWith('node:'))
 
     expect(imports).toEqual([])
+  })
+
+  it('records stderr when the hook bundle fails before its runtime starts', async () => {
+    const systemTemp = await mkdtemp(join(tmpdir(), 'alint-hook-system-temp-'))
+    const launcherDirectory = await mkdtemp(join(tmpdir(), 'alint-hook-launcher-'))
+    onTestFinished(() => rm(systemTemp, { force: true, recursive: true }))
+    onTestFinished(() => rm(launcherDirectory, { force: true, recursive: true }))
+    const isolatedLauncher = join(launcherDirectory, 'stop-gate-launcher.mjs')
+    await copyFile(bundledLauncher, isolatedLauncher)
+
+    const result = await runLauncher(isolatedLauncher, systemTemp)
+    const fatalDirectory = join(systemTemp, 'alint-stop-gate', 'fatal')
+    const fatalEntries = await readdir(fatalDirectory)
+    const fatalContent = await readFile(join(fatalDirectory, fatalEntries[0] ?? ''), 'utf8')
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toContain('Stop Gate child process exited before returning a hook decision')
+    expect(fatalEntries).toHaveLength(1)
+    expect(fatalContent).toContain('context: Stop Gate child process exited before returning a hook decision')
+    expect(fatalContent).toContain('exit code: 1')
+    expect(fatalContent).toContain('MODULE_NOT_FOUND')
+    expect(fatalContent).toContain('stop-gate.mjs')
   })
 
   it('is silent when the Git repository has no alint project config', async () => {
@@ -104,19 +131,35 @@ describe('bundled Stop hook', () => {
     const fatalPath = join(fatalDirectory, fatalEntry ?? '')
     const fatalContent = await readFile(fatalPath, 'utf8')
     const fatalLines = fatalContent.trimEnd().split('\n')
+    const detail = fatalLines[2]?.slice('detail: '.length)
 
     expect(result.exitCode).toBe(1)
     expect(result.stdout).toBe('')
-    expect(result.stderr).toContain('alint-plugin: Stop Gate could not read Codex hook input:')
     expect(fatalEntry).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-\d{3}Z-\d+\.log$/u)
-    expect(result.stderr).toContain(`Diagnostic saved to "${fatalPath}".`)
+    expect(result.stderr).toBe([
+      `alint-plugin: Stop Gate hook runtime error. Could not read Codex hook input: ${detail}.`,
+      `Read the error details at "${fatalPath}", then explain to the user how to fix the hook failure.`,
+      '',
+    ].join('\n'))
     expect(fatalLines[0]).toMatch(/^timestamp: .+$/u)
-    expect(fatalLines[1]).toBe('context: could not read Codex hook input')
+    expect(fatalLines[1]).toBe('context: Could not read Codex hook input')
     expect(fatalLines[2]).toMatch(/^detail: .+$/u)
 
     if (process.platform !== 'win32') {
-      expect((await stat(fatalPath)).mode & 0o777).toBe(0o600)
+      expect((await stat(fatalPath)).mode & 0o777).toBe(0o644)
     }
+  })
+
+  it('explains when a fatal diagnostic cannot be saved', async () => {
+    const systemTemp = await mkdtemp(join(tmpdir(), 'alint-hook-system-temp-'))
+    onTestFinished(() => rm(systemTemp, { force: true, recursive: true }))
+    await writeFile(join(systemTemp, 'alint-stop-gate'), 'blocks the diagnostic directory', 'utf8')
+
+    const result = await runMalformedHook(systemTemp)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.stdout).toBe('')
+    expect(result.stderr).toMatch(/^alint-plugin: Stop Gate hook runtime error\. Could not read Codex hook input: .+\.\nThe error diagnostic could not be saved: .+\. Explain this failure to the user\.\n$/u)
   })
 
   it('keeps fatal diagnostics within the 10 MiB aggregate budget', async () => {
@@ -184,7 +227,10 @@ describe('bundled Stop hook', () => {
 
     expect(result.exitCode).toBe(0)
     expect(decision.decision).toBe('block')
-    expect(decision.reason).toBe('alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: The repository-local alint could not read Stop Gate configuration due to exit code 1: Error: config probe failed. Run `alint config integrations stop-gate show` manually.')
+    expect(decision.reason).toBe([
+      'alint-plugin: Runtime error: The repository-local alint could not read Stop Gate configuration due to exit code 1: Error: config probe failed. Run `alint config integrations stop-gate show` manually.',
+      'Do not attempt to fix it yourself. Explain the error to the user and suggest how to fix it.',
+    ].join('\n'))
   })
 
   it('blocks the first warning round and emits a system reminder on the next round', async () => {
@@ -244,7 +290,9 @@ describe('bundled Stop hook', () => {
     const pluginData = await mkdtemp(join(tmpdir(), 'alint-hook-data-'))
     const result = await runHook(cwd, pluginData, `stderr-${randomUUID()}`)
     const decision = JSON.parse(result.stdout) as { decision?: string, reason?: string }
-    const error = decision.reason?.split('following error: ', 2)[1] ?? ''
+    const error = decision.reason
+      ?.split('alint-plugin: Runtime error: ', 2)[1]
+      ?.split('\nDo not attempt to fix it yourself.', 2)[0] ?? ''
     const stderr = error.split('exit code 1: ', 2)[1] ?? ''
 
     expect(result.exitCode).toBe(0)
@@ -379,7 +427,7 @@ async function runHook(
   stopHookActive = false,
   env: NodeJS.ProcessEnv = {},
 ) {
-  return x(process.execPath, [bundledHook], {
+  return x(process.execPath, [bundledLauncher], {
     nodeOptions: {
       // NOTICE: Codex defines CLAUDE_PLUGIN_DATA as an official compatibility alias for its PLUGIN_DATA variable.
       env: { ...process.env, ...env, CLAUDE_PLUGIN_DATA: pluginData },
@@ -396,8 +444,31 @@ async function runHook(
   })
 }
 
+function runLauncher(launcher: string, systemTemp: string) {
+  return x(process.execPath, [launcher], {
+    nodeOptions: {
+      env: {
+        ...process.env,
+        // NOTICE: Codex defines CLAUDE_PLUGIN_DATA as an official compatibility alias for its PLUGIN_DATA variable.
+        CLAUDE_PLUGIN_DATA: systemTemp,
+        TEMP: systemTemp,
+        TMP: systemTemp,
+        TMPDIR: systemTemp,
+      },
+    },
+    stdin: JSON.stringify({
+      cwd: systemTemp,
+      hook_event_name: 'Stop',
+      session_id: `launcher-${randomUUID()}`,
+      stop_hook_active: false,
+      turn_id: randomUUID(),
+    }),
+    throwOnError: false,
+  })
+}
+
 function runMalformedHook(systemTemp: string) {
-  return x(process.execPath, [bundledHook], {
+  return x(process.execPath, [bundledLauncher], {
     nodeOptions: {
       env: {
         ...process.env,

@@ -26,7 +26,7 @@ export function applyResult(
       lastFindings: undefined,
       runtimeFailures: state.runtimeFailures + 1,
     })
-    const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${envelope.message}`
+    const message = runtimeErrorMessage(envelope)
     return {
       decision: next.runtimeFailures === 1
         ? { decision: 'block', reason: message }
@@ -77,9 +77,17 @@ export function applyResult(
 export function lintLimitDecision(state: SessionState): HookDecision {
   return {
     systemMessage: state.lastFindings === undefined
-      ? ''
+      ? `alint-plugin: Stop Gate reached the maximum of ${maximumLintRounds} successful lint rounds for this session. The latest lint completed with no findings, so no report was written.`
       : `alint-plugin: ${state.lastFindings.errorCount} error(s), ${state.lastFindings.warningCount} warning(s). Review the report at "${state.lastFindings.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.`,
   }
+}
+
+export function runtimeErrorMessage(error: { message: string, reportPath?: string }): string {
+  const instruction = error.reportPath === undefined
+    ? 'Do not attempt to fix it yourself. Explain the error to the user and suggest how to fix it.'
+    : `Do not attempt to fix it yourself. Read the error details at "${error.reportPath}", then explain to the user how to fix the failures.`
+
+  return `alint-plugin: Runtime error: ${error.message}\n${instruction}`
 }
 
 function updateState(

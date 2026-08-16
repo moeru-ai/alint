@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import process$1, { cwd } from "node:process";
-import { closeSync, constants, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
+import { chmodSync, closeSync, constants, mkdirSync, openSync, readFileSync, readSync, readdirSync, statSync, unlinkSync, writeFileSync, writeSync } from "node:fs";
 import { Buffer as Buffer$1 } from "node:buffer";
 import { tmpdir } from "node:os";
 import { basename, delimiter, dirname, join, normalize, resolve } from "node:path";
@@ -28,7 +28,18 @@ const errorMessageFrom = (err) => isErrorLike(err) ? err.message : err == null ?
 //#region src/fatal-diagnostic.ts
 const budgetBytes = 10485760;
 const directory = join(tmpdir(), "alint-stop-gate", "fatal");
+const terminalPunctuation = /[.!?]$/u;
 const truncationMarker = "\nNOTICE: fatal diagnostic truncated to fit the 10 MiB budget.\n";
+function reportFatalFailure(context, error) {
+	const detail = errorMessageFrom(error) ?? "unknown error";
+	const diagnostic = writeFatalDiagnostic(context, detail);
+	const failureDetail = `${context}: ${detail}`;
+	const failure = `alint-plugin: Stop Gate hook runtime error. ${failureDetail}${terminalPunctuation.test(failureDetail) ? "" : "."}`;
+	const writeError = diagnostic.writeError ?? "unknown error";
+	const guidance = diagnostic.path === void 0 ? `The error diagnostic could not be saved: ${writeError}${terminalPunctuation.test(writeError) ? "" : "."} Explain this failure to the user.` : `Read the error details at "${diagnostic.path}", then explain to the user how to fix the hook failure.${diagnostic.cleanupError === void 0 ? "" : ` Old diagnostic cleanup also failed: ${diagnostic.cleanupError}${terminalPunctuation.test(diagnostic.cleanupError) ? "" : "."}`}`;
+	writeSync(process$1.stderr.fd, `${failure}\n${guidance}\n`);
+	process$1.exitCode = 1;
+}
 function writeFatalDiagnostic(context, detail) {
 	const timestamp = (/* @__PURE__ */ new Date()).toISOString();
 	const fileName = `${timestamp.replaceAll(":", "-").replaceAll(".", "-")}-${process$1.pid}.log`;
@@ -40,8 +51,9 @@ function writeFatalDiagnostic(context, detail) {
 		});
 		writeFileSync(path, diagnosticContent(timestamp, context, detail), {
 			flag: "wx",
-			mode: 384
+			mode: 420
 		});
+		chmodSync(path, 420);
 	} catch (error) {
 		return { writeError: errorMessageFrom(error) ?? "unknown error" };
 	}
@@ -95,7 +107,7 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 			lastFindings: void 0,
 			runtimeFailures: state.runtimeFailures + 1
 		});
-		const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${envelope.message}`;
+		const message = runtimeErrorMessage(envelope);
 		return {
 			decision: next.runtimeFailures === 1 ? {
 				decision: "block",
@@ -131,7 +143,11 @@ function applyResult(state, envelope, now = /* @__PURE__ */ new Date()) {
 	};
 }
 function lintLimitDecision(state) {
-	return { systemMessage: state.lastFindings === void 0 ? "" : `alint-plugin: ${state.lastFindings.errorCount} error(s), ${state.lastFindings.warningCount} warning(s). Review the report at "${state.lastFindings.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.` };
+	return { systemMessage: state.lastFindings === void 0 ? `alint-plugin: Stop Gate reached the maximum of 9 successful lint rounds for this session. The latest lint completed with no findings, so no report was written.` : `alint-plugin: ${state.lastFindings.errorCount} error(s), ${state.lastFindings.warningCount} warning(s). Review the report at "${state.lastFindings.reportPath}" carefully. Act only on findings that are valid, valuable, and relevant to the current uncommitted changes. Do not make opportunistic changes merely to silence findings, such as deleting code, ignoring files, disabling rules, or changing the alint configuration. If you determine that none of reports are valid or valuable, just do nothing, next time the gate will allowing this turn to finish.` };
+}
+function runtimeErrorMessage(error) {
+	const instruction = error.reportPath === void 0 ? "Do not attempt to fix it yourself. Explain the error to the user and suggest how to fix it." : `Do not attempt to fix it yourself. Read the error details at "${error.reportPath}", then explain to the user how to fix the failures.`;
+	return `alint-plugin: Runtime error: ${error.message}\n${instruction}`;
 }
 function updateState(state, now, patch) {
 	return {
@@ -599,9 +615,10 @@ function parseEnvelope(stdout) {
 		...base,
 		status: value.status
 	} : void 0;
-	if (value.status === "runtime-error") return value.errorCount === 0 && value.warningCount === 0 && typeof value.message === "string" && value.message.length > 0 ? {
+	if (value.status === "runtime-error") return value.errorCount === 0 && value.warningCount === 0 && typeof value.message === "string" && value.message.length > 0 && (value.reportPath === void 0 || typeof value.reportPath === "string" && value.reportPath.length > 0) ? {
 		...base,
 		message: value.message,
+		...typeof value.reportPath === "string" ? { reportPath: value.reportPath } : {},
 		status: value.status
 	} : void 0;
 	if (value.status === "errors" || value.status === "warnings") return (value.status === "errors" ? value.errorCount > 0 : value.errorCount === 0 && value.warningCount > 0) && typeof value.findingsHash === "string" && /^[a-f0-9]{64}$/u.test(value.findingsHash) && typeof value.reportPath === "string" && value.reportPath.length > 0 ? {
@@ -870,15 +887,6 @@ function readHookInput() {
 	const input = readFileSync(0, "utf8").trim();
 	return input.length === 0 ? {} : JSON.parse(input);
 }
-function reportFatalFailure(context, error) {
-	const detail = errorMessageFrom(error) ?? "unknown error";
-	const diagnostic = writeFatalDiagnostic(context, detail);
-	const saved = diagnostic.path === void 0 ? "" : ` Diagnostic saved to "${diagnostic.path}".`;
-	const writeFailure = diagnostic.writeError === void 0 ? "" : ` Could not save the diagnostic: ${diagnostic.writeError}.`;
-	const cleanupFailure = diagnostic.cleanupError === void 0 ? "" : ` The diagnostic was saved, but old diagnostic cleanup failed: ${diagnostic.cleanupError}.`;
-	writeSync(process$1.stderr.fd, `alint-plugin: Stop Gate ${context}: ${detail}.${saved}${writeFailure}${cleanupFailure}\n`);
-	process$1.exitCode = 1;
-}
 function requiredString(value, message) {
 	if (value === void 0 || value.length === 0) throw new Error(message);
 	return value;
@@ -896,17 +904,17 @@ let parsedInput;
 try {
 	parsedInput = readHookInput();
 } catch (error) {
-	reportFatalFailure("could not read Codex hook input", error);
+	reportFatalFailure("Could not read Codex hook input", error);
 }
 if (parsedInput !== void 0) run(parsedInput).catch((error) => {
 	try {
-		const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${errorMessageFrom(error) ?? "unknown error"}`;
+		const message = runtimeErrorMessage({ message: errorMessageFrom(error) ?? "unknown error" });
 		emit(parsedInput?.stop_hook_active ? { systemMessage: message } : {
 			decision: "block",
 			reason: message
 		});
 	} catch (emitError) {
-		reportFatalFailure("could not return its hook failure decision", emitError);
+		reportFatalFailure("Could not return its hook failure decision", emitError);
 	}
 });
 async function run(input) {

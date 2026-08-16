@@ -74,6 +74,31 @@ async function runStopGateCommand(
       return 0
     }
 
+    if (lint.error !== undefined) {
+      const reportPath = await writeStopGateReport(options.sessionId, {
+        cwd,
+        diagnostics: lint.result.diagnostics,
+        execution: lint.result.execution,
+        failure: {
+          details: lint.error.failures,
+          message: lint.error.message,
+        },
+        files: lint.files,
+        schemaVersion: 1,
+        target: stopGate.target,
+        usage: lint.result.usage,
+      })
+      writeEnvelope(chunk => io.stdout.write(chunk), {
+        errorCount: 0,
+        message: lint.error.message,
+        reportPath,
+        schemaVersion: 2,
+        status: 'runtime-error',
+        warningCount: 0,
+      })
+      return 1
+    }
+
     const errorCount = lint.result.diagnostics.filter(diagnostic => diagnostic.severity === 'error').length
     const warningCount = lint.result.diagnostics.length - errorCount
 
@@ -115,7 +140,7 @@ async function runStopGateCommand(
         : errorMessageFrom(error) ?? 'unknown error'
     writeEnvelope(chunk => io.stdout.write(chunk), {
       errorCount: 0,
-      message: `Stop Gate runtime error: ${detail}`,
+      message: detail,
       schemaVersion: 2,
       status: 'runtime-error',
       warningCount: 0,

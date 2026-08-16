@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, writeFile } from 'node:fs/promises'
+import { mkdtemp, readdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -80,8 +80,35 @@ describe('integrations stop-gate', () => {
     const result = await run(cwd, sessionId)
 
     expect(result.exitCode).toBe(1)
-    expect(result.envelope.message).toMatch(/^Stop Gate runtime error:/u)
+    expect(result.envelope.message).not.toMatch(/^Stop Gate runtime error:/u)
     expect(result.envelope.status).toBe('runtime-error')
+  })
+
+  it('reports every failed rule execution with its causes and a structured report', async () => {
+    const cwd = await createRepository(failingRuleConfig())
+    const sessionId = `rule-failures-${randomUUID()}`
+
+    const result = await run(cwd, sessionId)
+
+    expect(result.exitCode).toBe(1)
+    expect(result.envelope.status).toBe('runtime-error')
+    expect(result.envelope.reportPath).toContain(sessionId)
+    expect(result.envelope.message).toBe('2 rule executions failed.')
+
+    const report = JSON.parse(await readFile(result.envelope.reportPath!, 'utf8')) as RuntimeFailureReport
+    expect(report.failure.message).toBe('2 rule executions failed.')
+    expect(report.failure.details).toHaveLength(2)
+    expect(report.failure.details[0]?.job.ruleId).toBe('test/first')
+    expect(report.failure.details[0]?.causes).toEqual([{
+      code: 'MODEL_OFFLINE',
+      message: 'model provider unavailable',
+    }])
+    expect(report.failure.details[1]?.job.ruleId).toBe('test/second')
+    expect(report.execution.failed).toBe(2)
+
+    if (process.platform !== 'win32') {
+      expect((await stat(result.envelope.reportPath!)).mode & 0o777).toBe(0o644)
+    }
   })
 
   it('silently allows a repository without dirty files', async () => {
@@ -126,6 +153,33 @@ describe('integrations stop-gate', () => {
     expect(result.envelope.status).toBe('warnings')
     expect(result.envelope.warningCount).toBe(3)
   })
+
+  it('records Stop Gate runs through the ordinary stats store', async () => {
+    const cwd = await createRepository(ruleConfig('warn'))
+    const configHome = await mkdtemp(join(tmpdir(), 'alint-stop-gate-stats-'))
+    const env = {
+      ...process.env,
+      BUILDKITE: '',
+      CI: '',
+      CIRCLECI: '',
+      GITHUB_ACTIONS: '',
+      GITLAB_CI: '',
+      TF_BUILD: '',
+      XDG_CONFIG_HOME: configHome,
+    }
+
+    const result = await run(cwd, `stats-${randomUUID()}`, env)
+    const statsDir = join(configHome, 'alint', 'stats')
+    const files = await readdir(statsDir)
+    const lines = (await readFile(join(statsDir, files[0]), 'utf8')).trim().split('\n')
+    const stat = JSON.parse(lines[0]) as Record<string, unknown>
+
+    expect(result.exitCode).toBe(0)
+    expect(files).toHaveLength(1)
+    expect(lines).toHaveLength(1)
+    expect(stat.cwd).toBe(cwd)
+    expect(stat).not.toHaveProperty('mode')
+  })
 })
 
 interface Envelope {
@@ -135,6 +189,17 @@ interface Envelope {
   reportPath?: string
   status: string
   warningCount: number
+}
+
+interface RuntimeFailureReport {
+  execution: { failed: number }
+  failure: {
+    details: Array<{
+      causes: Array<{ code?: string, message: string }>
+      job: { ruleId: string }
+    }>
+    message: string
+  }
 }
 
 async function createRepository(config: string, dirty = true): Promise<string> {
@@ -153,6 +218,39 @@ async function createRepository(config: string, dirty = true): Promise<string> {
   }
 
   return cwd
+}
+
+function failingRuleConfig(): string {
+  return `export default [{
+    integrations: { stopGate: { enabled: true } },
+  }, {
+    files: ['**/*.ts'],
+    plugins: {
+      test: {
+        rules: {
+          first: {
+            create: () => ({
+              onTargetFile: () => {
+                const cause = Object.assign(new Error('model provider unavailable'), { code: 'MODEL_OFFLINE' })
+                throw new Error('first rule failed', { cause })
+              },
+            }),
+          },
+          second: {
+            create: () => ({
+              onTargetFile: () => {
+                throw new Error('second rule failed')
+              },
+            }),
+          },
+        },
+      },
+    },
+    rules: {
+      'test/first': 'error',
+      'test/second': 'error',
+    },
+  }]\n`
 }
 
 async function git(cwd: string, args: string[]): Promise<void> {
@@ -221,7 +319,11 @@ function ruleConfig(severity: 'error' | 'warn', enabled = true): string {
   }]\n`
 }
 
-async function run(cwd: string, sessionId: string): Promise<{
+async function run(
+  cwd: string,
+  sessionId: string,
+  env: NodeJS.ProcessEnv = { ...process.env, CI: 'true' },
+): Promise<{
   envelope: Envelope
   exitCode: number
   stderr: string
@@ -237,7 +339,7 @@ async function run(cwd: string, sessionId: string): Promise<{
     sessionId,
   ], {
     cwd,
-    env: { ...process.env, CI: 'true' },
+    env,
     stderr: { write: chunk => stderr += chunk },
     stdout: { write: chunk => stdout += chunk },
   })

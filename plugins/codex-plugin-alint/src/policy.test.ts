@@ -53,13 +53,22 @@ describe('stop gate policy', () => {
     expect(lintLimitDecision(state).systemMessage).toContain('/tmp/report.json')
   })
 
+  it('explains when the lint limit is reached without a final report', () => {
+    const state = { ...emptyState(), lintRounds: 9 }
+
+    expect(lintLimitDecision(state).systemMessage).toBe('alint-plugin: Stop Gate reached the maximum of 9 successful lint rounds for this session. The latest lint completed with no findings, so no report was written.')
+  })
+
   it('tracks runtime failures independently and resets them after a lint', () => {
     const firstFailure = applyResult(emptyState(), runtimeEnvelope())
     const secondFailure = applyResult(firstFailure.state, runtimeEnvelope())
     const linted = applyResult(secondFailure.state, warningEnvelope())
 
     expect(firstFailure.decision.decision).toBe('block')
-    expect(firstFailure.decision.reason).toBe('alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: missing provider')
+    expect(firstFailure.decision.reason).toBe([
+      'alint-plugin: Runtime error: missing provider',
+      'Do not attempt to fix it yourself. Explain the error to the user and suggest how to fix it.',
+    ].join('\n'))
     expect(firstFailure.state.lintRounds).toBe(0)
     expect(firstFailure.state.runtimeFailures).toBe(1)
     expect(secondFailure.decision.decision).toBeUndefined()
@@ -67,6 +76,16 @@ describe('stop gate policy', () => {
     expect(secondFailure.state.runtimeFailures).toBe(2)
     expect(linted.state.lintRounds).toBe(1)
     expect(linted.state.runtimeFailures).toBe(0)
+  })
+
+  it('directs Codex to read a runtime error report before suggesting a fix', () => {
+    const failed = applyResult(emptyState(), runtimeEnvelope('/tmp/failure-report.json'))
+
+    expect(failed.decision.decision).toBe('block')
+    expect(failed.decision.reason).toBe([
+      'alint-plugin: Runtime error: 7 rule executions failed.',
+      'Do not attempt to fix it yourself. Read the error details at "/tmp/failure-report.json", then explain to the user how to fix the failures.',
+    ].join('\n'))
   })
 
   it('breaks findings continuity after a runtime failure', () => {
@@ -140,10 +159,11 @@ function hash(character: string): string {
   return character.repeat(64)
 }
 
-function runtimeEnvelope() {
+function runtimeEnvelope(reportPath?: string) {
   return {
     errorCount: 0,
-    message: 'missing provider',
+    message: reportPath === undefined ? 'missing provider' : '7 rule executions failed.',
+    ...(reportPath === undefined ? {} : { reportPath }),
     schemaVersion: 2 as const,
     status: 'runtime-error' as const,
     warningCount: 0,

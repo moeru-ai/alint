@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/stop-gate.mjs\"",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/stop-gate-launcher.mjs\"",
             "timeout": 86400,
             "statusMessage": "Running alint Stop Gate…"
           }

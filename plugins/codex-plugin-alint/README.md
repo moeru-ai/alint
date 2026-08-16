@@ -23,7 +23,8 @@ codex plugin marketplace add moeru-ai/alint \
 codex plugin add alint@alint
 ```
 
-Review and trust the Stop hook when Codex asks. The hook runs the bundled Node.js script in `dist/stop-gate.mjs`; that script discovers and invokes an `alint` CLI from the repository.
+Review and trust the Stop hook when Codex asks. Codex runs `dist/stop-gate-launcher.mjs`.
+The launcher runs `dist/stop-gate.mjs`, which finds and runs an `alint` CLI in the repository.
 
 ## Configure a repository
 
@@ -84,11 +85,19 @@ After the plugin reads an enabled configuration, it checks Git HEAD for the `dir
 
 The internal `integrations stop-gate` protocol exits `0` whenever alint successfully produces a result envelope, including envelopes containing error diagnostics. It exits `1` only for an alint runtime or configuration failure. The plugin converts either kind of result into a Codex Hook decision and exits `0`; Codex continuation is controlled by the structured Hook output, not by the inner alint process exit code.
 
-If the hook cannot parse Codex input or otherwise cannot return a structured decision, every non-zero exit writes a stable English diagnostic to stderr before the process ends. It also writes a `0600` diagnostic file under the system temporary directory at `alint-stop-gate/fatal/<timestamp>-<process-id>.log` and includes that path in stderr. The file contains the timestamp, failure context, and error detail, but not the raw Hook input. Fatal diagnostics share a 10 MiB aggregate budget; the oldest files are removed first. This fatal fallback is separate from recoverable runtime failures, which continue to use the structured Hook decision protocol above.
+If the child exits before it returns a Hook decision, the launcher records its exit code, signal, and stderr excerpt.
+The stderr excerpt is limited to 4 KiB. If the child already recorded the failure, the launcher does not create a duplicate diagnostic.
 
-The first successful lint with warnings blocks once so Codex evaluates the warnings. Later warning-only results are reminders. Error results block while the automatic correction loop is active. If two consecutive successful lints return the same diagnostic multiset, the second result becomes a non-blocking reminder instead. The fingerprint includes each diagnostic's rule, severity, file, location, message, and evidence; it ignores diagnostic order plus cache and model metadata. Clean, inactive, no-dirty-file, and runtime-error results break this consecutive-match chain. The plugin runs at most nine successful lint rounds per Codex session and keeps runtime/config failure counting separate.
+The runtime also records failures when it cannot parse Codex input or cannot return a decision. Each non-zero exit writes a stable English diagnostic to stderr.
+It also writes a `0644` diagnostic file under the system temporary directory at `alint-stop-gate/fatal/<timestamp>-<process-id>.log`.
+If saving fails, stderr reports that secondary failure.
+The diagnostic contains a timestamp, failure context, and error detail. It never contains the raw Hook input.
+Fatal diagnostics share a 10 MiB limit. The oldest files are removed first.
+This fatal fallback is separate from recoverable runtime failures. Those failures continue to use the structured Hook decision protocol above.
 
-Detailed reports are always read from the path supplied to Codex rather than inlined into the hook message. Reports live under the system temporary directory in `alint-stop-gate/<session-id>/report.json`. A single report over 100 MiB is an error; aggregate reports are kept within 100 MiB by deleting the oldest reports first.
+The first successful lint with warnings blocks once so Codex evaluates the warnings. Later warning-only results are reminders. Error results block while the automatic correction loop is active. If two consecutive successful lints return the same diagnostic multiset, the second result becomes a non-blocking reminder instead. The fingerprint includes each diagnostic's rule, severity, file, location, message, and evidence; it ignores diagnostic order plus cache and model metadata. Clean, inactive, no-dirty-file, and runtime-error results break this consecutive-match chain. The plugin runs at most nine successful lint rounds per Codex session and keeps runtime/config failure counting separate. Once that limit is reached, a retained findings report is still surfaced; if the latest lint was clean and no report exists, the plugin explicitly says that the ninth lint completed without findings and no report was written.
+
+Diagnostic findings and rule-execution failures are read from the report path supplied to Codex. A rule-execution runtime error tells Codex not to modify the repository, to read the structured report, and to explain a fix to the user. The report contains the partial diagnostics, execution counts, usage, and every serialized failure and cause. Runtime errors without a report tell Codex to explain the error and suggest a fix without modifying the repository. Reports live under the system temporary directory in `alint-stop-gate/<session-id>/report.json`. A single report over 100 MiB is an error; aggregate reports are kept within 100 MiB by deleting the oldest reports first.
 
 Small session-policy state is stored in `${CLAUDE_PLUGIN_DATA}/stop-gate/sessions-v2` and is shared only by the plugin. State older than 365 days is pruned whenever state is written.
 

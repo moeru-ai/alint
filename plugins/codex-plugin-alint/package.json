@@ -4,7 +4,7 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "build": "tsdown",
+    "build": "tsdown --config tsdown.config.ts && tsdown --config tsdown.launcher.config.ts",
     "test": "pnpm build && vitest run --config vitest.config.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

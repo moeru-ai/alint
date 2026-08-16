@@ -1,4 +1,4 @@
-import type { RunResult } from '@alint-js/core'
+import type { AlintConfig, RunResult } from '@alint-js/core'
 
 import type { CliIo } from '../types'
 
@@ -193,6 +193,31 @@ describe('createRunSession', () => {
         runner: { stats: false },
         signal,
       }))
+    }
+    finally {
+      runAlint.mockRestore()
+      await session.shutdown()
+    }
+  })
+
+  it('uses a preloaded config and resolved targets without reading project inputs again', async () => {
+    const io = await createTestIo()
+    const config: AlintConfig = []
+    const targets = { directories: ['virtual-directory'], files: ['missing.ts'] }
+    const startModelAdapters = vi.fn().mockResolvedValue({
+      setupConfig: { providers: [], version: 1 },
+      shutdown: () => Promise.resolve(),
+    })
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const session = await createRunSession(io, { config, startModelAdapters })
+
+    try {
+      await session.run({ targets })
+
+      expect(session.config).toBe(config)
+      expect(runAlint.mock.calls[0]?.[0]?.config).toBe(config)
+      expect(runAlint.mock.calls[0]?.[0]?.directories).toBe(targets.directories)
+      expect(runAlint.mock.calls[0]?.[0]?.files).toBe(targets.files)
     }
     finally {
       runAlint.mockRestore()

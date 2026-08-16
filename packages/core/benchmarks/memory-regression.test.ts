@@ -118,7 +118,7 @@ describe('run memory regressions', () => {
       running: 0,
       skipped: 0,
     })
-    expect(await readFile(cachePath, 'utf8')).toMatch(/^\{"alintVersion":"0\.3\.2","createdAt":"[^"]+","magic":"ALINT_CACHE","schemaVersion":2,"type":"metadata"\}\n/)
+    expect(await readFile(cachePath, 'utf8')).toMatch(/^\{"alintVersion":"0\.4\.0","createdAt":"[^"]+","magic":"ALINT_CACHE","schemaVersion":2,"type":"metadata"\}\n/)
   }, 120_000)
 
   it('terminates a hung child within its internal deadline and bounds diagnostics', async () => {

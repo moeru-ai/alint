@@ -8,8 +8,8 @@ import { readFileSync, writeSync } from 'node:fs'
 
 import { errorMessageFrom } from '@moeru/std'
 
-import { writeFatalDiagnostic } from './fatal-diagnostic'
-import { applyResult, lintLimitDecision, maximumLintRounds } from './policy'
+import { reportFatalFailure } from './fatal-diagnostic'
+import { applyResult, lintLimitDecision, maximumLintRounds, runtimeErrorMessage } from './policy'
 import { findGitRoot, hasProjectConfig, isHeadDetached } from './repository'
 import { resolveAlintStopGate } from './runner'
 import { createStateStore } from './state'
@@ -36,26 +36,6 @@ function readHookInput(): HookInput {
   return input.length === 0 ? {} : JSON.parse(input) as HookInput
 }
 
-function reportFatalFailure(context: string, error: unknown): void {
-  const detail = errorMessageFrom(error) ?? 'unknown error'
-  const diagnostic = writeFatalDiagnostic(context, detail)
-  const saved = diagnostic.path === undefined
-    ? ''
-    : ` Diagnostic saved to "${diagnostic.path}".`
-  const writeFailure = diagnostic.writeError === undefined
-    ? ''
-    : ` Could not save the diagnostic: ${diagnostic.writeError}.`
-  const cleanupFailure = diagnostic.cleanupError === undefined
-    ? ''
-    : ` The diagnostic was saved, but old diagnostic cleanup failed: ${diagnostic.cleanupError}.`
-
-  writeSync(
-    process.stderr.fd,
-    `alint-plugin: Stop Gate ${context}: ${detail}.${saved}${writeFailure}${cleanupFailure}\n`,
-  )
-  process.exitCode = 1
-}
-
 function requiredString(value: string | undefined, message: string): string {
   if (value === undefined || value.length === 0) {
     throw new Error(message)
@@ -80,20 +60,20 @@ try {
   parsedInput = readHookInput()
 }
 catch (error) {
-  reportFatalFailure('could not read Codex hook input', error)
+  reportFatalFailure('Could not read Codex hook input', error)
 }
 
 if (parsedInput !== undefined) {
   void run(parsedInput).catch((error) => {
     try {
-      const message = `alint-plugin: Stop Gate failed -- Do not attempt to fix it yourself; Tell the user to resolve the following error: ${errorMessageFrom(error) ?? 'unknown error'}`
+      const message = runtimeErrorMessage({ message: errorMessageFrom(error) ?? 'unknown error' })
       const hookFailureDecision: HookDecision = parsedInput?.stop_hook_active
         ? { systemMessage: message }
         : { decision: 'block', reason: message }
       emit(hookFailureDecision)
     }
     catch (emitError) {
-      reportFatalFailure('could not return its hook failure decision', emitError)
+      reportFatalFailure('Could not return its hook failure decision', emitError)
     }
   })
 }

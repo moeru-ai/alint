@@ -1,7 +1,7 @@
 import process from 'node:process'
 
 import { Buffer } from 'node:buffer'
-import { mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync } from 'node:fs'
+import { chmodSync, mkdirSync, readdirSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -9,12 +9,32 @@ import { errorMessageFrom } from '@moeru/std'
 
 const budgetBytes = 10 * 1024 * 1024
 const directory = join(tmpdir(), 'alint-stop-gate', 'fatal')
+const terminalPunctuation = /[.!?]$/u
 const truncationMarker = '\nNOTICE: fatal diagnostic truncated to fit the 10 MiB budget.\n'
 
 export interface FatalDiagnosticResult {
   cleanupError?: string
   path?: string
   writeError?: string
+}
+
+export function reportFatalFailure(context: string, error: unknown): void {
+  const detail = errorMessageFrom(error) ?? 'unknown error'
+  const diagnostic = writeFatalDiagnostic(context, detail)
+  const failureDetail = `${context}: ${detail}`
+  const failure = `alint-plugin: Stop Gate hook runtime error. ${failureDetail}${terminalPunctuation.test(failureDetail) ? '' : '.'}`
+  const writeError = diagnostic.writeError ?? 'unknown error'
+  const guidance = diagnostic.path === undefined
+    ? `The error diagnostic could not be saved: ${writeError}${terminalPunctuation.test(writeError) ? '' : '.'} Explain this failure to the user.`
+    : `Read the error details at "${diagnostic.path}", then explain to the user how to fix the hook failure.${diagnostic.cleanupError === undefined
+      ? ''
+      : ` Old diagnostic cleanup also failed: ${diagnostic.cleanupError}${terminalPunctuation.test(diagnostic.cleanupError) ? '' : '.'}`}`
+
+  writeSync(
+    process.stderr.fd,
+    `${failure}\n${guidance}\n`,
+  )
+  process.exitCode = 1
 }
 
 export function writeFatalDiagnostic(context: string, detail: string): FatalDiagnosticResult {
@@ -28,8 +48,9 @@ export function writeFatalDiagnostic(context: string, detail: string): FatalDiag
     mkdirSync(directory, { mode: 0o700, recursive: true })
     writeFileSync(path, diagnosticContent(timestamp, context, detail), {
       flag: 'wx',
-      mode: 0o600,
+      mode: 0o644,
     })
+    chmodSync(path, 0o644)
   }
   catch (error) {
     return { writeError: errorMessageFrom(error) ?? 'unknown error' }

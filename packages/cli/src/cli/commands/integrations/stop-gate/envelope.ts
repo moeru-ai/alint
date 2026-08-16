@@ -6,6 +6,7 @@ export type StopGateEnvelope
   }
   | StopGateEnvelopeBase & {
     message: string
+    reportPath?: string
     status: 'runtime-error'
   }
   | StopGateEnvelopeBase & {

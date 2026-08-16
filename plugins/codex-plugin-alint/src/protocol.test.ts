@@ -21,6 +21,7 @@ describe('stop gate protocol', () => {
     const runtimeError = parseEnvelope(JSON.stringify({
       errorCount: 0,
       message: 'failed',
+      reportPath: '/tmp/failure-report.json',
       schemaVersion: 2,
       status: 'runtime-error',
       warningCount: 0,
@@ -28,7 +29,10 @@ describe('stop gate protocol', () => {
 
     expect(clean?.status).toBe('clean')
     expect(findings?.status).toBe('errors')
-    expect(runtimeError?.status).toBe('runtime-error')
+    expect(runtimeError).toMatchObject({
+      reportPath: '/tmp/failure-report.json',
+      status: 'runtime-error',
+    })
   })
 
   it('rejects findings without their protocol fields', () => {
@@ -81,6 +85,19 @@ describe('stop gate protocol', () => {
   it('requires runtime failures to include a message', () => {
     const result = parseEnvelope(JSON.stringify({
       errorCount: 0,
+      schemaVersion: 2,
+      status: 'runtime-error',
+      warningCount: 0,
+    }))
+
+    expect(result).toBeUndefined()
+  })
+
+  it('rejects an empty runtime failure report path', () => {
+    const result = parseEnvelope(JSON.stringify({
+      errorCount: 0,
+      message: 'failed',
+      reportPath: '',
       schemaVersion: 2,
       status: 'runtime-error',
       warningCount: 0,

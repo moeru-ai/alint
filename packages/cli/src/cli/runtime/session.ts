@@ -6,8 +6,8 @@ import type {
   SetupConfig,
 } from '@alint-js/core'
 
-import type { CliIo } from '../types'
 import type { LintTargets } from '../commands/lint/discovery'
+import type { CliIo } from '../types'
 
 import { loadAlintConfig } from '@alint-js/config'
 import { runAlint } from '@alint-js/core'
@@ -36,6 +36,12 @@ export interface RunSession {
   shutdown: () => Promise<void>
 }
 
+export type SessionRunOptions = SessionRunSettings & SessionTargetSelection
+
+export type SessionTargetSelection
+  = | { inputs?: never, targets: LintTargets }
+    | { inputs?: string[], targets?: never }
+
 interface SessionRunSettings {
   cacheOnly?: boolean
   modelOverride?: string
@@ -45,12 +51,6 @@ interface SessionRunSettings {
   runner?: RunnerConfig
   signal?: AbortSignal
 }
-
-export type SessionTargetSelection
-  = | { inputs?: string[], targets?: never }
-    | { inputs?: never, targets: LintTargets }
-
-export type SessionRunOptions = SessionRunSettings & SessionTargetSelection
 
 /**
  * Loads config, setup config, and model adapters once, then runs any number of times.

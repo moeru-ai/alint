@@ -121,7 +121,13 @@ export function parseEnvelope(stdout: string): StopGateEnvelope | undefined {
       && value.warningCount === 0
       && typeof value.message === 'string'
       && value.message.length > 0
-      ? { ...base, message: value.message, status: value.status }
+      && (value.reportPath === undefined || (typeof value.reportPath === 'string' && value.reportPath.length > 0))
+      ? {
+          ...base,
+          message: value.message,
+          ...(typeof value.reportPath === 'string' ? { reportPath: value.reportPath } : {}),
+          status: value.status,
+        }
       : undefined
   }
 

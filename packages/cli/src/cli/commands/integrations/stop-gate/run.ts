@@ -2,6 +2,8 @@ import type { AlintConfig, ResolvedStopGateConfig, RunResult } from '@alint-js/c
 
 import type { CliIo } from '../../../types'
 
+import { AlintRunError } from '@alint-js/core'
+
 import { createRunSession } from '../../../runtime/session'
 import { filterResultToChangedLines } from '../../lint/changed-lines'
 import { findDirtyLintTargets, findLintTargets } from '../../lint/discovery'
@@ -9,6 +11,7 @@ import { executeLint } from '../../lint/execution'
 import { createTimeoutSignal } from './timeout'
 
 export interface StopGateLintResult {
+  error?: AlintRunError
   files: string[]
   result: RunResult
 }
@@ -42,17 +45,30 @@ export async function runStopGateLint(options: {
   let timeout: ReturnType<typeof createTimeoutSignal> | undefined
 
   try {
-    let result = await executeLint({
-      createSignal: () => {
-        // The configured budget covers lint execution, not setup-config and runner resolution.
-        timeout = createTimeoutSignal(options.stopGate.timeoutMs)
-        return timeout.signal
-      },
-      io: options.io,
-      runnerOptions: { format: 'json' },
-      session,
-      targets,
-    })
+    let result: RunResult
+    let runError: AlintRunError | undefined
+
+    try {
+      result = await executeLint({
+        createSignal: () => {
+          // The configured budget covers lint execution, not setup-config and runner resolution.
+          timeout = createTimeoutSignal(options.stopGate.timeoutMs)
+          return timeout.signal
+        },
+        io: options.io,
+        runnerOptions: { format: 'json' },
+        session,
+        targets,
+      })
+    }
+    catch (error) {
+      if (!(error instanceof AlintRunError)) {
+        throw error
+      }
+
+      runError = error
+      result = error.result
+    }
 
     if (dirtyTargets !== undefined) {
       result = filterResultToChangedLines(result, {
@@ -61,7 +77,9 @@ export async function runStopGateLint(options: {
       })
     }
 
-    return { files: targets.files, result }
+    return runError === undefined
+      ? { files: targets.files, result }
+      : { error: runError, files: targets.files, result }
   }
   finally {
     timeout?.dispose()

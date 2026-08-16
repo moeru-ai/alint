@@ -628,7 +628,7 @@ importers:
         version: 2.0.1-rc.25
       tinyexec:
         specifier: 'catalog:'
-        version: 1.2.4
+        version: 1.3.0
       valibot:
         specifier: 'catalog:'
         version: 1.4.2(typescript@6.0.3)
