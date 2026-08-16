@@ -95,4 +95,5 @@ endpoint = "http://127.0.0.1:7419/v1"
 
 - Use an alint agent adapter when a rule intentionally depends on agent-specific behavior.
 - Do not use this package as an OpenAI Responses, realtime, audio, or image compatibility layer.
-- Streaming tool calls and parallel tool calls are not implemented yet; text streaming is supported.
+- Sequential tool calls work with streaming and non-streaming chat completions.
+- Parallel tool calls are not supported.
