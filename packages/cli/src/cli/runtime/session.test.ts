@@ -1,4 +1,4 @@
-import type { AlintConfig, RunResult } from '@alint-js/core'
+import type { AlintConfig } from '@alint-js/core'
 
 import type { CliIo } from '../types'
 
@@ -13,6 +13,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import * as alintCore from '@alint-js/core'
 
+import { runResultWith } from '../test-support'
 import { createRunSession } from './session'
 
 async function createTestIo(): Promise<CliIo> {
@@ -24,23 +25,6 @@ async function createTestIo(): Promise<CliIo> {
     env: { ...process.env, XDG_CONFIG_HOME: configHome },
     stderr: { write: () => true },
     stdout: { write: () => true },
-  }
-}
-
-function emptyRunResult(): RunResult {
-  return {
-    diagnostics: [],
-    execution: {
-      cached: 0,
-      cancelled: 0,
-      completed: 0,
-      failed: 0,
-      planned: 0,
-      queued: 0,
-      running: 0,
-      skipped: 0,
-    },
-    usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
   }
 }
 
@@ -83,7 +67,7 @@ describe('createRunSession', () => {
     const io = await createTestIo()
     await writeFixture(io.cwd)
 
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith())
     const session = await createRunSession(io)
 
     try {
@@ -107,7 +91,7 @@ describe('createRunSession', () => {
       setupConfig: { providers: [], version: 1 },
       shutdown: () => Promise.resolve(),
     })
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith())
     const session = await createRunSession(io, { startModelAdapters })
 
     try {
@@ -171,7 +155,7 @@ describe('createRunSession', () => {
     const io = await createTestIo()
     await writeFixture(io.cwd)
 
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith())
     const session = await createRunSession(io)
     const { signal } = new AbortController()
 
@@ -208,7 +192,7 @@ describe('createRunSession', () => {
       setupConfig: { providers: [], version: 1 },
       shutdown: () => Promise.resolve(),
     })
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith())
     const session = await createRunSession(io, { config, startModelAdapters })
 
     try {

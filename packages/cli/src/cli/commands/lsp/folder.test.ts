@@ -1,5 +1,3 @@
-import type { Diagnostic, RunResult } from '@alint-js/core'
-
 import type { CliIo } from '../../types'
 
 import process from 'node:process'
@@ -13,6 +11,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import * as alintCore from '@alint-js/core'
 
+import { runResultWith } from '../../test-support'
 import { WHOLE_LINE } from './diagnostics'
 import { createFolderSession } from './folder'
 
@@ -60,23 +59,6 @@ async function createSymlinkedFolder(): Promise<{ io: CliIo, linkPath: string }>
   await symlink(cwd, linkPath, 'dir')
 
   return { io, linkPath }
-}
-
-function runResultWith(diagnostics: Diagnostic[]): RunResult {
-  return {
-    diagnostics,
-    execution: {
-      cached: 0,
-      cancelled: 0,
-      completed: 0,
-      failed: 0,
-      planned: 0,
-      queued: 0,
-      running: 0,
-      skipped: 0,
-    },
-    usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
-  }
 }
 
 describe('createFolderSession', () => {
