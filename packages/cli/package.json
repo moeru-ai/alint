@@ -27,24 +27,26 @@
     "@alint-js/config": "workspace:*",
     "@alint-js/core": "workspace:*",
     "@alint-js/model-adapter-acp": "workspace:*",
+    "@alint-js/utils": "workspace:*",
     "@clack/prompts": "catalog:",
     "@moeru/std": "catalog:",
     "cac": "catalog:",
     "cli-spinners": "catalog:",
     "date-fns": "catalog:",
+    "diff": "catalog:",
     "fast-string-truncated-width": "catalog:",
     "fast-string-width": "catalog:",
     "gitignore-fs": "catalog:",
     "minimatch": "catalog:",
     "pathe": "catalog:",
     "table": "catalog:",
+    "tinyexec": "catalog:",
     "tinyrainbow": "catalog:",
     "vscode-languageserver": "catalog:"
   },
   "devDependencies": {
     "@pnpm/find-workspace-dir": "catalog:",
     "local-pkg": "catalog:",
-    "mlly": "catalog:",
-    "tinyexec": "catalog:"
+    "mlly": "catalog:"
   }
 }

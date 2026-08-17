@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it } from 'vitest'
 
+import packageJson from '../package.json'
+
 const MiB = 1024 * 1024
 const outputLimit = 64 * 1024
 const runnerPath = fileURLToPath(new URL('./memory-runner.ts', import.meta.url))
@@ -118,7 +120,14 @@ describe('run memory regressions', () => {
       running: 0,
       skipped: 0,
     })
-    expect(await readFile(cachePath, 'utf8')).toMatch(/^ALINT_CACHE 2 /)
+    const metadataLine = (await readFile(cachePath, 'utf8')).split('\n', 1)[0]!
+    expect(JSON.parse(metadataLine)).toEqual({
+      alintVersion: packageJson.version,
+      createdAt: expect.any(String),
+      magic: 'ALINT_CACHE',
+      schemaVersion: 2,
+      type: 'metadata',
+    })
   }, 120_000)
 
   it('terminates a hung child within its internal deadline and bounds diagnostics', async () => {

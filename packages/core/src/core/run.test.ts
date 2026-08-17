@@ -5,7 +5,7 @@ import type { ProgressJobRef, ProgressReporter } from '../index'
 import type { SourceTargetMetadata } from './source/types'
 
 import { getEventListeners } from 'node:events'
-import { access, mkdtemp, readFile, writeFile } from 'node:fs/promises'
+import { access, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 
@@ -23,6 +23,26 @@ function metadataWithUnsupportedValue(key: string, value: unknown): SourceTarget
   const metadata = {}
   Reflect.set(metadata, key, value)
   return metadata
+}
+
+async function waitForCacheBody(
+  path: string,
+  ready: (body: Awaited<ReturnType<typeof readCacheBody>>) => boolean,
+): Promise<Awaited<ReturnType<typeof readCacheBody>>> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    try {
+      const body = await readCacheBody(path)
+      if (ready(body))
+        return body
+    }
+    catch (error) {
+      if (!(error instanceof Error) || !('code' in error) || error.code !== 'ENOENT')
+        throw error
+    }
+    await new Promise(resolve => setTimeout(resolve, 0))
+  }
+
+  throw new Error('Cache checkpoint was not written while the run was active.')
 }
 
 describe('runAlint', () => {
@@ -4337,6 +4357,92 @@ describe('runAlint', () => {
     expect(Object.keys(cacheBody.entries)).toHaveLength(0)
   })
 
+  it('persists a completed source file before the run finishes', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-file-cache-checkpoint-'))
+    const firstPath = join(root, 'first.txt')
+    const secondPath = join(root, 'second.txt')
+    const cachePath = join(root, '.alintcache')
+    let releaseSecond!: () => void
+    let secondStarted!: () => void
+    const secondIsRunning = new Promise<void>((resolve) => {
+      secondStarted = resolve
+    })
+    const secondCanFinish = new Promise<void>((resolve) => {
+      releaseSecond = resolve
+    })
+    await writeFile(firstPath, 'first\n')
+    await writeFile(secondPath, 'second\n')
+    const rule = defineRule({
+      create: () => ({
+        onTargetFile: async (target) => {
+          if (target.file.path === secondPath) {
+            secondStarted()
+            await secondCanFinish
+          }
+        },
+      }),
+    })
+
+    const pendingRun = runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+        {},
+        { language: 'plaintext' },
+      ),
+      cwd: root,
+      files: [firstPath, secondPath],
+      runner: { cache: { location: cachePath }, ruleConcurrency: 1 },
+      setupConfig: createSetupConfig(),
+    })
+
+    await secondIsRunning
+    try {
+      const checkpoint = await waitForCacheBody(
+        cachePath,
+        body => Object.values(body.owners).some(owner => owner.path === 'first.txt'),
+      )
+
+      expect(Object.values(checkpoint.owners).map(owner => owner.path)).toContain('first.txt')
+      expect(Object.values(checkpoint.owners).map(owner => owner.path)).not.toContain('second.txt')
+    }
+    finally {
+      releaseSecond()
+      await pendingRun
+    }
+  })
+
+  it('returns a cache persistence error with the completed run result when final persistence fails', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'alint-file-cache-failure-'))
+    const filePath = join(root, 'demo.txt')
+    const cachePath = join(root, '.alintcache')
+    await writeFile(filePath, 'hello\n')
+    const rule = defineRule({
+      create: () => ({
+        onTargetFile: async () => {
+          await rm(cachePath, { force: true, recursive: true })
+          await mkdir(cachePath)
+        },
+      }),
+    })
+
+    await expect(runAlint({
+      config: createConfig(
+        { review: rule },
+        { 'company/review': 'warn' },
+        {},
+        { language: 'plaintext' },
+      ),
+      cwd: root,
+      files: [filePath],
+      runner: { cache: { location: cachePath } },
+      setupConfig: createSetupConfig(),
+    })).rejects.toMatchObject({
+      name: 'AlintCachePersistenceError',
+      result: { execution: { completed: 1 } },
+    })
+  })
+
   it('detaches the final reporter payload from a successful cached result', async () => {
     const root = await mkdtemp(join(tmpdir(), 'alint-run-end-snapshot-'))
     const filePath = join(root, 'demo.txt')
@@ -4897,6 +5003,57 @@ describe('runAlint', () => {
       expect(calls).toEqual({ first: 1, second: 1 })
       expect(replayed.execution.cached).toBe(1)
       expect(replayed.execution.completed).toBe(1)
+    })
+
+    it('persists a completed job while a later job for the same file is still running', async () => {
+      const root = await mkdtemp(join(tmpdir(), 'alint-cache-job-checkpoint-'))
+      const filePath = join(root, 'demo.ts')
+      const cachePath = join(root, '.alintcache')
+      let releaseSecond!: () => void
+      let signalSecondStarted!: () => void
+      const secondCanFinish = new Promise<void>((resolve) => {
+        releaseSecond = resolve
+      })
+      const secondStarted = new Promise<void>((resolve) => {
+        signalSecondStarted = resolve
+      })
+      await writeFile(filePath, [
+        'export function first() {}',
+        'export function second() {}',
+      ].join('\n'))
+      const rule = defineRule({
+        create: ctx => ({
+          onTargetFunction: async (target) => {
+            ctx.report({ message: `checked ${target.name}` })
+            if (target.name === 'second') {
+              signalSecondStarted()
+              await secondCanFinish
+            }
+          },
+        }),
+        languages: 'any',
+      })
+
+      const running = runAlint({
+        config: createConfig({ review: rule }, { 'company/review': 'warn' }),
+        cwd: root,
+        files: [filePath],
+        runner: { cache: { location: cachePath }, ruleConcurrency: 1 },
+        setupConfig: createSetupConfig(),
+      })
+
+      await secondStarted
+      let checkpoint: Awaited<ReturnType<typeof readCacheBody>> | undefined
+      try {
+        checkpoint = await readCacheBody(cachePath)
+      }
+      finally {
+        releaseSecond()
+        await running
+      }
+
+      expect(Object.keys(checkpoint.entries)).toHaveLength(1)
+      expect(Object.values(checkpoint.entries)[0]?.target.name).toBe('first')
     })
 
     it('preserves a completed repeated-input owner when a later overlapping session aborts', async () => {

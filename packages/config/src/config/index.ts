@@ -1,4 +1,5 @@
-export { loadAlintConfig, loadStaticConfig } from './load'
+export { loadAlintConfig, loadAlintConfigWithMetadata, loadStaticConfig } from './load'
+export type { LoadedAlintConfig } from './load'
 export {
   parsePluginSpecifier,
   parseStaticConfig,
@@ -15,3 +16,5 @@ export type {
   StaticPluginResolver,
   ToAlintConfigOptions,
 } from './static'
+export { setStopGateConfig } from './stop-gate-write'
+export type { SetStopGateConfigOptions } from './stop-gate-write'

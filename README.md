@@ -50,7 +50,7 @@ You also need at least one OpenAI-compatible model provider. Local providers suc
 
 ### Install the CLI
 
-Download a standalone binary from the GitHub release assets when you want to use `alint` without a Node.js toolchain.
+Download a standalone binary from the GitHub release assets if you want to use `alint` without a Node.js toolchain.
 
 Install globally if you want an `alint` command available everywhere:
 
@@ -161,11 +161,25 @@ alint demo.ts
 alint --format json demo.ts
 ```
 
+#### --dirty
+
+Use `--dirty` without file arguments to lint only existing files that differ from `HEAD`:
+
+```bash
+alint --dirty
+```
+
+This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. Registered submodule worktrees are excluded. A clean repository exits successfully without producing lint output.
+
+#### --model
+
 Override the matched model for a one-off run:
 
 ```bash
 alint --model qwen:8b demo.ts
 ```
+
+#### --lang
 
 When the project-local setup does not configure any models, model calls without a rule-level or call-level selector use the `default` alias from the global setup. Rule selectors continue to use normal model matching. Configuring at least one model in `.alint/config.toml` restores project-first matching for unselected calls. An explicit `--model` override always takes precedence.
 
@@ -239,6 +253,54 @@ code --extensionDevelopmentPath=apps/vscode /path/to/your/project
 It resolves the alint executable from the `alint.path` setting, then `node_modules/.bin/alint` in
 the workspace folder, then `PATH`. The workspace install wins so that the server and the alint you
 run in a terminal share one cache.
+
+### Codex stop-gate plugin (optional)
+
+#### Install
+The Codex plugin adds a Stop hook that runs `alint --dirty` before the agent ends a turn.
+
+Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --sparse .agents/plugins \
+  --sparse plugins/codex-plugin-alint
+codex plugin add alint@alint
+```
+
+To install from a release, use its Git tag:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --ref vX.Y.Z \
+  --sparse .agents/plugins \
+  --sparse plugins/codex-plugin-alint
+codex plugin add alint@alint
+```
+
+Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
+
+#### Configure
+
+The codex plugin explicitly requires per-repo enable. Use this command to enable for current repository:
+
+- .toml: run `alint config integrations stop-gate enable`
+- .js/.ts:
+```typescript
+export default defineConfig([
+  // ...
+  {
+    integrations: {
+      stopGate: {
+        enabled: true,
+        // target: 'dirty-files' | 'all'
+        // timeoutMs: 900000
+      },
+    },
+  },
+  // ...
+])
+```
 
 ## Concepts
 
@@ -314,6 +376,19 @@ alint setup -N \
 - Without `--local`, `alint` writes the global config under `~/.config/alint/config.toml`.
 - `--local` writes `.alint/config.toml` in the current project.
 - You can inspect configs using the `alint config` command group.
+
+##### Codex Stop Gate
+
+Configure the optional Codex Stop Gate integration through the same project config system:
+
+```bash
+alint config integrations stop-gate enable
+alint config integrations stop-gate show
+alint config integrations stop-gate set --target all --timeout-ms 1800000
+alint config integrations stop-gate disable
+```
+
+Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. Read the [`plugins/codex-plugin-alint`](https://github.com/moeru-ai/alint/tree/main/plugins/codex-plugin-alint) documentation for complete runtime behavior.
 
 #### Using Rules & Plugins
 
@@ -449,6 +524,8 @@ export default defineConfig([
 #### Cache and Stats
 
 `alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged source targets.
+
+After each cacheable rule job completes, `alint` writes a cache checkpoint before releasing that job's scheduler slot. Each checkpoint atomically replaces the complete cache file, so an interrupted run can reuse every result that had already become durable. Cache hits, skipped jobs, failed jobs, and rules that opt out of caching do not add checkpoint writes. Any checkpoint or final cache write error causes the run to fail.
 
 > [!NOTE]
 > `.alintcache` should not be committed to Git. Add it to `.gitignore` before running repeated local analysis.
@@ -622,10 +699,10 @@ pnpm lint
 
 MIT
 
-[npmx-version-src]: https://npmx.dev/api/registry/badge/version/@alint-js/core
+[npmx-version-src]: https://npmx.dev/api/registry/badge/version/@alint-js/cli
 [npmx-version-href]: https://npmx.dev/@alint-js/cli
-[npmx-downloads-src]: https://npmx.dev/api/registry/badge/downloads-month/@alint-js/core
-[npmx-downloads-href]: https://npmx.dev/@alint-js/core
+[npmx-downloads-src]: https://npmx.dev/api/registry/badge/downloads-month/@alint-js/cli
+[npmx-downloads-href]: https://npmx.dev/@alint-js/cli
 [bundle-src]: https://npmx.dev/api/registry/badge/size/@alint-js/cli
 [bundle-href]: https://bundlephobia.com/result?p=@alint-js/cli
 [license-src]: https://npmx.dev/api/registry/badge/license/@alint-js/cli

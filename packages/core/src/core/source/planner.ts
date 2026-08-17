@@ -86,7 +86,10 @@ export async function planSource(
     project = options.projectSnapshots === false
       ? undefined
       : createProjectSnapshot(input, file.language, file.path, contentHash, targets)
-    cacheOwner = options.cacheStore.beginOwner({ kind: 'file', path: file.path })
+    cacheOwner = options.cacheStore.beginOwner(
+      { kind: 'file', path: file.path },
+      { contentHash },
+    )
     const baseFile = { contentHash, language: file.language, path: file.path }
     const executionTargets = createExecutionTargets(input, targets, baseFile, options.ruleRuntimes, options.cwd, cacheOwner)
     jobs = createSourceJobs(input, executionTargets)
@@ -97,14 +100,15 @@ export async function planSource(
   }
 
   if (options.signal?.aborted) {
-    cacheOwner.commit({ contentHash, mode: 'merge' })
+    cacheOwner.commit({ mode: 'merge' })
     return { outcomes: Promise.resolve([]), project }
   }
 
   const batch = options.scheduler.schedule(jobs)
   reportFilePlanningComplete(input, batch.jobsAdded, options)
-  const outcomes = batch.outcomes.then((settled) => {
-    cacheOwner.commit(options.signal?.aborted ? { contentHash, mode: 'merge' } : { contentHash })
+  const outcomes = batch.outcomes.then(async (settled) => {
+    cacheOwner.commit(options.signal?.aborted ? { mode: 'merge' } : undefined)
+    await options.cacheStore.flush()
     return settled
   })
 

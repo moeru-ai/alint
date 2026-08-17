@@ -7,6 +7,12 @@ export {
   resolveConfigForProject,
 } from './config/config-array'
 export type { EffectiveAlintConfig, ResolveConfigResult } from './config/config-array'
+export {
+  defaultStopGateConfig,
+  maximumStopGateTimeoutMs,
+  resolveStopGateConfig,
+} from './config/stop-gate'
+export type { ResolvedStopGateConfig } from './config/stop-gate'
 export type {
   ModelSize,
   ProviderDefinition,
@@ -16,6 +22,7 @@ export type {
   SetupConfig,
   SetupModelDefinition,
 } from './config/types'
+export { stableHash } from './core/hash'
 export {
   createBuiltInLanguageRegistry,
   registerLanguage,
@@ -23,7 +30,7 @@ export {
 } from './core/languages'
 export type { LanguageRegistry, ResolveLanguageOptions } from './core/languages'
 export { createSourceExtractor } from './core/preparation'
-export { AlintAbortError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
+export { AlintAbortError, AlintCachePersistenceError, AlintRunCancelledError, AlintRunError, runAlint } from './core/run'
 export { targetIdentity, withStableIdentities } from './core/source/identity'
 export { createSourceFile, createSourceRuntime, sliceLines, sliceRange, withLanguage } from './core/source/runtime'
 export type { SourceRuntimeOptions } from './core/source/runtime'
@@ -100,6 +107,7 @@ export type {
   DirectoryTarget,
   EnabledRule,
   IgnoreConfig,
+  IntegrationsConfig,
   LanguageDefinition,
   PluginDefinition,
   ProcessorDefinition,
@@ -116,6 +124,8 @@ export type {
   RuleSeverity,
   RuleSpecializedHandlers,
   RuleWithHandler,
+  StopGateConfig,
+  StopGateTarget,
   Target,
 } from './dsl/types'
 export { benchmarkModels } from './models/benchmark'

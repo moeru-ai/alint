@@ -95,7 +95,7 @@ export async function createFolderSession(
         return []
       }
 
-      const result = await runFromCache(session, { files: [filePath] })
+      const result = await runFromCache(session, { inputs: [filePath] })
       const found = groupByUri(result, paths)
       const changed = new Set([...found.keys()])
 
@@ -168,14 +168,14 @@ function groupByUri(
 
 async function runFromCache(
   session: RunSession,
-  options: { files?: string[] } = {},
+  options: { inputs?: string[] } = {},
 ): Promise<RunResult> {
   try {
     return await session.run({
       cacheOnly: true,
-      files: options.files,
+      inputs: options.inputs,
       // An edit changes the project target's identity, so its jobs miss the cache at any scope.
-      projectTargets: options.files === undefined ? undefined : false,
+      projectTargets: options.inputs === undefined ? undefined : false,
       // This pass runs on every load and save and calls no model. Do not record it as a run.
       runner: { ...session.runner, stats: false },
     })

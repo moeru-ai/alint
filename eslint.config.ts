@@ -19,6 +19,7 @@ export default defineConfig({
     '.worktrees/**',
     '.github/**',
     'docs/superpowers/**',
+    'plugins/codex-plugin-alint/scripts/stop-gate.mjs',
     'CLAUDE.md', // Skip the symbolic link
   ],
 }, {

@@ -136,13 +136,8 @@ export async function executeRuleJob(job: RuleJob, options: ExecuteRuleJobOption
   }
 
   if (slot && fingerprint) {
-    try {
-      job.target.cacheOwner?.put(slot, createCacheEntry(job, fingerprint, bucket))
-    }
-    catch {
-      // NOTICE: Cache writes are opportunistic and no cache logging boundary exists yet;
-      // a write failure cannot invalidate successful rule work.
-    }
+    job.target.cacheOwner?.put(slot, createCacheEntry(job, fingerprint, bucket))
+    await job.target.cacheOwner?.checkpoint()
   }
 
   return finish(job, bucket, { cache: 'miss', state: 'completed' })

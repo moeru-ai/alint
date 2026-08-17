@@ -33,6 +33,7 @@ export interface AlintConfigItem {
   files?: readonly (readonly string[] | string)[]
   ignore?: IgnoreConfig
   ignores?: readonly string[]
+  integrations?: IntegrationsConfig
   language?: string
   languageOptions?: Record<string, unknown>
   linterOptions?: AlintLinterOptions
@@ -84,6 +85,10 @@ export interface EnabledRule {
 
 export interface IgnoreConfig {
   gitignore?: boolean
+}
+
+export interface IntegrationsConfig {
+  stopGate?: StopGateConfig
 }
 
 export interface LanguageDefinition {
@@ -269,5 +274,13 @@ export interface RuleWithHandler {
   onTargetProject?: never
   onTargetWith: (target: Target) => Awaitable<void>
 }
+
+export interface StopGateConfig {
+  enabled?: boolean
+  target?: StopGateTarget
+  timeoutMs?: number
+}
+
+export type StopGateTarget = 'all' | 'dirty-files'
 
 export type Target = DirectoryTarget | PlannedSourceTarget | ProjectTarget

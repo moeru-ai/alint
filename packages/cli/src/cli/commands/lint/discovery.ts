@@ -2,13 +2,22 @@ import type { Stats } from 'node:fs'
 
 import type { AlintConfig, AlintConfigItem } from '@alint-js/core'
 
+import type { ChangedLineRange } from '../../git'
+
 import { opendir, stat } from 'node:fs/promises'
 
 import Gitignore from 'gitignore-fs'
 
 import { hasDiscoveryFilePatterns, matchesDiscoveryFile, normalizeConfig, resolveConfigForFile } from '@alint-js/core'
+import { isNodeErrorCode } from '@alint-js/utils/node'
 import { minimatch, Minimatch } from 'minimatch'
 import { isAbsolute, relative, resolve } from 'pathe'
+
+import { findDirtyChanges } from '../../git'
+
+export interface DirtyLintTargets extends LintTargets {
+  changedLines: ReadonlyMap<string, readonly ChangedLineRange[]>
+}
 
 export interface FindFilesOptions {
   config: AlintConfig
@@ -61,6 +70,24 @@ export class NoFilesFoundError extends Error {
     this.globInputPaths = options.globInputPaths
     this.pattern = pattern
   }
+}
+
+export async function findDirtyLintTargets(config: AlintConfig, cwd: string): Promise<DirtyLintTargets> {
+  const changes = await findDirtyChanges(cwd)
+
+  if (changes.files.length === 0) {
+    return { changedLines: changes.changedLines, directories: [], files: [] }
+  }
+
+  const targets = await findLintTargets({
+    config,
+    cwd,
+    errorOnUnmatchedPattern: false,
+    globInputPaths: false,
+    inputs: changes.files,
+  })
+
+  return { ...targets, changedLines: changes.changedLines }
 }
 
 export async function findFiles(options: FindFilesOptions): Promise<string[]> {
@@ -136,10 +163,6 @@ function isGlobalIgnoreItem(item: AlintConfigItem): item is AlintConfigItem & { 
 
 function isGlobPattern(input: string): boolean {
   return new Minimatch(input, minimatchOptions).hasMagic()
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error && 'code' in error
 }
 
 function matchesGlob(filePath: string, pattern: string): boolean {
@@ -306,7 +329,7 @@ async function statPath(path: string): Promise<Stats | undefined> {
     return await stat(path)
   }
   catch (error) {
-    if (isNodeError(error) && (error.code === 'ENOENT' || error.code === 'ENOTDIR')) {
+    if (isNodeErrorCode(error, 'ENOENT') || isNodeErrorCode(error, 'ENOTDIR')) {
       return undefined
     }
 

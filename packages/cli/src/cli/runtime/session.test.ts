@@ -1,4 +1,4 @@
-import type { RunResult } from '@alint-js/core'
+import type { AlintConfig, RunResult } from '@alint-js/core'
 
 import type { CliIo } from '../types'
 
@@ -178,7 +178,7 @@ describe('createRunSession', () => {
     try {
       await session.run({
         cacheOnly: true,
-        files: ['demo.ts'],
+        inputs: ['demo.ts'],
         projectTargets: false,
         runner: { stats: false },
         signal,
@@ -200,6 +200,31 @@ describe('createRunSession', () => {
     }
   })
 
+  it('uses a preloaded config and resolved targets without reading project inputs again', async () => {
+    const io = await createTestIo()
+    const config: AlintConfig = []
+    const targets = { directories: ['virtual-directory'], files: ['missing.ts'] }
+    const startModelAdapters = vi.fn().mockResolvedValue({
+      setupConfig: { providers: [], version: 1 },
+      shutdown: () => Promise.resolve(),
+    })
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(emptyRunResult())
+    const session = await createRunSession(io, { config, startModelAdapters })
+
+    try {
+      await session.run({ targets })
+
+      expect(session.config).toBe(config)
+      expect(runAlint.mock.calls[0]?.[0]?.config).toBe(config)
+      expect(runAlint.mock.calls[0]?.[0]?.directories).toBe(targets.directories)
+      expect(runAlint.mock.calls[0]?.[0]?.files).toBe(targets.files)
+    }
+    finally {
+      runAlint.mockRestore()
+      await session.shutdown()
+    }
+  })
+
   it('rejects an input pattern that matches no file', async () => {
     // The lint command converts this to exit code 2. The session must not run on an empty target
     // list instead.
@@ -209,7 +234,7 @@ describe('createRunSession', () => {
     const session = await createRunSession(io)
 
     try {
-      await expect(session.run({ files: ['missing/**/*.ts'] })).rejects.toThrow('No files matching')
+      await expect(session.run({ inputs: ['missing/**/*.ts'] })).rejects.toThrow('No files matching')
     }
     finally {
       await session.shutdown()

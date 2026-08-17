@@ -11,11 +11,27 @@ export default defineConfig([
 
       // Ignore internal fixtures
       'packages/plugin-simplicity/fixtures/**',
+
+      // Review the Codex plugin source instead of its committed distribution bundle.
+      'plugins/codex-plugin-alint/scripts/**',
+    ],
+  },
+  {
+    ignores: [
+      '**/*.test.ts',
+      '**/*.test.js',
     ],
   },
   {
     ignore: {
       gitignore: true,
+    },
+  },
+  {
+    integrations: {
+      stopGate: {
+        enabled: true,
+      },
     },
   },
   {

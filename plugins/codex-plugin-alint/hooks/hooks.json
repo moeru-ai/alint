@@ -1,0 +1,17 @@
+{
+  "description": "Run alint before Codex finishes a configured repository task.",
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"${CLAUDE_PLUGIN_ROOT}/dist/stop-gate-launcher.mjs\"",
+            "timeout": 86400,
+            "statusMessage": "Running alint Stop Gate…"
+          }
+        ]
+      }
+    ]
+  }
+}

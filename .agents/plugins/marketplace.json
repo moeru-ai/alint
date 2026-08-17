@@ -1,0 +1,20 @@
+{
+  "name": "alint",
+  "interface": {
+    "displayName": "alint"
+  },
+  "plugins": [
+    {
+      "name": "alint",
+      "source": {
+        "source": "local",
+        "path": "./plugins/codex-plugin-alint"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

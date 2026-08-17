@@ -35,6 +35,7 @@
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@alint-js/utils": "workspace:*",
     "@moeru/std": "catalog:",
     "@valibot/to-json-schema": "catalog:",
     "@xsai/generate-text": "catalog:",
@@ -45,9 +46,11 @@
     "minimatch": "catalog:",
     "oxc-parser": "catalog:",
     "pathe": "catalog:",
+    "proper-lockfile": "catalog:",
     "valibot": "catalog:"
   },
   "devDependencies": {
+    "@types/proper-lockfile": "catalog:",
     "effect": "catalog:",
     "sury": "catalog:"
   }

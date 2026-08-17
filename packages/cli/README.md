@@ -14,11 +14,11 @@
 
 # `alint`
 
-[![npm version][npm-version-src]][npm-version-href]
-[![npm downloads][npm-downloads-src]][npm-downloads-href]
+[![npm version][npmx-version-src]][npmx-version-href]
+[![npm downloads][npmx-downloads-src]][npmx-downloads-href]
 [![bundle][bundle-src]][bundle-href]
-[![JSDocs][jsdocs-src]][jsdocs-href]
 [![License][license-src]][license-href]
+[![JSDocs][jsdocs-src]][jsdocs-href]
 
 ![Demo](./docs/assets/demo.gif)
 
@@ -50,7 +50,7 @@ You also need at least one OpenAI-compatible model provider. Local providers suc
 
 ### Install the CLI
 
-Download a standalone binary from the GitHub release assets when you want to use `alint` without a Node.js toolchain.
+Download a standalone binary from the GitHub release assets if you want to use `alint` without a Node.js toolchain.
 
 Install globally if you want an `alint` command available everywhere:
 
@@ -161,11 +161,25 @@ alint demo.ts
 alint --format json demo.ts
 ```
 
+#### --dirty
+
+Use `--dirty` without file arguments to lint only existing files that differ from `HEAD`:
+
+```bash
+alint --dirty
+```
+
+This includes staged, unstaged, and untracked files from the Git repository root. Ignored and deleted files are excluded. Registered submodule worktrees are excluded. A clean repository exits successfully without producing lint output.
+
+#### --model
+
 Override the matched model for a one-off run:
 
 ```bash
 alint --model qwen:8b demo.ts
 ```
+
+#### --lang
 
 When the project-local setup does not configure any models, model calls without a rule-level or call-level selector use the `default` alias from the global setup. Rule selectors continue to use normal model matching. Configuring at least one model in `.alint/config.toml` restores project-first matching for unselected calls. An explicit `--model` override always takes precedence.
 
@@ -186,8 +200,6 @@ alint config inspect src/index.ts
 alint config providers list
 alint config providers show openrouter
 alint config models list
-alint config models list --with-speed
-alint config models list --with-speed --with-speed-concurrency openrouter=10 --with-speed-concurrency ollama=1
 alint config models show ollama/qwen
 alint config models probe --endpoint http://localhost:11434/v1
 alint config models rm qwen --provider ollama
@@ -197,8 +209,6 @@ alint config models prune --provider ollama -N --yes
 When a model ID exists under multiple providers, qualify it as `<provider>/<model-id>` or pass `--provider <provider-id>`. Configuration mutations write globally unless `--local` selects the current project's setup config.
 
 `models rm` removes one exact configured model. `models prune` probes provider model endpoints and destructively removes configured IDs that are no longer reported. Interactive prune asks for confirmation; scripts must pass `-N --yes`.
-
-`models list --with-speed` sends live streamed requests to every configured model. It reports median repeat and non-repeat latency, non-repeat output throughput, and successful attempts. Each model receives one repeat warm-up, three measured repeat requests, and three non-repeat requests. Model jobs run concurrently within independent provider limits: OpenRouter defaults to 20, while CLIProxyAPI and other providers default to 2. Repeat `--with-speed-concurrency <provider-id>=<limit>` to override one or more configured providers. Requests within one model remain serial so its repeat and non-repeat cache measurements do not overlap. An unavailable model is shown as `errored` without preventing the remaining models from running. On a TTY, spinners and a refreshable table show active models, phases, and samples. Each request uses the configured runner timeout, or 60 seconds when none is configured. This command consumes provider tokens and may incur charges.
 
 Save machine-readable output and inspect it later without rerunning model calls:
 
@@ -244,6 +254,54 @@ It resolves the alint executable from the `alint.path` setting, then `node_modul
 the workspace folder, then `PATH`. The workspace install wins so that the server and the alint you
 run in a terminal share one cache.
 
+### Codex stop-gate plugin (optional)
+
+#### Install
+The Codex plugin adds a Stop hook that runs `alint --dirty` before the agent ends a turn.
+
+Run these commands to install the plugin from the repository's default branch. These commands do not select the latest release:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --sparse .agents/plugins \
+  --sparse plugins/codex-plugin-alint
+codex plugin add alint@alint
+```
+
+To install from a release, use its Git tag:
+
+```bash
+codex plugin marketplace add moeru-ai/alint \
+  --ref vX.Y.Z \
+  --sparse .agents/plugins \
+  --sparse plugins/codex-plugin-alint
+codex plugin add alint@alint
+```
+
+Replace `vX.Y.Z` with the required release tag. Review and trust the Stop hook when Codex asks. The plugin stays inactive until a repository enables Stop Gate.
+
+#### Configure
+
+The codex plugin explicitly requires per-repo enable. Use this command to enable for current repository:
+
+- .toml: run `alint config integrations stop-gate enable`
+- .js/.ts:
+```typescript
+export default defineConfig([
+  // ...
+  {
+    integrations: {
+      stopGate: {
+        enabled: true,
+        // target: 'dirty-files' | 'all'
+        // timeoutMs: 900000
+      },
+    },
+  },
+  // ...
+])
+```
+
 ## Concepts
 
 `alint` keeps the familiar lint shape: select targets, apply named rules, report diagnostics, and return an exit code that CI can understand. The difference is that a rule can reach its judgment through model calls or a tool-using agent when syntax-only checks are not enough.
@@ -281,7 +339,7 @@ thinking = { type = "disabled" }
 
 `default_params` is merged into every chat request for that model. Use it for provider-specific request fields that are not covered by the rest of the model entry.
 
-The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode. Put a custom machine-specific command in the global setup config, or in `.alint/config.toml` when the repository standardizes the same command for every contributor:
+The CLI can also launch an ACP coding-agent command and expose it to rules as an ordinary model. Interactive `alint setup` provides presets for Claude Code, Codex, Gemini CLI, Kimi Code CLI, and OpenCode:
 
 ```toml
 version = 1
@@ -300,15 +358,7 @@ args = []
 cwd = "."
 ```
 
-Then select it like any other model:
-
-```bash
-alint --model acp/codex src
-```
-
-`alint.config.ts` remains the shareable lint policy: it selects models, plugins, and rules but does not launch processes. The CLI merges global setup with `.alint/config.toml`, starts a loopback OpenAI-compatible adapter for the run, and shuts it down afterward. Each concurrent model request gets its own ACP process, so `--rule-concurrency` also bounds how many coding-agent processes a run can require.
-
-The command inherits the environment that launched `alint`. Optional `[providers.models.env]` entries override individual variables, but setup TOML does not interpolate variables. Do not commit credentials into the table. Request tools require the ACP agent to support MCP over HTTP.
+Then run `alint --model acp/codex src`. The checked-in `alint.config.ts` remains lint policy; process commands come only from global setup or `.alint/config.toml`. The command inherits the environment that launched `alint`; optional model `env` entries are literal overrides and should not contain committed credentials. Each concurrent request starts one ACP process, and request tools require MCP-over-HTTP support from the agent.
 
 `alint` structured output forces a tool call (`tool_choice`). Some models, such as DeepSeek V4, reject that combination while thinking/reasoning is enabled. For those models, set `thinking = { type = "disabled" }` as above so structured output can run.
 
@@ -326,6 +376,19 @@ alint setup -N \
 - Without `--local`, `alint` writes the global config under `~/.config/alint/config.toml`.
 - `--local` writes `.alint/config.toml` in the current project.
 - You can inspect configs using the `alint config` command group.
+
+##### Codex Stop Gate
+
+Configure the optional Codex Stop Gate integration through the same project config system:
+
+```bash
+alint config integrations stop-gate enable
+alint config integrations stop-gate show
+alint config integrations stop-gate set --target all --timeout-ms 1800000
+alint config integrations stop-gate disable
+```
+
+Stop Gate is disabled by default and runs only when the repository explicitly sets `integrations.stopGate.enabled = true`. The defaults after activation are `target = "dirty-files"` and `timeoutMs = 900000`; the maximum timeout is `86100000` (23 hours 55 minutes), leaving five minutes inside the plugin's 24-hour Codex hook limit for startup and persistence. The writer persists only non-default overrides and only extends the existing TOML write path; it does not extend the config writer to other formats. Read the [`plugins/codex-plugin-alint`](https://github.com/moeru-ai/alint/tree/main/plugins/codex-plugin-alint) documentation for complete runtime behavior.
 
 #### Using Rules & Plugins
 
@@ -462,6 +525,8 @@ export default defineConfig([
 
 `alint` caches rule target results by default in `.alintcache` to avoid repeating LLM calls for unchanged source targets.
 
+After each cacheable rule job completes, `alint` writes a cache checkpoint before releasing that job's scheduler slot. Each checkpoint atomically replaces the complete cache file, so an interrupted run can reuse every result that had already become durable. Cache hits, skipped jobs, failed jobs, and rules that opt out of caching do not add checkpoint writes. Any checkpoint or final cache write error causes the run to fail.
+
 > [!NOTE]
 > `.alintcache` should not be committed to Git. Add it to `.gitignore` before running repeated local analysis.
 
@@ -593,6 +658,7 @@ defineRule({
 | [`@alint-js/core`](https://github.com/moeru-ai/alint/tree/main/packages/core) | SDK and run engine for plugins, rules, source runtime, model resolution, diagnostics, cache, and agent contracts. |
 | [`@alint-js/agent-apeira`](https://github.com/moeru-ai/alint/tree/main/packages/agent-apeira) | Apeira-backed `AgentAdapter`. |
 | [`@alint-js/agent-pi`](https://github.com/moeru-ai/alint/tree/main/packages/agent-pi) | Pi-backed `AgentAdapter`. |
+| [`@alint-js/languages`](https://github.com/moeru-ai/alint/tree/main/packages/languages) | First-party language support beyond core's built-in JavaScript and TypeScript: Go, Python, and Rust. |
 | [`@alint-js/plugin-example`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example) | Example TypeScript/JavaScript model-backed rules. |
 | [`@alint-js/plugin-example-agent`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example-agent) | Example plugin for framework-agnostic agentic rules. |
 | [`@alint-js/plugin-example-go`](https://github.com/moeru-ai/alint/tree/main/packages/plugin-example-go) | Example semantic Go review plugin using `plaintext`. |
@@ -630,15 +696,16 @@ pnpm lint
 
 ## License
 
+
 MIT
 
-[npm-version-src]: https://img.shields.io/npm/v/@alint-js/cli?style=flat&colorA=080f12&colorB=1fa669
-[npm-version-href]: https://npmjs.com/package/@alint-js/cli
-[npm-downloads-src]: https://img.shields.io/npm/dm/@alint-js/core?style=flat&colorA=080f12&colorB=1fa669
-[npm-downloads-href]: https://npmjs.com/package/@alint-js/core
-[bundle-src]: https://img.shields.io/bundlephobia/minzip/@alint-js/cli?style=flat&colorA=080f12&colorB=1fa669&label=minzip
+[npmx-version-src]: https://npmx.dev/api/registry/badge/version/@alint-js/cli
+[npmx-version-href]: https://npmx.dev/@alint-js/cli
+[npmx-downloads-src]: https://npmx.dev/api/registry/badge/downloads-month/@alint-js/cli
+[npmx-downloads-href]: https://npmx.dev/@alint-js/cli
+[bundle-src]: https://npmx.dev/api/registry/badge/size/@alint-js/cli
 [bundle-href]: https://bundlephobia.com/result?p=@alint-js/cli
-[license-src]: https://img.shields.io/github/license/moeru-ai/alint.svg?style=flat&colorA=080f12&colorB=1fa669
+[license-src]: https://npmx.dev/api/registry/badge/license/@alint-js/cli
 [license-href]: https://github.com/moeru-ai/alint/blob/main/LICENSE
 [jsdocs-src]: https://img.shields.io/badge/jsdocs-reference-080f12?style=flat&colorA=080f12&colorB=1fa669
 [jsdocs-href]: https://www.jsdocs.io/package/@alint-js/cli

@@ -2,8 +2,9 @@ import type { AlintConfig, AlintConfigItem, PluginDefinition } from '@alint-js/c
 
 import type { DirectoryPluginSpecifier, ParsedPluginSpecifier, ParsePluginSpecifierOptions, RegistryPluginSpecifier } from '../plugins/spec'
 
+import { maximumStopGateTimeoutMs } from '@alint-js/core'
 import { extname } from 'pathe'
-import { array, boolean, looseObject, optional, parse, picklist, record, string, tupleWithRest, union, unknown } from 'valibot'
+import { array, boolean, integer, looseObject, maxValue, minValue, number, optional, parse, picklist, pipe, record, string, tupleWithRest, union, unknown } from 'valibot'
 
 import { getPluginSpecifierKey, parsePluginSpecifier } from '../plugins/spec'
 
@@ -70,6 +71,13 @@ const staticConfigItemSchema = looseObject({
     gitignore: optional(boolean()),
   })),
   ignores: optional(array(string())),
+  integrations: optional(looseObject({
+    stopGate: optional(looseObject({
+      enabled: optional(boolean()),
+      target: optional(picklist(['all', 'dirty-files'])),
+      timeoutMs: optional(pipe(number(), integer(), minValue(1), maxValue(maximumStopGateTimeoutMs))),
+    })),
+  })),
   language: optional(string()),
   languageOptions: optional(record(string(), unknown())),
   linterOptions: optional(looseObject({

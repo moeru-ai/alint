@@ -3009,8 +3009,9 @@ export default [
     expect(firstExitCode).toBe(0)
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     const cacheText = await readFile(cachePath, 'utf8')
-    expect(cacheText.startsWith('ALINT_CACHE 2 ')).toBe(true)
-    expect(cacheText).toContain('"entries"')
+    expect(cacheText.startsWith('{"alintVersion"')).toBe(true)
+    expect(cacheText).toContain('"type":"metadata"')
+    expect(cacheText).toContain('"type":"replace-owner"')
 
     io.stdoutText = ''
     io.stderrText = ''
@@ -3191,6 +3192,42 @@ export default [
     expect(JSON.parse(io.stdoutText).diagnostics[0].message).toBe('checked 1')
     await expect(readFile(setupCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
     await expect(readFile(projectCachePath, 'utf8')).rejects.toMatchObject({ code: 'ENOENT' })
+  })
+
+  it('prints lint results before cache persistence errors and returns 1', async () => {
+    const io = await createTestIo()
+    const writes: string[] = []
+    io.stdout.write = (chunk) => {
+      writes.push(`stdout:${chunk}`)
+      io.stdoutText += chunk
+    }
+    io.stderr.write = (chunk) => {
+      writes.push(`stderr:${chunk}`)
+      io.stderrText += chunk
+    }
+    const result: RunResult = {
+      diagnostics: [{ filePath: join(io.cwd, 'demo.ts'), message: 'completed finding', ruleId: 'company/review', severity: 'warn' }],
+      execution: { cached: 0, cancelled: 0, completed: 1, failed: 0, planned: 1, queued: 0, running: 0, skipped: 0 },
+      usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
+    }
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockRejectedValue(
+      new alintCore.AlintCachePersistenceError(result, new Error('cache lease unavailable')),
+    )
+
+    try {
+      await writeFile(join(io.cwd, 'demo.ts'), 'export function load() {}\n')
+      await writeFile(join(io.cwd, 'alint.config.ts'), 'export default [{ files: [\'**/*.ts\'] }]\n')
+
+      const exitCode = await executeCli(['node', 'alint', '--format', 'json', 'demo.ts'], io)
+
+      expect(exitCode).toBe(1)
+      expect(JSON.parse(io.stdoutText)).toEqual(result)
+      expect(io.stderrText).toBe('Cache persistence failed: cache lease unavailable\n')
+      expect(writes.map(write => write.slice(0, write.indexOf(':')))).toEqual(['stdout', 'stderr'])
+    }
+    finally {
+      runAlint.mockRestore()
+    }
   })
 
   it('formats rule execution failures without interpreting provider payloads', async () => {
