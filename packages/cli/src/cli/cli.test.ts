@@ -678,14 +678,22 @@ describe('executeCli', () => {
     expect(io.stderrText).toContain('Could not read output file')
   })
 
-  it('prints a generic unknown command message for command groups', async () => {
+  it('prints available subcommands when a command group is missing a subcommand', async () => {
     const io = await createTestIo()
 
     const exitCode = await executeCli(['node', 'alint', 'output'], io)
 
     expect(exitCode).toBe(2)
     expect(io.stdoutText).toBe('')
-    expect(io.stderrText).toBe('unknown command: output\n')
+    expect(io.stderrText).toBe([
+      'missing subcommand for "output"',
+      '',
+      'available subcommands:',
+      '  inspect',
+      '',
+      'run `alint output --help` for more information',
+      '',
+    ].join('\n'))
   })
 
   it('prints output inspect in output command help', async () => {

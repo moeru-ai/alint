@@ -104,6 +104,10 @@ function dispatchCommand(
     return dispatchCommand(context, child, restArgs, options, [...path, child.name])
   }
 
+  if (subcommand === undefined && node.children?.length && !node.action) {
+    return Promise.resolve(reportMissingSubcommand(context, path, node.children))
+  }
+
   if (!node.action) {
     return Promise.resolve(reportUnknownCommand(context, path, args))
   }
@@ -344,6 +348,25 @@ function registerRootCommand(
 
     return setPendingResult(result)
   })
+}
+
+function reportMissingSubcommand(
+  context: CommandContext,
+  path: readonly string[],
+  children: readonly CommandNode[],
+): number {
+  const command = path.join(' ')
+
+  context.io.stderr.write([
+    `missing subcommand for "${command}"`,
+    '',
+    'available subcommands:',
+    ...children.map(child => `  ${child.name}`),
+    '',
+    `run \`alint ${command} --help\` for more information`,
+    '',
+  ].join('\n'))
+  return 2
 }
 
 function reportUnknownCommand(
