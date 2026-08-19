@@ -2,6 +2,19 @@
   "name": "@alint-js/config",
   "type": "module",
   "version": "0.5.0",
+  "description": "Configuration loading and setup utilities for alint",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moeru-ai/alint.git",
+    "directory": "packages/config"
+  },
+  "keywords": [
+    "alint",
+    "lint",
+    "configuration",
+    "ai"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",

@@ -2,6 +2,21 @@
   "name": "@alint-js/languages",
   "type": "module",
   "version": "0.5.0",
+  "description": "First-party Go, Python, and Rust language support for alint",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moeru-ai/alint.git",
+    "directory": "packages/languages"
+  },
+  "keywords": [
+    "alint",
+    "lint",
+    "tree-sitter",
+    "go",
+    "python",
+    "rust"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",

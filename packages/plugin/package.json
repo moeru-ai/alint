@@ -2,6 +2,20 @@
   "name": "@alint-js/plugin",
   "type": "module",
   "version": "0.5.0",
+  "description": "Side-effect-free plugin authoring facade for alint",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moeru-ai/alint.git",
+    "directory": "packages/plugin"
+  },
+  "keywords": [
+    "alint",
+    "lint",
+    "plugin",
+    "sdk",
+    "ai"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",

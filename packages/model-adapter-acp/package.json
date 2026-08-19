@@ -2,6 +2,21 @@
   "name": "@alint-js/model-adapter-acp",
   "type": "module",
   "version": "0.5.0",
+  "description": "OpenAI-compatible HTTP gateway for Agent Client Protocol coding agents",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moeru-ai/alint.git",
+    "directory": "packages/model-adapter-acp"
+  },
+  "keywords": [
+    "alint",
+    "agent-client-protocol",
+    "acp",
+    "openai-compatible",
+    "ai",
+    "gateway"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",

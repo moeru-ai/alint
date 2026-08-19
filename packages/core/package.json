@@ -2,6 +2,21 @@
   "name": "@alint-js/core",
   "type": "module",
   "version": "0.5.0",
+  "description": "Public rule and plugin SDK and run engine for alint",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/moeru-ai/alint.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "alint",
+    "lint",
+    "linter",
+    "ai",
+    "code-analysis",
+    "sdk"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.mts",
