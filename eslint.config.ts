@@ -8,7 +8,7 @@ export default defineConfig({
   sortPackageJsonScripts: false,
   typescript: true,
   unocss: false,
-  vue: false,
+  vue: true,
 }, {
   ignores: [
     'cspell.config.yaml',
