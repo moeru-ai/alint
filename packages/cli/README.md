@@ -219,18 +219,17 @@ alint output inspect alint-output.json
 
 ### Editor Integration
 
-> **Work in progress.** `alint lsp` currently publishes cached diagnostics when an editor opens a
-> workspace, and nothing more. Saving a file does not refresh it, changing `alint.config.ts` does
-> not reload it, and the run commands below are advertised but not yet implemented. Restart the
-> server to pick up either kind of change.
+`alint lsp` runs alint as a language server on stdin and stdout. Any editor with LSP support can
+use it.
 
-`alint lsp` runs alint as a language server over stdin and stdout.
+The server is cache-first. It publishes diagnostics that earlier runs stored, and it never calls a
+model on its own, so opening a workspace costs nothing. A cold cache shows no diagnostics. Run
+`alint` once to fill it.
 
-It is cache-first. The server reads diagnostics that earlier runs already stored and **never calls
-a model on its own**, so opening a workspace costs nothing. A cold cache therefore shows nothing —
-run `alint` once to populate it.
+Diagnostics appear when the editor opens the workspace, and they refresh when you save a file. The
+server reloads `alint.config.ts` after it changes.
 
-Point any LSP editor at the command. In Neovim:
+Configure the editor to start the command. In Neovim:
 
 ```lua
 vim.lsp.config.alint = {
@@ -239,20 +238,23 @@ vim.lsp.config.alint = {
 }
 ```
 
-The server declares two commands, `alint.runFile` and `alint.runWorkspace`, which will start runs
-that call models and spend tokens. Both return `MethodNotFound` today.
+The server declares three commands. `alint.runFile` and `alint.runWorkspace` start runs that call
+models and spend tokens; both report progress and accept cancellation. `alint.clearCache` deletes
+the cached diagnostics.
 
-A VS Code extension lives in `apps/vscode`. It starts the server and shows the diagnostics; it is
-not published to the marketplace yet. To run it from a checkout:
+#### VS Code
+
+The extension in `apps/vscode` starts the server and displays the diagnostics. It is not published
+to the Marketplace yet. To run it from a checkout:
 
 ```bash
 pnpm -F @alint-js/vscode build
-code --extensionDevelopmentPath=apps/vscode /path/to/your/project
+code --extensionDevelopmentPath=apps/vscode/dist /path/to/your/project
 ```
 
-It resolves the alint executable from the `alint.path` setting, then `node_modules/.bin/alint` in
-the workspace folder, then `PATH`. The workspace install wins so that the server and the alint you
-run in a terminal share one cache.
+The extension finds the alint executable in this order: the `alint.path` setting, then
+`node_modules/.bin/alint` in the workspace folder, then `PATH`. The workspace installation takes
+precedence, so the server and a terminal run use the same cache.
 
 ### Codex stop-gate plugin (optional)
 

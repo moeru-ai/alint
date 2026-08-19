@@ -1,5 +1,3 @@
-import type { RunResult } from '@alint-js/core'
-
 import process from 'node:process'
 
 import { mkdtemp, writeFile } from 'node:fs/promises'
@@ -12,6 +10,7 @@ import { describe, expect, it, vi } from 'vitest'
 import * as alintCore from '@alint-js/core'
 
 import { executeCli } from '../../cli'
+import { runResultWith } from '../../test-support'
 import { startLspServer } from './server'
 import { createTestClient, initializeParams } from './test-client'
 
@@ -58,7 +57,7 @@ describe('startLspServer', () => {
 
     expect(response.id).toBe(1)
     expect(response.result?.capabilities.executeCommandProvider?.commands)
-      .toEqual(['alint.runFile', 'alint.runWorkspace'])
+      .toEqual(['alint.clearCache', 'alint.runFile', 'alint.runWorkspace'])
     expect(response.result?.capabilities.executeCommandProvider?.workDoneProgress).toBe(true)
     expect(response.result?.capabilities.workspace?.workspaceFolders)
       .toEqual({ changeNotifications: true, supported: true })
@@ -70,26 +69,13 @@ describe('startLspServer', () => {
   it('publishes cached diagnostics for every workspace folder file once initialized', async () => {
     const { configHome, cwd } = await writeWorkspaceFixture()
     const client = createTestClient({ ...process.env, XDG_CONFIG_HOME: configHome })
-    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue({
-      diagnostics: [{
-        filePath: join(cwd, 'date.ts'),
-        loc: { start: { column: 2, line: 4 } },
-        message: 'helper is duplicated',
-        ruleId: 'js/no-duplicated-helper',
-        severity: 'warn',
-      }],
-      execution: {
-        cached: 0,
-        cancelled: 0,
-        completed: 0,
-        failed: 0,
-        planned: 0,
-        queued: 0,
-        running: 0,
-        skipped: 0,
-      },
-      usage: { inputTokens: 0, outputTokens: 0, records: [], totalTokens: 0 },
-    } satisfies RunResult)
+    const runAlint = vi.spyOn(alintCore, 'runAlint').mockResolvedValue(runResultWith([{
+      filePath: join(cwd, 'date.ts'),
+      loc: { start: { column: 2, line: 4 } },
+      message: 'helper is duplicated',
+      ruleId: 'js/no-duplicated-helper',
+      severity: 'warn',
+    }]))
 
     try {
       void startLspServer(client.io)

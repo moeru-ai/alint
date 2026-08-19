@@ -4,7 +4,7 @@
   "type": "module",
   "version": "0.6.0",
   "private": true,
-  "description": "VS Code client for alint",
+  "description": "Alint integration for VS Code",
   "categories": [
     "Linters"
   ],
@@ -19,13 +19,30 @@
     "workspaceContains:alint.config.*"
   ],
   "contributes": {
+    "commands": [
+      {
+        "command": "alint.runFile",
+        "title": "Run on Current File",
+        "category": "alint"
+      },
+      {
+        "command": "alint.runWorkspace",
+        "title": "Run on Workspace",
+        "category": "alint"
+      },
+      {
+        "command": "alint.clearCache",
+        "title": "Clear Cache",
+        "category": "alint"
+      }
+    ],
     "configuration": {
       "title": "alint",
       "properties": {
         "alint.path": {
           "type": "string",
           "default": "",
-          "description": "Path to the alint executable. Leave empty to use the workspace's own installation, then alint on PATH."
+          "description": "Path to the alint executable. Leave empty to use the workspace installation, then alint on PATH."
         }
       }
     }
@@ -34,10 +51,13 @@
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@alint-js/cli": "workspace:*",
+    "@types/vscode": "catalog:",
     "vscode-languageclient": "catalog:"
   },
-  "devDependencies": {
-    "@types/vscode": "catalog:"
+  "vscode": {
+    "name": "alint",
+    "publisher": "moeru-ai"
   }
 }

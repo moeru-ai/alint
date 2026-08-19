@@ -7,7 +7,7 @@ afterEach(() => vi.useRealTimers())
 
 describe('createPublisher', () => {
   it('coalesces repeated queues for one file into a single publish', async () => {
-    // An LSP publish carries a whole document, so one publish per finding sends it many times.
+    // An LSP publish contains a whole document, so one publish per diagnostic sends it many times.
     const publish = vi.fn()
     const publisher = createPublisher({ flushMs: 200, publish })
 

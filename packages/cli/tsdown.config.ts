@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     'bin/index': 'src/bin/index.ts',
     'index': 'src/index.ts',
+    'lsp-commands': 'src/cli/commands/lsp/command-ids.ts',
   },
   format: 'esm',
 })

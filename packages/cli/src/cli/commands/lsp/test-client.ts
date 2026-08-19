@@ -12,8 +12,8 @@ import { Buffer } from 'node:buffer'
 import { PassThrough } from 'node:stream'
 
 /**
- * One frame off the wire. A server sends responses and notifications on the same stream, so this
- * carries both and a test reads the field it expects.
+ * One message from the connection. A server sends responses and notifications on one stream, so
+ * this type includes both, and a test reads the field it expects.
  */
 export interface JsonRpcMessage {
   // `ResponseErrorLiteral` is declared but not exported, so reach it through the exported message.

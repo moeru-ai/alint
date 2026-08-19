@@ -27,7 +27,7 @@ export function mergeRunnerConfigs(
     : undefined
 }
 
-/** The last `runner` block in the flattened config wins, key by key. */
+/** The last `runner` block in the flattened config takes precedence, key by key. */
 export function resolveConfigRunner(config: AlintConfig): RunnerConfig | undefined {
   return normalizeConfig(config).reduce<RunnerConfig | undefined>(
     (merged, item) => item.runner ? { ...merged, ...item.runner } : merged,

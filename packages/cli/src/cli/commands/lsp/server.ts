@@ -8,15 +8,12 @@ import { Writable } from 'node:stream'
 import { errorMessageFrom } from '@moeru/std'
 import { DidChangeWatchedFilesNotification } from 'vscode-languageserver'
 
+import { CLEAR_CACHE_COMMAND, RUN_FILE_COMMAND, RUN_WORKSPACE_COMMAND } from './command-ids'
 import { createFolderSession } from './folder'
 import { createPublisher } from './publisher'
 
 /** Long enough to collect a workspace pass into few messages, short enough to keep a save prompt. */
 const PUBLISH_FLUSH_MS = 200
-
-/** Two commands, because a workspace run can cost orders of magnitude more than one file. */
-export const RUN_FILE_COMMAND = 'alint.runFile'
-export const RUN_WORKSPACE_COMMAND = 'alint.runWorkspace'
 
 export async function startLspServer(io: CliIo): Promise<number> {
   const { stdin } = io
@@ -78,7 +75,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
     return {
       capabilities: {
         executeCommandProvider: {
-          commands: [RUN_FILE_COMMAND, RUN_WORKSPACE_COMMAND],
+          commands: [CLEAR_CACHE_COMMAND, RUN_FILE_COMMAND, RUN_WORKSPACE_COMMAND],
           workDoneProgress: true,
         },
         // `change: None` is intended. A diagnostic is keyed by the target content, so diagnostics
@@ -113,7 +110,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
         // A handler that throws ends the session. One folder with a bad config must not stop the
         // other folders.
         connection.console.error(
-          `alint: ${folderUri}: ${errorMessageFrom(error) ?? 'could not read cached diagnostics'}`,
+          `${folderUri}: ${errorMessageFrom(error) ?? 'could not read cached diagnostics'}`,
         )
       }
     }))
@@ -129,7 +126,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
       }
       catch (error) {
         connection.console.error(
-          `alint: ${textDocument.uri}: ${errorMessageFrom(error) ?? 'could not refresh the saved file'}`,
+          `${textDocument.uri}: ${errorMessageFrom(error) ?? 'could not refresh the saved file'}`,
         )
       }
     }))
@@ -146,6 +143,79 @@ export async function startLspServer(io: CliIo): Promise<number> {
     publisher.setOpen(textDocument.uri, false)
   })
 
+  connection.onExecuteCommand(async ({ arguments: args, command }) => {
+    if (command === CLEAR_CACHE_COMMAND) {
+      await Promise.all([...folders.values()].map(async (folder) => {
+        try {
+          for (const uri of await folder.clearCache()) {
+            publisher.queue(uri)
+          }
+        }
+        catch (error) {
+          connection.console.error(
+            `${folder.folderUri}: ${errorMessageFrom(error) ?? 'could not clear the cache'}`,
+          )
+        }
+      }))
+
+      return
+    }
+
+    // The client sends the active document URI as the command argument.
+    const inputs = command === RUN_FILE_COMMAND
+      ? args?.filter((value): value is string => typeof value === 'string')
+      : undefined
+
+    if (command === RUN_FILE_COMMAND && (inputs === undefined || inputs.length === 0)) {
+      connection.console.error(`${RUN_FILE_COMMAND} needs a document URI.`)
+      return
+    }
+
+    // `createWorkDoneProgress` sends a request and waits for the client to answer. The run does
+    // not start before that answer arrives.
+    //
+    // A client that does not advertise `window.workDoneProgress` gets a reporter that sends
+    // nothing. No capability check is needed, and that client cannot cancel.
+    const reporter = await connection.window.createWorkDoneProgress()
+    const controller = new AbortController()
+
+    reporter.begin(
+      inputs === undefined ? 'Running alint on the workspace' : 'Running alint on the current file',
+      0,
+      undefined,
+      true,
+    )
+    reporter.token.onCancellationRequested(() => controller.abort())
+
+    try {
+      await Promise.all([...folders.values()].map(async (folder) => {
+        try {
+          await folder.runExplicit({
+            inputs,
+            onProgress: (progress, inputPath) => {
+              // `jobsTotal` is 0 until planning finishes, and the run reports jobs before then.
+              const percentage = progress.jobsTotal === 0
+                ? 0
+                : Math.round((progress.jobsCompleted / progress.jobsTotal) * 100)
+
+              reporter.report(percentage, inputPath)
+            },
+            signal: controller.signal,
+          })
+        }
+        catch (error) {
+          connection.console.error(
+            `${folder.folderUri}: ${errorMessageFrom(error) ?? 'the run failed'}`,
+          )
+        }
+      }))
+    }
+    finally {
+      // A run that throws must still end the notification, or the client shows it forever.
+      reporter.done()
+    }
+  })
+
   connection.onDidChangeWatchedFiles(() => {
     void Promise.all([...folders.values()].map(async (folder) => {
       try {
@@ -154,7 +224,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
       }
       catch (error) {
         connection.console.error(
-          `alint: ${folder.folderUri}: ${errorMessageFrom(error) ?? 'could not reload the config'}`,
+          `${folder.folderUri}: ${errorMessageFrom(error) ?? 'could not reload the config'}`,
         )
       }
     }))
@@ -162,7 +232,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
     // A new config changes `configHash` for every affected target, so the pass that follows finds
     // nothing and the editor empties. The result is correct but it looks like a failure.
     // TODO: send an `alint/status` notification with the skipped count instead of this log line.
-    connection.console.info('alint: config changed; cached diagnostics were cleared and need a new run')
+    connection.console.info('Configuration changed. Cached diagnostics were cleared. Run alint again to recreate them.')
   })
 
   connection.onShutdown(async () => {
