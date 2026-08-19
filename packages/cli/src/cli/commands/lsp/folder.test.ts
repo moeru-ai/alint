@@ -512,7 +512,7 @@ describe('folderSession.runExplicit', () => {
     const folder = await createFolderSession({ folderUri: pathToFileURL(linkPath).toString(), io })
 
     try {
-      await folder.runExplicit({ files: [pathToFileURL(join(linkPath, 'date.ts')).toString()] })
+      await folder.runExplicit({ inputs: [pathToFileURL(join(linkPath, 'date.ts')).toString()] })
 
       expect(runAlint.mock.calls[0]?.[0]?.files).toEqual([join(resolvedCwd, 'date.ts')])
       expect(runAlint.mock.calls[0]?.[0]?.projectTargets).toBe(false)

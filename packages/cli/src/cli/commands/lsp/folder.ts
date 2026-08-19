@@ -50,7 +50,7 @@ export interface FolderSession {
   /**
    * Runs the rules and calls models. This is the only path that spends tokens.
    *
-   * Pass no files to run the whole folder. Pass document URIs to run only those files, without
+   * Pass no inputs to run the whole folder. Pass document URIs to run only those files, without
    * project rules.
    *
    * One folder runs one set of rules at a time. The cache file is rewritten whole, so two runs at
@@ -62,7 +62,7 @@ export interface FolderSession {
 }
 
 export interface RunExplicitOptions {
-  files?: string[]
+  inputs?: string[]
   /** Called as each job starts, with the run totals and the file that job reads. */
   onProgress?: (progress: ProgressSnapshot, inputPath: string) => void
   signal?: AbortSignal
@@ -99,7 +99,7 @@ export async function createFolderSession(
   }
 
   const runOnce = async (runOptions: RunExplicitOptions): Promise<void> => {
-    const runPaths = runOptions.files
+    const runPaths = runOptions.inputs
       ?.map(uri => toRunPath(uri, paths))
       .filter(path => path !== undefined)
     const changed = new Set<string>()
@@ -115,7 +115,7 @@ export async function createFolderSession(
 
     try {
       merge(await session.run({
-        files: runPaths,
+        inputs: runPaths,
         progress: {
           // `onDiagnostic` fires while the run continues. A workspace run takes minutes, so the
           // server publishes each diagnostic when it arrives.

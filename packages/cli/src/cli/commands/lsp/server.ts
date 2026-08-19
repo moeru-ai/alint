@@ -162,11 +162,11 @@ export async function startLspServer(io: CliIo): Promise<number> {
     }
 
     // The client sends the active document URI as the command argument.
-    const files = command === RUN_FILE_COMMAND
+    const inputs = command === RUN_FILE_COMMAND
       ? args?.filter((value): value is string => typeof value === 'string')
       : undefined
 
-    if (command === RUN_FILE_COMMAND && (files === undefined || files.length === 0)) {
+    if (command === RUN_FILE_COMMAND && (inputs === undefined || inputs.length === 0)) {
       connection.console.error(`${RUN_FILE_COMMAND} needs a document URI.`)
       return
     }
@@ -180,7 +180,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
     const controller = new AbortController()
 
     reporter.begin(
-      files === undefined ? 'Running alint on the workspace' : 'Running alint on the current file',
+      inputs === undefined ? 'Running alint on the workspace' : 'Running alint on the current file',
       0,
       undefined,
       true,
@@ -191,7 +191,7 @@ export async function startLspServer(io: CliIo): Promise<number> {
       await Promise.all([...folders.values()].map(async (folder) => {
         try {
           await folder.runExplicit({
-            files,
+            inputs,
             onProgress: (progress, inputPath) => {
               // `jobsTotal` is 0 until planning finishes, and the run reports jobs before then.
               const percentage = progress.jobsTotal === 0
